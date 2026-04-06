@@ -130,8 +130,9 @@ export default function WorksGrid() {
 
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('search', debouncedSearch)
-    if (statuses.length > 0) params.set('statuses', statuses.join(','))
-    if (stages.length > 0) params.set('stages', stages.join(','))
+    // append() per value → ?statuses=a&statuses=b (no comma separator, safe with emoji)
+    statuses.forEach(s => params.append('statuses', s))
+    stages.forEach(s => params.append('stages', s))
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())

@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
+// Vercel Hobby plan max is 10s; declare explicitly to avoid early termination
+export const maxDuration = 10;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? "";
-  const statusesParam = searchParams.get("statuses") ?? "";
-  const stagesParam = searchParams.get("stages") ?? "";
 
-  const statuses = statusesParam ? statusesParam.split(",") : [];
-  const stages = stagesParam ? stagesParam.split(",") : [];
+  // Use getAll() — each value is appended separately (?statuses=a&statuses=b)
+  // Avoids comma-as-separator ambiguity with emoji values like "⚒️ 제작 중"
+  const statuses = searchParams.getAll("statuses");
+  const stages = searchParams.getAll("stages");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
@@ -35,20 +38,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: [] });
   }
 
-  // Fetch brand/product names for unique IDs in results — small queries on PK index
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const brandIds = Array.from(new Set(items.map((i: any) => i.brand_id).filter(Boolean)));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const productIds = Array.from(new Set(items.map((i: any) => i.product_id).filter(Boolean)));
-
+  // Fetch ALL brands and products (reference tables — always small, no IN clause needed)
+  // Previous approach: .in("id", brandIds) → URL gets huge when results are large → slow/timeout
   const [brandsRes, productsRes] = await Promise.all([
-    brandIds.length > 0
-      ? supabaseAdmin.from("brands").select("id, name").in("id", brandIds)
-      : Promise.resolve({ data: [] as { id: unknown; name: string }[] }),
-    productIds.length > 0
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ? (supabaseAdmin as any).from("products").select(`id, "제품명"`).in("id", productIds)
-      : Promise.resolve({ data: [] as { id: unknown; 제품명: string }[] }),
+    supabaseAdmin.from("brands").select("id, name"),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (supabaseAdmin as any).from("products").select(`id, "제품명"`),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
