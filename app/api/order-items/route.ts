@@ -13,14 +13,16 @@ export async function GET(request: NextRequest) {
   const statuses = searchParams.getAll("statuses");
   const stages = searchParams.getAll("stages");
 
+  // NOT (col IS TRUE) → includes NULL and false, excludes only explicit true
+  // neq("col", true) translates to col != true which EXCLUDES NULL rows in PostgreSQL
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
     .select(
       `고유_번호, brand_id, product_id, 소재, 호수, 수량, 상태, 작업_단계, 발주일, 데드라인, 고객명`
     )
-    .neq("중단_취소", true)
-    .neq("숨기기", true)
+    .not("중단_취소", "is", true)
+    .not("숨기기", "is", true)
     .order("발주일", { ascending: false });
 
   if (search)
@@ -28,8 +30,12 @@ export async function GET(request: NextRequest) {
   if (statuses.length > 0) q = q.in("상태", statuses);
   if (stages.length > 0) q = q.in("작업_단계", stages);
 
+  console.log("[order-items] statuses:", statuses, "stages:", stages, "search:", search);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: items, error } = await q as { data: any[]; error: any };
+
+  console.log("[order-items] result count:", items?.length ?? 0, "error:", error?.message);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
