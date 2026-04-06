@@ -1,21 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
-const PAGE_SIZE = 100;
-
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const page = parseInt(searchParams.get("page") ?? "0", 10);
   const search = searchParams.get("search") ?? "";
   const statusesParam = searchParams.get("statuses") ?? "";
   const stagesParam = searchParams.get("stages") ?? "";
 
   const statuses = statusesParam ? statusesParam.split(",") : [];
   const stages = stagesParam ? stagesParam.split(",") : [];
-  const from = page * PAGE_SIZE;
 
-  // Step 1: Fetch PAGE_SIZE+1 rows — no COUNT(*), derive hasMore instead
-  // count: 'exact' causes a separate full-table COUNT query → timeout
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
@@ -24,8 +18,7 @@ export async function GET(request: NextRequest) {
     )
     .neq("중단_취소", true)
     .neq("숨기기", true)
-    .order("발주일", { ascending: false })
-    .range(from, from + PAGE_SIZE); // +1 to detect next page
+    .order("발주일", { ascending: false });
 
   if (search)
     q = q.or(`고유_번호.ilike.%${search}%,고객명.ilike.%${search}%`);
@@ -33,25 +26,21 @@ export async function GET(request: NextRequest) {
   if (stages.length > 0) q = q.in("작업_단계", stages);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: raw, error } = await q as { data: any[]; error: any };
+  const { data: items, error } = await q as { data: any[]; error: any };
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!raw || raw.length === 0) {
-    return NextResponse.json({ data: [], hasMore: false });
+  if (!items || items.length === 0) {
+    return NextResponse.json({ data: [] });
   }
 
-  const hasMore = raw.length > PAGE_SIZE;
-  const items = hasMore ? raw.slice(0, PAGE_SIZE) : raw;
-
-  // Step 2: Collect unique FK IDs from this page (≤ 100 items)
+  // Fetch brand/product names for unique IDs in results — small queries on PK index
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const brandIds = Array.from(new Set(items.map((i: any) => i.brand_id).filter(Boolean)));
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const productIds = Array.from(new Set(items.map((i: any) => i.product_id).filter(Boolean)));
 
-  // Step 3: Fetch brand/product names in parallel — tiny queries on PK index
   const [brandsRes, productsRes] = await Promise.all([
     brandIds.length > 0
       ? supabaseAdmin.from("brands").select("id, name").in("id", brandIds)
@@ -67,7 +56,6 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p["제품명"]]));
 
-  // Step 4: Merge — keep same shape WorksGrid already expects
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const data = items.map((item: any) => ({
     ...item,
@@ -75,5 +63,5 @@ export async function GET(request: NextRequest) {
     products: { "제품명": productMap.get(item.product_id) ?? "" },
   }));
 
-  return NextResponse.json({ data, hasMore });
+  return NextResponse.json({ data });
 }
