@@ -14,18 +14,18 @@ export async function GET(request: NextRequest) {
   const stages = stagesParam ? stagesParam.split(",") : [];
   const from = page * PAGE_SIZE;
 
-  // Step 1: Fetch order_items WITHOUT join — simpler query, hits partial index
+  // Step 1: Fetch PAGE_SIZE+1 rows — no COUNT(*), derive hasMore instead
+  // count: 'exact' causes a separate full-table COUNT query → timeout
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
     .select(
-      `고유_번호, brand_id, product_id, 소재, 호수, 수량, 상태, 작업_단계, 발주일, 데드라인, 고객명`,
-      { count: "exact" }
+      `고유_번호, brand_id, product_id, 소재, 호수, 수량, 상태, 작업_단계, 발주일, 데드라인, 고객명`
     )
     .neq("중단_취소", true)
     .neq("숨기기", true)
     .order("발주일", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
+    .range(from, from + PAGE_SIZE); // +1 to detect next page
 
   if (search)
     q = q.or(`고유_번호.ilike.%${search}%,고객명.ilike.%${search}%`);
@@ -33,14 +33,17 @@ export async function GET(request: NextRequest) {
   if (stages.length > 0) q = q.in("작업_단계", stages);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: items, count, error } = await q as { data: any[]; count: number; error: any };
+  const { data: raw, error } = await q as { data: any[]; error: any };
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!items || items.length === 0) {
-    return NextResponse.json({ data: [], count: 0 });
+  if (!raw || raw.length === 0) {
+    return NextResponse.json({ data: [], hasMore: false });
   }
+
+  const hasMore = raw.length > PAGE_SIZE;
+  const items = hasMore ? raw.slice(0, PAGE_SIZE) : raw;
 
   // Step 2: Collect unique FK IDs from this page (≤ 100 items)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,5 +75,5 @@ export async function GET(request: NextRequest) {
     products: { "제품명": productMap.get(item.product_id) ?? "" },
   }));
 
-  return NextResponse.json({ data, count });
+  return NextResponse.json({ data, hasMore });
 }

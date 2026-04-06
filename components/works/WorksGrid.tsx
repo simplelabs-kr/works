@@ -112,7 +112,7 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
 
   const [rows, setRows] = useState<Row[]>([])
-  const [total, setTotal] = useState(0)
+  const [hasMore, setHasMore] = useState(false)
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
 
@@ -148,7 +148,7 @@ export default function WorksGrid() {
     if (stages.length > 0) params.set('stages', stages.join(','))
 
     const res = await fetch(`/api/order-items?${params}`)
-    const { data, count } = await res.json()
+    const { data, hasMore: more } = await res.json()
 
     if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -164,7 +164,7 @@ export default function WorksGrid() {
         발주일: item.발주일 ?? '',
         데드라인: item.데드라인 ?? '',
       })))
-      setTotal(count ?? 0)
+      setHasMore(more ?? false)
     }
     setLoading(false)
   }, [page, debouncedSearch, statuses, stages])
@@ -199,8 +199,6 @@ export default function WorksGrid() {
     hotRef.current?.loadData(rows)
   }, [rows])
 
-  const totalPages = Math.ceil(total / PAGE_SIZE) || 1
-
   return (
     <div className="flex flex-col gap-3">
       {/* Filter bar */}
@@ -225,7 +223,7 @@ export default function WorksGrid() {
           onChange={setStages}
         />
         <span className="ml-auto text-sm text-gray-500">
-          {loading ? '로딩 중…' : `총 ${total.toLocaleString()}건`}
+          {loading ? '로딩 중…' : `${page + 1} 페이지 · ${rows.length}건`}
         </span>
       </div>
 
@@ -243,11 +241,9 @@ export default function WorksGrid() {
         >
           이전
         </button>
-        <span className="text-sm text-gray-500">
-          {page + 1} / {totalPages} 페이지
-        </span>
+        <span className="text-sm text-gray-500">{page + 1} 페이지</span>
         <button
-          disabled={page >= totalPages - 1 || loading}
+          disabled={!hasMore || loading}
           onClick={() => setPage(p => p + 1)}
           className="px-4 py-1.5 border rounded text-sm disabled:opacity-40 hover:bg-gray-50 transition-colors"
         >
