@@ -30,8 +30,8 @@ const COLUMNS = [
   { data: '데드라인', title: '데드라인', width: 100 },
 ]
 
-const STATUS_OPTIONS = ['현장', '왁스', '검수', '포장', '출고', '보류', '취소']
-const STAGE_OPTIONS = ['현장', '왁스파트', '외주', '완료']
+const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
+const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요', '🟠 RP 출력 필요', '🟢 생산 완료', '🟣 현장/광 작업 중', '🟧 RP 출력 중', '외부 제작 제품']
 
 function useDebounce<T>(value: T, ms: number): T {
   const [v, setV] = useState<T>(value)
