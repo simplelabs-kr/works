@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
-import { supabase } from '@/lib/supabase/client'
 
 const PAGE_SIZE = 100
 
@@ -125,21 +124,13 @@ export default function WorksGrid() {
 
   const debouncedSearch = useDebounce(search, 300)
 
-  // Load filter options once on mount
+  // Load filter options once on mount (server-side via API route)
   useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(supabase.from('order_items') as any)
-      .select('상태, 작업_단계')
-      .limit(2000)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .then(({ data }: { data: any[] | null }) => {
-        if (!data) return
-        setStatusOpts(
-          Array.from(new Set(data.map(r => r.상태).filter(Boolean) as string[])).sort()
-        )
-        setStageOpts(
-          Array.from(new Set(data.map(r => r.작업_단계).filter(Boolean) as string[])).sort()
-        )
+    fetch('/api/order-items/options')
+      .then(res => res.json())
+      .then(({ statuses, stages }) => {
+        setStatusOpts(statuses ?? [])
+        setStageOpts(stages ?? [])
       })
   }, [])
 
@@ -148,32 +139,18 @@ export default function WorksGrid() {
     setPage(0)
   }, [debouncedSearch, statuses, stages])
 
-  // Fetch data
+  // Fetch data via server API route (uses service role key)
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const from = page * PAGE_SIZE
+    const params = new URLSearchParams({ page: String(page) })
+    if (debouncedSearch) params.set('search', debouncedSearch)
+    if (statuses.length > 0) params.set('statuses', statuses.join(','))
+    if (stages.length > 0) params.set('stages', stages.join(','))
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase
-      .from('order_items')
-      .select(
-        `고유_번호, 소재, 호수, 수량, 상태, 작업_단계, 발주일, 데드라인, 고객명,
-brands(name),
-products("제품명")`,
-        { count: 'exact' }
-      )
-      .neq('중단_취소', true)
-      .neq('숨기기', true)
-      .order('발주일', { ascending: false })
-      .range(from, from + PAGE_SIZE - 1)
+    const res = await fetch(`/api/order-items?${params}`)
+    const { data, count } = await res.json()
 
-    if (debouncedSearch)
-      q = q.or(`고유_번호.ilike.%${debouncedSearch}%,고객명.ilike.%${debouncedSearch}%`)
-    if (statuses.length > 0) q = q.in('상태', statuses)
-    if (stages.length > 0) q = q.in('작업_단계', stages)
-
-    const { data, count, error } = await q
-    if (!error && data) {
+    if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setRows(data.map((item: any) => ({
         고유_번호: item.고유_번호 ?? '',
