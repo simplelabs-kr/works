@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 export async function GET() {
+  // Fetch only active items' filter values (respects base filter)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabaseAdmin as any)
     .from("order_items")
     .select("상태, 작업_단계")
-    .limit(2000);
+    .neq("중단_취소", true)
+    .neq("숨기기", true)
+    .limit(3000);
 
   if (error || !data) {
     return NextResponse.json({ statuses: [], stages: [] });
