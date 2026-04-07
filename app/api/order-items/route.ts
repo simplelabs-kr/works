@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
   const { data: items, error } = await q as { data: any[]; error: any };
 
   if (error) {
+    console.error("[order-items] main query error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!items || items.length === 0) {
@@ -43,6 +44,17 @@ export async function GET(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (supabaseAdmin as any).from("products").select(`id, "제품명"`),
   ]);
+
+  if (brandsRes.error) {
+    console.error("[order-items] brands fetch error:", brandsRes.error.message);
+  }
+  if (productsRes.error) {
+    console.error("[order-items] products fetch error:", productsRes.error.message);
+  }
+
+  console.log(
+    `[order-items] items=${items.length} brands=${brandsRes.data?.length ?? 0} products=${productsRes.data?.length ?? 0}`
+  );
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const brandMap = new Map((brandsRes.data ?? []).map((b: any) => [b.id, b.name]));

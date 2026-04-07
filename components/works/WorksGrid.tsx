@@ -7,6 +7,7 @@ import 'handsontable/dist/handsontable.full.min.css'
 type Row = {
   id: string
   고유_번호: string
+  브랜드명: string
   제품명_표시: string
   데드라인: string
   매몰: string
@@ -29,15 +30,16 @@ type Row = {
 
 const COLUMNS = [
   { data: '고유_번호',   title: '고유번호',    width: 120 },
+  { data: '브랜드명',    title: '브랜드',      width: 100 },
   { data: '제품명_표시', title: '제품명',      width: 200 },
   { data: '데드라인',    title: '데드라인',    width: 100 },
-  { data: '매몰',        title: '매몰',        width: 80  },
-  { data: '주물',        title: '주물 후 작업', width: 110 },
+  { data: '매몰',        title: '매몰',        width: 60  },
+  { data: '주물',        title: '주물 후 작업', width: 90  },
   { data: '출고예정일',  title: '출고예정일',  width: 100 },
   { data: '소재_최종',   title: '소재',        width: 80  },
   { data: '도금_색상',   title: '도금색상',    width: 90  },
   { data: '작업_위치',   title: '작업위치',    width: 90  },
-  { data: '작업지시서',  title: '작업지시서',  width: 100 },
+  { data: '작업지시서',  title: '작업지시서',  width: 160 },
   { data: '호수',        title: '호수',        width: 60  },
   { data: '수량',        title: '수량',        width: 60  },
   { data: '고객명',      title: '고객명',      width: 90  },
@@ -52,9 +54,44 @@ const COLUMNS = [
 const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
 const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요', '🟠 RP 출력 필요', '🟢 생산 완료', '🟣 현장/광 작업 중', '🟧 RP 출력 중', '외부 제작 제품']
 
-function formatDate(val: string | null | undefined): string {
+function formatDate(val: unknown): string {
   if (!val) return ''
   return String(val).slice(0, 10)
+}
+
+// Boolean-or-text column: true→✓, false/null→'', string→as-is
+function formatBoolOrText(val: unknown): string {
+  if (val === true) return '✓'
+  if (val === false || val === null || val === undefined) return ''
+  return String(val)
+}
+
+// jsonb columns: Supabase returns already-parsed JS objects/arrays
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function formatJsonb(val: unknown): string {
+  if (val === null || val === undefined) return ''
+  if (typeof val === 'string') return val
+  if (Array.isArray(val)) {
+    // Handle Notion-style rich text: [{type,text:{content}}] or [string, ...]
+    return val
+      .map((x: any) => {
+        if (typeof x === 'string') return x
+        // Notion rich text block
+        if (x?.text?.content) return x.text.content
+        // Plain content field
+        if (x?.content) return x.content
+        if (x?.text) return String(x.text)
+        return ''
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
+  if (typeof val === 'object') {
+    // Single object — try common text fields
+    const o = val as Record<string, unknown>
+    return String(o.content ?? o.text ?? o.value ?? JSON.stringify(val))
+  }
+  return String(val)
 }
 
 function useDebounce<T>(value: T, ms: number): T {
@@ -178,7 +215,6 @@ export default function WorksGrid() {
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .then(({ data }) => {
         if (cancelled) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,15 +227,18 @@ export default function WorksGrid() {
           return {
             id: item.id ?? '',
             고유_번호: item.고유_번호 ?? '',
+            브랜드명: item.brands?.name ?? '',
             제품명_표시: `${제품명}[${코드}]`,
             데드라인: formatDate(item.데드라인),
-            매몰: item.매몰 ?? '',
-            주물: item.주물 ?? '',
+            // 매몰/주물: boolean in DB (true→✓) or text if stored as text
+            매몰: formatBoolOrText(item.매몰),
+            주물: formatBoolOrText(item.주물),
             출고예정일: formatDate(item.출고예정일),
             소재_최종: item.소재_최종 ?? '',
             도금_색상: item.도금_색상 ?? '',
             작업_위치: item.작업_위치 ?? '',
-            작업지시서: item.작업지시서 ?? '',
+            // 작업지시서: jsonb array in DB — extract plain text
+            작업지시서: formatJsonb(item.작업지시서),
             호수: item.호수 ?? '',
             수량: item.수량 ?? '',
             고객명: item.고객명 ?? '',
