@@ -6,11 +6,13 @@ import 'handsontable/dist/handsontable.full.min.css'
 
 type Row = {
   고유_번호: string
+  제품명: string
   product_id: string
 }
 
 const COLUMNS = [
-  { data: '고유_번호', title: '고유번호',  width: 140 },
+  { data: '고유_번호',  title: '고유번호',  width: 140 },
+  { data: '제품명',    title: '제품명',    width: 220 },
   { data: 'product_id', title: 'product_id', width: 300 },
 ]
 
@@ -124,6 +126,7 @@ export default function WorksGrid() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setRows((data ?? []).map((item: any) => ({
           고유_번호: item.고유_번호 ?? '',
+          제품명: item.products?.['제품명'] ?? '',
           product_id: item.product_id ?? '',
         })))
       })

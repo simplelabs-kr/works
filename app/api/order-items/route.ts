@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
-    .select(`id, 고유_번호, product_id`)
+    .select(`id, 고유_번호, product_id, products(제품명)`)
     .not("중단_취소", "is", true)
     .not("숨기기", "is", true)
     .order("발주일", { ascending: false });
