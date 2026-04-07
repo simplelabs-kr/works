@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
-// Vercel Hobby plan max is 10s; declare explicitly to avoid early termination
 export const maxDuration = 10;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? "";
-
-  // Use getAll() — each value is appended separately (?statuses=a&statuses=b)
-  // Avoids comma-as-separator ambiguity with emoji values like "⚒️ 제작 중"
   const statuses = searchParams.getAll("statuses");
   const stages = searchParams.getAll("stages");
+  const brandIds = searchParams.getAll("brandIds");
 
   // NOT (col IS TRUE) → includes NULL and false, excludes only explicit true
-  // neq("col", true) translates to col != true which EXCLUDES NULL rows in PostgreSQL
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
     .select(
-      `고유_번호, brand_id, product_id, 소재, 호수, 수량, 상태, 작업_단계, 발주일, 데드라인, 고객명`
+      `id, 고유_번호, brand_id, product_id, 데드라인, 매몰, 주물, 출고예정일, 소재_최종, 도금_색상, 작업_위치, 작업지시서, 호수, 수량, 고객명, 중량, 검수, 검수_담당, 공임_조정액, 각인_내용, 생산시작일, 상태, 작업_단계, 발주일`
     )
     .not("중단_취소", "is", true)
     .not("숨기기", "is", true)
@@ -29,13 +25,10 @@ export async function GET(request: NextRequest) {
     q = q.or(`고유_번호.ilike.%${search}%,고객명.ilike.%${search}%`);
   if (statuses.length > 0) q = q.in("상태", statuses);
   if (stages.length > 0) q = q.in("작업_단계", stages);
-
-  console.log("[order-items] statuses:", statuses, "stages:", stages, "search:", search);
+  if (brandIds.length > 0) q = q.in("brand_id", brandIds);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: items, error } = await q as { data: any[]; error: any };
-
-  console.log("[order-items] result count:", items?.length ?? 0, "error:", error?.message);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -44,8 +37,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ data: [] });
   }
 
-  // Fetch ALL brands and products (reference tables — always small, no IN clause needed)
-  // Previous approach: .in("id", brandIds) → URL gets huge when results are large → slow/timeout
+  // Fetch ALL brands and products (reference tables — always small)
   const [brandsRes, productsRes] = await Promise.all([
     supabaseAdmin.from("brands").select("id, name"),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
