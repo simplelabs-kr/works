@@ -8,8 +8,9 @@ type Item = {
   id: string
   고유_번호: string
   product_id: string
-  데드라인: string | null
+  발주일: string | null
   생산시작일: string | null
+  데드라인: string | null
   products: { 제품명: string; 제작_소요일: number | null } | null
 }
 
@@ -17,16 +18,20 @@ type Row = {
   고유_번호: string
   제품명: string
   제품명_코드: string
+  발주일: string
+  생산시작일: string
   데드라인: string
   출고예정일: string
 }
 
 const COLUMNS = [
-  { data: '고유_번호',  title: '고유번호',       width: 140 },
-  { data: '제품명',    title: '제품명',          width: 200 },
+  { data: '고유_번호',   title: '고유번호',        width: 140 },
+  { data: '제품명',     title: '제품명',           width: 200 },
   { data: '제품명_코드', title: '제품명(코드 포함)', width: 220 },
-  { data: '데드라인',   title: '데드라인',        width: 110 },
-  { data: '출고예정일', title: '출고예정일',       width: 110 },
+  { data: '발주일',     title: '발주일',           width: 110 },
+  { data: '생산시작일',  title: '생산시작일',        width: 110 },
+  { data: '데드라인',   title: '데드라인',          width: 110 },
+  { data: '출고예정일',  title: '출고예정일',        width: 110 },
 ]
 
 const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
@@ -36,27 +41,27 @@ const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요',
 
 let holidaySet = new Set<string>()
 
-function isWorkday(date: Date): boolean {
+function isWorkday(date: Date, hs: Set<string>): boolean {
   const day = date.getDay()
   const str = date.toISOString().slice(0, 10)
-  return day !== 0 && day !== 6 && !holidaySet.has(str)
+  return day !== 0 && day !== 6 && !hs.has(str)
 }
 
-function nextWorkday(date: Date): Date {
+function nextWorkday(date: Date, hs: Set<string>): Date {
   const next = new Date(date)
   next.setDate(next.getDate() + 1)
-  while (!isWorkday(next)) next.setDate(next.getDate() + 1)
+  while (!isWorkday(next, hs)) next.setDate(next.getDate() + 1)
   return next
 }
 
-function calcShipDate(item: Item): string {
+function calcShipDate(item: Item, hs: Set<string>): string {
   if (item.데드라인) {
-    return nextWorkday(new Date(item.데드라인)).toISOString().slice(0, 10)
+    return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
   }
   if (item.생산시작일 && item.products?.제작_소요일) {
     const base = new Date(item.생산시작일)
-    base.setDate(base.getDate() + item.products.제작_소요일)
-    return nextWorkday(base).toISOString().slice(0, 10)
+    base.setDate(base.getDate() + Number(item.products.제작_소요일))
+    return nextWorkday(base, hs).toISOString().slice(0, 10)
   }
   return '-'
 }
@@ -196,8 +201,10 @@ export default function WorksGrid() {
             고유_번호: item.고유_번호 ?? '',
             제품명,
             제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
+            발주일: formatDate(item.발주일),
+            생산시작일: formatDate(item.생산시작일),
             데드라인: formatDate(item.데드라인),
-            출고예정일: calcShipDate(item),
+            출고예정일: calcShipDate(item, holidaySet),
           }
         }))
       })
