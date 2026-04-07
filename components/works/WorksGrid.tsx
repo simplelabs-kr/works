@@ -54,14 +54,30 @@ function nextWorkday(date: Date, hs: Set<string>): Date {
   return next
 }
 
+// 생산시작일을 1일차로 하여 영업일 기준 days일을 채운 후 다음 영업일 반환
+function addWorkdays(startDate: Date, days: number, hs: Set<string>): Date {
+  let count = 0
+  const current = new Date(startDate)
+  while (count < days) {
+    const str = current.toISOString().slice(0, 10)
+    const day = current.getDay()
+    if (day !== 0 && day !== 6 && !hs.has(str)) count++
+    if (count < days) current.setDate(current.getDate() + 1)
+  }
+  // current = 마지막 생산일 → 그 다음 영업일이 출고예정일
+  return nextWorkday(current, hs)
+}
+
 function calcShipDate(item: Item, hs: Set<string>): string {
   if (item.데드라인) {
     return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
   }
   if (item.생산시작일 && item.products?.제작_소요일) {
-    const base = new Date(item.생산시작일)
-    base.setDate(base.getDate() + Number(item.products.제작_소요일))
-    return nextWorkday(base, hs).toISOString().slice(0, 10)
+    return addWorkdays(
+      new Date(item.생산시작일),
+      Number(item.products.제작_소요일),
+      hs
+    ).toISOString().slice(0, 10)
   }
   return '-'
 }
