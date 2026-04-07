@@ -4,20 +4,69 @@ import { useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 
+type Item = {
+  id: string
+  고유_번호: string
+  product_id: string
+  데드라인: string | null
+  생산시작일: string | null
+  products: { 제품명: string; 제작_소요일: number | null } | null
+}
+
 type Row = {
   고유_번호: string
   제품명: string
-  product_id: string
+  제품명_코드: string
+  데드라인: string
+  출고예정일: string
 }
 
 const COLUMNS = [
-  { data: '고유_번호',  title: '고유번호',  width: 140 },
-  { data: '제품명',    title: '제품명',    width: 220 },
-  { data: 'product_id', title: 'product_id', width: 300 },
+  { data: '고유_번호',  title: '고유번호',       width: 140 },
+  { data: '제품명',    title: '제품명',          width: 200 },
+  { data: '제품명_코드', title: '제품명(코드 포함)', width: 220 },
+  { data: '데드라인',   title: '데드라인',        width: 110 },
+  { data: '출고예정일', title: '출고예정일',       width: 110 },
 ]
 
 const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
 const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요', '🟠 RP 출력 필요', '🟢 생산 완료', '🟣 현장/광 작업 중', '🟧 RP 출력 중', '외부 제작 제품']
+
+// ── Workday helpers ──────────────────────────────────────────────────────────
+
+let holidaySet = new Set<string>()
+
+function isWorkday(date: Date): boolean {
+  const day = date.getDay()
+  const str = date.toISOString().slice(0, 10)
+  return day !== 0 && day !== 6 && !holidaySet.has(str)
+}
+
+function nextWorkday(date: Date): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + 1)
+  while (!isWorkday(next)) next.setDate(next.getDate() + 1)
+  return next
+}
+
+function calcShipDate(item: Item): string {
+  if (item.데드라인) {
+    return nextWorkday(new Date(item.데드라인)).toISOString().slice(0, 10)
+  }
+  if (item.생산시작일 && item.products?.제작_소요일) {
+    const base = new Date(item.생산시작일)
+    base.setDate(base.getDate() + item.products.제작_소요일)
+    return nextWorkday(base).toISOString().slice(0, 10)
+  }
+  return '-'
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDate(val: string | null | undefined): string {
+  if (!val) return ''
+  return String(val).slice(0, 10)
+}
 
 function useDebounce<T>(value: T, ms: number): T {
   const [v, setV] = useState<T>(value)
@@ -27,6 +76,8 @@ function useDebounce<T>(value: T, ms: number): T {
   }, [value, ms])
   return v
 }
+
+// ── MultiSelect ──────────────────────────────────────────────────────────────
 
 function MultiSelect({
   label,
@@ -90,9 +141,12 @@ function MultiSelect({
   )
 }
 
+// ── Main component ───────────────────────────────────────────────────────────
+
 export default function WorksGrid() {
   const containerRef = useRef<HTMLDivElement>(null)
   const hotRef = useRef<Handsontable | null>(null)
+  const holidaysLoaded = useRef(false)
 
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
@@ -101,9 +155,19 @@ export default function WorksGrid() {
   const [statuses, setStatuses] = useState<string[]>([])
   const [stages, setStages] = useState<string[]>([])
 
+  // Load holidays once on mount (cached in module-level Set)
+  useEffect(() => {
+    if (holidaysLoaded.current) return
+    holidaysLoaded.current = true
+    fetch('/api/holidays')
+      .then(res => res.json())
+      .then(({ dates }) => {
+        if (Array.isArray(dates)) holidaySet = new Set<string>(dates)
+      })
+  }, [])
+
   const debouncedSearch = useDebounce(search, 300)
-  const hasFilters =
-    debouncedSearch.length > 0 || statuses.length > 0 || stages.length > 0
+  const hasFilters = debouncedSearch.length > 0 || statuses.length > 0 || stages.length > 0
 
   useEffect(() => {
     if (!hasFilters) {
@@ -123,18 +187,26 @@ export default function WorksGrid() {
       .then(res => res.json())
       .then(({ data }) => {
         if (cancelled) return
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setRows((data ?? []).map((item: any) => ({
-          고유_번호: item.고유_번호 ?? '',
-          제품명: item.products?.['제품명'] ?? '',
-          product_id: item.product_id ?? '',
-        })))
+        setRows((data ?? []).map((item: Item) => {
+          const 제품명 = item.products?.['제품명'] ?? ''
+          const 코드 = item.고유_번호?.length === 15
+            ? item.고유_번호.slice(-4)
+            : item.고유_번호?.slice(-6) ?? ''
+          return {
+            고유_번호: item.고유_번호 ?? '',
+            제품명,
+            제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
+            데드라인: formatDate(item.데드라인),
+            출고예정일: calcShipDate(item),
+          }
+        }))
       })
       .finally(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
   }, [debouncedSearch, statuses, stages, hasFilters])
 
+  // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
     hotRef.current = new Handsontable(containerRef.current, {
@@ -155,6 +227,7 @@ export default function WorksGrid() {
     }
   }, [])
 
+  // Update grid data
   useEffect(() => {
     if (!hotRef.current) return
     hotRef.current.loadData(rows)

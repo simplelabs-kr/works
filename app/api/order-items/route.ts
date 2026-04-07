@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
-    .select(`id, 고유_번호, product_id, products(제품명)`)
+    .select(`id, 고유_번호, product_id, 데드라인, 생산시작일, products(제품명, 제작_소요일)`)
     .not("중단_취소", "is", true)
     .not("숨기기", "is", true)
     .order("발주일", { ascending: false });
@@ -32,7 +32,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  console.log(`[order-items] count=${data?.length ?? 0} first_product_id=${data?.[0]?.product_id ?? "none"}`);
-
-  return NextResponse.json({ data: data ?? [] });
+return NextResponse.json({ data: data ?? [] });
 }
