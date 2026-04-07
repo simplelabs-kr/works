@@ -10,13 +10,10 @@ export async function GET(request: NextRequest) {
   const stages = searchParams.getAll("stages");
   const brandIds = searchParams.getAll("brandIds");
 
-  // NOT (col IS TRUE) → includes NULL and false, excludes only explicit true
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q: any = supabaseAdmin
     .from("order_items")
-    .select(
-      `id, 고유_번호, brand_id, product_id, 데드라인, 매몰, 주물, 출고예정일, 소재_최종, 도금_색상, 작업_위치, 작업지시서, 호수, 수량, 고객명, 중량, 검수, 검수_담당, 공임_조정액, 각인_내용, 생산시작일, 상태, 작업_단계, 발주일`
-    )
+    .select(`id, 고유_번호, product_id`)
     .not("중단_취소", "is", true)
     .not("숨기기", "is", true)
     .order("발주일", { ascending: false });
@@ -28,45 +25,14 @@ export async function GET(request: NextRequest) {
   if (brandIds.length > 0) q = q.in("brand_id", brandIds);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: items, error } = await q as { data: any[]; error: any };
+  const { data, error } = await q as { data: any[]; error: any };
 
   if (error) {
-    console.error("[order-items] main query error:", error.message);
+    console.error("[order-items] query error:", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  if (!items || items.length === 0) {
-    return NextResponse.json({ data: [] });
-  }
 
-  // Fetch ALL brands and products (reference tables — always small)
-  const [brandsRes, productsRes] = await Promise.all([
-    supabaseAdmin.from("brands").select("id, name"),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabaseAdmin as any).from("products").select(`id, "제품명"`),
-  ]);
+  console.log(`[order-items] count=${data?.length ?? 0} first_product_id=${data?.[0]?.product_id ?? "none"}`);
 
-  if (brandsRes.error) {
-    console.error("[order-items] brands fetch error:", brandsRes.error.message);
-  }
-  if (productsRes.error) {
-    console.error("[order-items] products fetch error:", productsRes.error.message);
-  }
-
-  console.log(
-    `[order-items] items=${items.length} brands=${brandsRes.data?.length ?? 0} products=${productsRes.data?.length ?? 0}`
-  );
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const brandMap = new Map((brandsRes.data ?? []).map((b: any) => [b.id, b.name]));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const productMap = new Map((productsRes.data ?? []).map((p: any) => [p.id, p["제품명"]]));
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = items.map((item: any) => ({
-    ...item,
-    brands: { name: brandMap.get(item.brand_id) ?? "" },
-    products: { "제품명": productMap.get(item.product_id) ?? "" },
-  }));
-
-  return NextResponse.json({ data });
+  return NextResponse.json({ data: data ?? [] });
 }
