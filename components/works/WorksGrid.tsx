@@ -4,16 +4,22 @@ import { useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 
-type Item = {
-  id: string
-  고유_번호: string
-  product_id: string
+type Orders = {
   발주일: string | null
   생산시작일: string | null
-  데드라인: string | null
+  고객명: string | null
+  brands: { name: string } | null
   products: { 제품명: string; 제작_소요일: number | null } | null
   metals: { name: string; purity: string | null } | null
   metal_prices: { price_per_gram: number | null } | null
+}
+
+type Item = {
+  id: string
+  고유_번호: string
+  데드라인: string | null
+  작업_단계: string | null
+  orders: Orders | null
 }
 
 type Row = {
@@ -43,7 +49,6 @@ const COLUMNS = [
   { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
 ]
 
-const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
 const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요', '🟠 RP 출력 필요', '🟢 생산 완료', '🟣 현장/광 작업 중', '🟧 RP 출력 중', '외부 제작 제품']
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
@@ -73,7 +78,6 @@ function addWorkdays(startDate: Date, days: number, hs: Set<string>): Date {
     if (day !== 0 && day !== 6 && !hs.has(str)) count++
     if (count < days) current.setDate(current.getDate() + 1)
   }
-  // current = 마지막 생산일 → 그 다음 영업일이 출고예정일
   return nextWorkday(current, hs)
 }
 
@@ -81,12 +85,10 @@ function calcShipDate(item: Item, hs: Set<string>): string {
   if (item.데드라인) {
     return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
   }
-  if (item.생산시작일 && item.products?.제작_소요일) {
-    return addWorkdays(
-      new Date(item.생산시작일),
-      Number(item.products.제작_소요일),
-      hs
-    ).toISOString().slice(0, 10)
+  const 생산시작일 = item.orders?.생산시작일
+  const 제작_소요일 = item.orders?.products?.제작_소요일
+  if (생산시작일 && 제작_소요일) {
+    return addWorkdays(new Date(생산시작일), Number(제작_소요일), hs).toISOString().slice(0, 10)
   }
   return '-'
 }
@@ -182,7 +184,6 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
 
   const [search, setSearch] = useState('')
-  const [statuses, setStatuses] = useState<string[]>([])
   const [stages, setStages] = useState<string[]>([])
 
   // Load holidays once on mount (cached in module-level Set)
@@ -197,7 +198,7 @@ export default function WorksGrid() {
   }, [])
 
   const debouncedSearch = useDebounce(search, 300)
-  const hasFilters = debouncedSearch.length > 0 || statuses.length > 0 || stages.length > 0
+  const hasFilters = debouncedSearch.length > 0 || stages.length > 0
 
   useEffect(() => {
     if (!hasFilters) {
@@ -210,7 +211,6 @@ export default function WorksGrid() {
 
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('search', debouncedSearch)
-    statuses.forEach(s => params.append('statuses', s))
     stages.forEach(s => params.append('stages', s))
 
     fetch(`/api/order-items?${params}`)
@@ -218,37 +218,33 @@ export default function WorksGrid() {
       .then(({ data }) => {
         if (cancelled) return
         setRows((data ?? []).map((item: Item) => {
-          const 제품명 = item.products?.['제품명'] ?? ''
+          const o = item.orders
+          const 제품명 = o?.products?.['제품명'] ?? ''
           const 코드 = item.고유_번호?.length === 15
             ? item.고유_번호.slice(-4)
             : item.고유_번호?.slice(-6) ?? ''
+          const pricePerGram = o?.metal_prices?.price_per_gram ?? null
+          const purity = Number(o?.metals?.purity ?? 0)
           return {
             고유_번호: item.고유_번호 ?? '',
             제품명,
             제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
-            metals: { name: item.metals?.name ?? '', purity: item.metals?.purity ?? null },
-            발주일: formatDate(item.발주일),
-            생산시작일: formatDate(item.생산시작일),
+            metals: { name: o?.metals?.name ?? '', purity: o?.metals?.purity ?? null },
+            발주일: formatDate(o?.발주일),
+            생산시작일: formatDate(o?.생산시작일),
             데드라인: formatDate(item.데드라인),
             출고예정일: calcShipDate(item, holidaySet),
-            시세_g당: (() => {
-              const p = item.metal_prices?.price_per_gram
-              return p != null ? Math.floor(p).toLocaleString() : ''
-            })(),
-            소재비: (() => {
-              const p = item.metal_prices?.price_per_gram
-              const purity = Number(item.metals?.purity ?? 0)
-              return (p != null && purity > 0)
-                ? Math.floor(p * purity * 1.1).toLocaleString()
-                : ''
-            })(),
+            시세_g당: pricePerGram != null ? Math.floor(pricePerGram).toLocaleString() : '',
+            소재비: (pricePerGram != null && purity > 0)
+              ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
+              : '',
           }
         }))
       })
       .finally(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
-  }, [debouncedSearch, statuses, stages, hasFilters])
+  }, [debouncedSearch, stages, hasFilters])
 
   // Initialize Handsontable once
   useEffect(() => {
@@ -283,12 +279,11 @@ export default function WorksGrid() {
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
-          placeholder="고유번호, 고객명 검색…"
+          placeholder="고유번호 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="border rounded px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-        <MultiSelect label="상태" options={STATUS_OPTIONS} selected={statuses} onChange={setStatuses} />
         <MultiSelect label="작업단계" options={STAGE_OPTIONS} selected={stages} onChange={setStages} />
         <span className="ml-auto text-sm text-gray-500">
           {loading ? '로딩 중…' : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
