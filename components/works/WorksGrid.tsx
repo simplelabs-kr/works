@@ -13,6 +13,7 @@ type Item = {
   데드라인: string | null
   products: { 제품명: string; 제작_소요일: number | null } | null
   metals: { name: string; purity: string | null } | null
+  metal_prices: { price_per_gram: number | null } | null
 }
 
 type Row = {
@@ -24,6 +25,8 @@ type Row = {
   생산시작일: string
   데드라인: string
   출고예정일: string
+  시세_g당: string
+  소재비: string
 }
 
 const COLUMNS = [
@@ -36,6 +39,8 @@ const COLUMNS = [
   { data: '생산시작일',   title: '생산시작일',       width: 110 },
   { data: '데드라인',    title: '데드라인',          width: 110 },
   { data: '출고예정일',   title: '출고예정일',       width: 110 },
+  { data: '시세_g당',    title: '시세 (g당)',       readOnly: true, width: 80  },
+  { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
 ]
 
 const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
@@ -226,6 +231,17 @@ export default function WorksGrid() {
             생산시작일: formatDate(item.생산시작일),
             데드라인: formatDate(item.데드라인),
             출고예정일: calcShipDate(item, holidaySet),
+            시세_g당: (() => {
+              const p = item.metal_prices?.price_per_gram
+              return p != null ? Math.floor(p).toLocaleString() : ''
+            })(),
+            소재비: (() => {
+              const p = item.metal_prices?.price_per_gram
+              const purity = Number(item.metals?.purity ?? 0)
+              return (p != null && purity > 0)
+                ? Math.floor(p * purity * 1.1).toLocaleString()
+                : ''
+            })(),
           }
         }))
       })
