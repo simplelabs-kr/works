@@ -12,12 +12,14 @@ type Item = {
   생산시작일: string | null
   데드라인: string | null
   products: { 제품명: string; 제작_소요일: number | null } | null
+  metals: { name: string; purity: string | null } | null
 }
 
 type Row = {
   고유_번호: string
   제품명: string
   제품명_코드: string
+  metals: { name: string; purity: string | null }
   발주일: string
   생산시작일: string
   데드라인: string
@@ -25,13 +27,15 @@ type Row = {
 }
 
 const COLUMNS = [
-  { data: '고유_번호',   title: '고유번호',        width: 140 },
-  { data: '제품명',     title: '제품명',           width: 200 },
-  { data: '제품명_코드', title: '제품명(코드 포함)', width: 220 },
-  { data: '발주일',     title: '발주일',           width: 110 },
-  { data: '생산시작일',  title: '생산시작일',        width: 110 },
-  { data: '데드라인',   title: '데드라인',          width: 110 },
-  { data: '출고예정일',  title: '출고예정일',        width: 110 },
+  { data: '고유_번호',    title: '고유번호',        width: 140 },
+  { data: '제품명',      title: '제품명',          width: 200 },
+  { data: '제품명_코드',  title: '제품명(코드 포함)', width: 220 },
+  { data: 'metals.name',  title: '소재',           readOnly: true, width: 100 },
+  { data: 'metals.purity', title: '함량비',         readOnly: true, width: 70  },
+  { data: '발주일',      title: '발주일',           width: 110 },
+  { data: '생산시작일',   title: '생산시작일',       width: 110 },
+  { data: '데드라인',    title: '데드라인',          width: 110 },
+  { data: '출고예정일',   title: '출고예정일',       width: 110 },
 ]
 
 const STATUS_OPTIONS = ['♻️ 폐기', '⚒️ 제작 중', '⭕️ 발송 완료', '🎁 포장 대기중', '🚛 발송 대기중']
@@ -217,6 +221,7 @@ export default function WorksGrid() {
             고유_번호: item.고유_번호 ?? '',
             제품명,
             제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
+            metals: { name: item.metals?.name ?? '', purity: item.metals?.purity ?? null },
             발주일: formatDate(item.발주일),
             생산시작일: formatDate(item.생산시작일),
             데드라인: formatDate(item.데드라인),
