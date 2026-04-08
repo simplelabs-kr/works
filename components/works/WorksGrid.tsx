@@ -18,7 +18,6 @@ type Item = {
   id: string
   고유_번호: string
   데드라인: string | null
-  작업_단계: string | null
   orders: Orders | null
 }
 
@@ -48,8 +47,6 @@ const COLUMNS = [
   { data: '시세_g당',    title: '시세 (g당)',       readOnly: true, width: 80  },
   { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
 ]
-
-const STAGE_OPTIONS = ['🔥 주물 작업 필요', '🔵 왁스 작업 필요', '🟠 RP 출력 필요', '🟢 생산 완료', '🟣 현장/광 작업 중', '🟧 RP 출력 중', '외부 제작 제품']
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
 
@@ -184,7 +181,6 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
 
   const [search, setSearch] = useState('')
-  const [stages, setStages] = useState<string[]>([])
 
   // Load holidays once on mount (cached in module-level Set)
   useEffect(() => {
@@ -198,7 +194,7 @@ export default function WorksGrid() {
   }, [])
 
   const debouncedSearch = useDebounce(search, 300)
-  const hasFilters = debouncedSearch.length > 0 || stages.length > 0
+  const hasFilters = debouncedSearch.length > 0
 
   useEffect(() => {
     if (!hasFilters) {
@@ -211,7 +207,6 @@ export default function WorksGrid() {
 
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('search', debouncedSearch)
-    stages.forEach(s => params.append('stages', s))
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
@@ -244,7 +239,7 @@ export default function WorksGrid() {
       .finally(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
-  }, [debouncedSearch, stages, hasFilters])
+  }, [debouncedSearch, hasFilters])
 
   // Initialize Handsontable once
   useEffect(() => {
@@ -279,13 +274,12 @@ export default function WorksGrid() {
       <div className="flex flex-wrap items-center gap-2">
         <input
           type="text"
-          placeholder="고유번호 검색…"
+          placeholder="고유번호 또는 제품명 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="border rounded px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
-        <MultiSelect label="작업단계" options={STAGE_OPTIONS} selected={stages} onChange={setStages} />
-        <span className="ml-auto text-sm text-gray-500">
+<span className="ml-auto text-sm text-gray-500">
           {loading ? '로딩 중…' : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
         </span>
       </div>
