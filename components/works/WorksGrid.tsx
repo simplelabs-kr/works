@@ -28,11 +28,22 @@ type Orders = {
   metals: { name: string; purity: string | null } | null
 }
 
+type Purchase = {
+  이름: string | null
+  구분: string | null
+  발주: boolean | null
+  수령: boolean | null
+  재고_사용: boolean | null
+  material_id: string | null
+  materials: { 품목명: string } | null
+}
+
 type Item = {
   id: string
   고유_번호: string
   수량: number | null
   중량: number | null
+  디자이너_노트: string | null
   데드라인: string | null
   출고일: string | null
   발송일: string | null
@@ -47,7 +58,15 @@ type Item = {
   order_id: string | null
   orders: Orders | null
   metal_prices: { price_per_gram: number | null } | null
-  products: { 제품명: string; 제작_소요일: number | null } | null
+  products: {
+    제품명: string
+    제작_소요일: number | null
+    기준_중량: number | null
+    기본_공임: number | null
+    검수_유의: string | null
+  } | null
+  bundles: { 번들_고유번호: string | null } | null
+  purchases: Purchase[] | null
 }
 
 type Row = {
@@ -64,6 +83,21 @@ type Row = {
   발주_수량: number | null
   수량: number | null
   호수: string | null
+  고객명: string
+  디자이너_노트: string
+  중량: number | null
+  검수: string
+  허용_중량_범위: string
+  중량_검토: string
+  기타_옵션: string
+  각인_내용: string
+  각인_폰트: string
+  기본_공임: number | null
+  공임_조정액: number | null
+  확정_공임: number | null
+  번들_명칭: string
+  원부자재: string
+  발주_현황: string
 }
 
 type SortCol = '발주일' | '생산시작일' | '데드라인'
@@ -88,9 +122,24 @@ const COLUMNS = [
   { data: '출고예정일',   title: '출고예정일',       width: 110 },
   { data: '시세_g당',    title: '시세 (g당)',       readOnly: true, width: 80  },
   { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
-  { data: '발주_수량',   title: '발주 수량',         readOnly: true, width: 80  },
-  { data: '수량',        title: '수량',             readOnly: true, width: 70  },
-  { data: '호수',        title: '호수',             readOnly: true, width: 70  },
+  { data: '발주_수량',    title: '발주 수량',    readOnly: true, width: 80  },
+  { data: '수량',         title: '수량',         readOnly: true, width: 70  },
+  { data: '호수',         title: '호수',         readOnly: true, width: 70  },
+  { data: '고객명',       title: '고객명',       readOnly: true, width: 100 },
+  { data: '디자이너_노트', title: '디자이너 노트', readOnly: true, width: 200 },
+  { data: '중량',         title: '중량',         readOnly: true, width: 70  },
+  { data: '검수',         title: '검수',         readOnly: true, width: 50  },
+  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130 },
+  { data: '중량_검토',    title: '중량 검토',    readOnly: true, width: 70  },
+  { data: '기타_옵션',    title: '기타 옵션',    readOnly: true, width: 120 },
+  { data: '각인_내용',    title: '각인 내용',    readOnly: true, width: 100 },
+  { data: '각인_폰트',    title: '각인 폰트',    readOnly: true, width: 80  },
+  { data: '기본_공임',    title: '기본 공임',    readOnly: true, width: 80  },
+  { data: '공임_조정액',  title: '공임 조정액',  readOnly: true, width: 80  },
+  { data: '확정_공임',    title: '확정 공임',    readOnly: true, width: 80  },
+  { data: '번들_명칭',    title: '번들 명칭',    readOnly: true, width: 120 },
+  { data: '원부자재',     title: '원부자재',     readOnly: true, width: 150 },
+  { data: '발주_현황',    title: '발주 현황',    readOnly: true, width: 150 },
 ]
 
 // 정렬 가능한 컬럼: 제목 → col index
@@ -179,6 +228,33 @@ function mapItem(item: Item): Row {
     발주_수량: o?.수량 ?? null,
     수량: item.수량 ?? null,
     호수: o?.호수 ?? null,
+    고객명: o?.고객명 ?? '',
+    디자이너_노트: item.디자이너_노트 ?? '',
+    중량: item.중량 ?? null,
+    검수: item.검수 ? '✅' : '',
+    허용_중량_범위: item.products?.기준_중량 != null
+      ? `${(item.products.기준_중량 * 0.9).toFixed(2)} ~ ${(item.products.기준_중량 * 1.1).toFixed(2)} g`
+      : '',
+    중량_검토: (() => {
+      const w = item.중량
+      const base = item.products?.기준_중량 ?? null
+      if (w == null || base == null) return ''
+      return (w >= base * 0.9 && w <= base * 1.1) ? '✅' : '⚠️'
+    })(),
+    기타_옵션: o?.기타_옵션 ?? '',
+    각인_내용: o?.각인_내용 ?? '',
+    각인_폰트: o?.각인_폰트 ?? '',
+    기본_공임: item.products?.기본_공임 ?? null,
+    공임_조정액: o?.공임_조정액 ?? null,
+    확정_공임: o?.확정_공임 ?? null,
+    번들_명칭: item.bundles?.번들_고유번호 ?? '',
+    원부자재: (item.purchases ?? []).map(p => p.materials?.품목명 || p.이름 || '').join('\n'),
+    발주_현황: (item.purchases ?? []).map(p => {
+      if (p.재고_사용) return '재고사용'
+      if (p.수령) return '✅발주 ✅수령'
+      if (p.발주) return '✅발주 수령대기'
+      return '발주대기'
+    }).join('\n'),
   }
 }
 

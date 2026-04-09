@@ -20,6 +20,7 @@ const SELECT = `
   출고,
   가다번호,
   가다_위치,
+  디자이너_노트,
   bundle_id,
   metal_price_id,
   order_id,
@@ -47,7 +48,17 @@ const SELECT = `
     metals!orders_metal_id_fkey(name, purity)
   ),
   metal_prices!order_items_metal_price_id_fkey(price_per_gram),
-  products!order_items_product_id_direct_fkey(제품명, 제작_소요일)
+  products!order_items_product_id_direct_fkey(제품명, 제작_소요일, 기준_중량, 기본_공임, 검수_유의),
+  bundles!order_items_bundle_id_fkey(번들_고유번호),
+  purchases!purchases_order_item_id_fkey(
+    이름,
+    구분,
+    발주,
+    수령,
+    재고_사용,
+    material_id,
+    materials!purchases_material_id_fkey(품목명)
+  )
 `;
 
 export async function GET(request: NextRequest) {
