@@ -112,7 +112,7 @@ export async function GET(request: NextRequest) {
   }
 
   // RPC가 반환한 순서 유지
-  const idOrder = new Map(ids.map((id: string, i: number) => [id, i]));
+  const idOrder = new Map<string, number>(ids.map((id: string, i: number) => [id, i]));
   const sorted = (data ?? []).sort(
     (a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0)
   );
