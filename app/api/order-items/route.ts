@@ -56,98 +56,31 @@ export async function GET(request: NextRequest) {
     .order("id", { ascending: false });
 
   if (search) {
-    // Step 1: products에서 제품명 ilike 검색 → productIds 수집
-    const { data: productRows } = await supabaseAdmin
-      .from("products")
-      .select("id")
-      .ilike("제품명", `%${search}%`)
-      .limit(50);
+    // Step 1: RPC로 검색 조건에 맞는 order_item id 목록 수집
+    const { data: rpcRows, error: rpcError } = await supabaseAdmin
+      .rpc("search_order_items", { search_term: search });
 
-    console.log("[order-items] search:", search);
-    console.log("[order-items] productRows:", JSON.stringify(productRows));
-    const productIds = (productRows ?? []).map((p: { id: number }) => p.id);
-    console.log("[order-items] productIds:", productIds);
-
-    // Step 2: 고유번호 검색(q1)과 product_id 기반 검색(q2) 병렬 실행
-    console.log("[order-items] productIds.length before q2:", productIds.length);
-    const baseQuery = () =>
-      supabaseAdmin
-        .from("order_items")
-        .select(`
-      id,
-      고유_번호,
-      중량,
-      데드라인,
-      출고일,
-      발송일,
-      중단_취소,
-      검수,
-      포장,
-      출고,
-      가다번호,
-      가다_위치,
-      bundle_id,
-      metal_price_id,
-      order_id,
-      orders!order_items_order_id_fkey(
-        brand_id,
-        product_id,
-        수량,
-        발주일,
-        생산시작일,
-        소재,
-        metal_id,
-        고객명,
-        각인_내용,
-        각인_폰트,
-        기타_옵션,
-        호수,
-        확정_공임,
-        공임_조정액,
-        회차,
-        도금_색상,
-        체인_길이,
-        체인_두께,
-        brands!orders_brand_id_fkey(name),
-        products!orders_product_id_fkey(제품명, 제작_소요일),
-        metals!orders_metal_id_fkey(name, purity)
-      ),
-      metal_prices!order_items_metal_price_id_fkey(price_per_gram),
-      products!order_items_product_id_direct_fkey(제품명, 제작_소요일)
-    `)
-        .not("중단_취소", "is", true)
-        .order("id", { ascending: false });
-
-    const q1Promise = baseQuery().ilike("고유_번호", `%${search}%`);
-    const q2Promise = productIds.length > 0
-      ? baseQuery().in("product_id", productIds)
-      : Promise.resolve({ data: [], error: null });
-
-    const [r1, r2] = await Promise.all([q1Promise, q2Promise]);
-
-    console.log("[order-items] r1.data?.length:", r1.data?.length);
-    console.log("[order-items] r2.data?.length:", r2.data?.length);
-
-    if (r1.error) {
-      console.error("[order-items] q1 error:", r1.error.message);
-      return NextResponse.json({ error: r1.error.message }, { status: 500 });
-    }
-    if (r2.error) {
-      console.error("[order-items] q2 error:", r2.error.message);
-      return NextResponse.json({ error: r2.error.message }, { status: 500 });
+    if (rpcError) {
+      console.error("[order-items] rpc error:", rpcError.message);
+      return NextResponse.json({ error: rpcError.message }, { status: 500 });
     }
 
-    // Step 3: id 기준 중복 제거
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seen = new Set<string>();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const merged = [...(r1.data ?? []), ...(r2.data ?? [])].filter((item: any) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
+    const ids = (rpcRows ?? []).map((r: any) => r.id);
 
-    return NextResponse.json({ data: merged });
+    if (ids.length === 0) {
+      return NextResponse.json({ data: [] });
+    }
+
+    // Step 2: 수집된 ids로 전체 데이터 조회
+    const { data, error } = await q.in("id", ids) as { data: any[]; error: any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    if (error) {
+      console.error("[order-items] query error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ data: data ?? [] });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

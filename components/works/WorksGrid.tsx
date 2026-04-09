@@ -210,6 +210,9 @@ export default function WorksGrid() {
   const [apiError, setApiError] = useState<string | null>(null)
 
   const [search, setSearch] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
+
+  const handleSearch = () => setSubmittedSearch(search.trim())
 
   // Load holidays once on mount (cached in module-level Set)
   useEffect(() => {
@@ -222,8 +225,7 @@ export default function WorksGrid() {
       })
   }, [])
 
-  const debouncedSearch = useDebounce(search, 300)
-  const hasFilters = debouncedSearch.length > 0
+  const hasFilters = submittedSearch.length > 0
 
   useEffect(() => {
     if (!hasFilters) {
@@ -237,7 +239,7 @@ export default function WorksGrid() {
     setApiError(null)
 
     const params = new URLSearchParams()
-    if (debouncedSearch) params.set('search', debouncedSearch)
+    params.set('search', submittedSearch)
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
@@ -271,7 +273,7 @@ export default function WorksGrid() {
       .finally(() => { if (!cancelled) setLoading(false) })
 
     return () => { cancelled = true }
-  }, [debouncedSearch, hasFilters])
+  }, [submittedSearch, hasFilters])
 
   // Initialize Handsontable once
   useEffect(() => {
@@ -309,8 +311,15 @@ export default function WorksGrid() {
           placeholder="고유번호 또는 제품명 검색…"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
           className="border rounded px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
+        <button
+          onClick={handleSearch}
+          className="rounded bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 active:bg-blue-700"
+        >
+          검색
+        </button>
 <span className="ml-auto text-sm text-gray-500">
           {loading ? '로딩 중…' : apiError ? <span className="text-red-500 text-xs">{apiError}</span> : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
         </span>
