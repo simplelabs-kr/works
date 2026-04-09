@@ -21,6 +21,7 @@ type Orders = {
   공임_조정액: number | null
   회차: number | null
   도금_색상: string | null
+  사출_방식: string | null
   체인_길이: string | null
   체인_두께: string | null
   brands: { name: string } | null
@@ -53,6 +54,10 @@ type Item = {
   출고: boolean | null
   가다번호: string | null
   가다_위치: string | null
+  작업_위치: string | null
+  주물_후_수량: number | null
+  rp_출력_시작: boolean | null
+  왁스_파트_전달: boolean | null
   bundle_id: string | null
   metal_price_id: string | null
   order_id: string | null
@@ -98,6 +103,17 @@ type Row = {
   번들_명칭: string
   원부자재: string
   발주_현황: string
+  작업_위치: string
+  검수_유의: string
+  도금_색상: string
+  사출_방식: string
+  가다번호: string
+  가다_위치: string
+  주물_후_수량: number | null
+  포장: string
+  순금_중량: string
+  rp_출력_시작: string
+  왁스_파트_전달: string
 }
 
 type SortCol = '발주일' | '생산시작일' | '데드라인'
@@ -140,6 +156,17 @@ const COLUMNS = [
   { data: '번들_명칭',    title: '번들 명칭',    readOnly: true, width: 120 },
   { data: '원부자재',     title: '원부자재',     readOnly: true, width: 150 },
   { data: '발주_현황',    title: '발주 현황',    readOnly: true, width: 150 },
+  { data: '작업_위치',    title: '작업 위치',    readOnly: true, width: 90  },
+  { data: '검수_유의',    title: '검수 포인트',   readOnly: true, width: 150 },
+  { data: '도금_색상',    title: '도금 색상',    readOnly: true, width: 90  },
+  { data: '사출_방식',    title: '사출 방식',    readOnly: true, width: 90  },
+  { data: '가다번호',     title: '가다번호',     readOnly: true, width: 90  },
+  { data: '가다_위치',    title: '가다 위치',    readOnly: true, width: 90  },
+  { data: '주물_후_수량', title: '주물 후 수량',  readOnly: true, width: 80  },
+  { data: '포장',         title: '포장',         readOnly: true, width: 50  },
+  { data: '순금_중량',    title: '순금 중량',    readOnly: true, width: 80  },
+  { data: 'rp_출력_시작', title: 'RP 출력 시작',  readOnly: true, width: 80  },
+  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: true, width: 100 },
 ]
 
 // 정렬 가능한 컬럼: 제목 → col index
@@ -255,6 +282,19 @@ function mapItem(item: Item): Row {
       if (p.발주) return '✅발주 수령대기'
       return '발주대기'
     }).join('\n'),
+    작업_위치: item.작업_위치 ?? '',
+    검수_유의: item.products?.검수_유의 ?? '',
+    도금_색상: o?.도금_색상 ?? '',
+    사출_방식: o?.사출_방식 ?? '',
+    가다번호: item.가다번호 ?? '',
+    가다_위치: item.가다_위치 ?? '',
+    주물_후_수량: item.주물_후_수량 ?? null,
+    포장: item.포장 ? '✅' : '',
+    순금_중량: (item.중량 != null && purity > 0)
+      ? (item.중량 * (purity / 100)).toFixed(3)
+      : '',
+    rp_출력_시작: item.rp_출력_시작 ? '✅' : '',
+    왁스_파트_전달: item.왁스_파트_전달 ? '✅' : '',
   }
 }
 
