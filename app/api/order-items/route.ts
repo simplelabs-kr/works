@@ -130,8 +130,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 3: id 기준 중복 제거
-    const seen = new Set<number>();
-    const merged = [...(r1.data ?? []), ...(r2.data ?? [])].filter((item) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seen = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const merged = [...(r1.data ?? []), ...(r2.data ?? [])].filter((item: any) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
       return true;
