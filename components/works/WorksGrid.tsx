@@ -499,6 +499,7 @@ export default function WorksGrid() {
       const hot = hotRef.current
       if (!hot) return
       const lastVisible = hot.getLastFullyVisibleRow()
+      if (lastVisible === null) return
       const total = hot.countRows()
       if (total > 0 && lastVisible >= Math.floor(total * 0.9)) {
         scrollLoadRef.current?.()
