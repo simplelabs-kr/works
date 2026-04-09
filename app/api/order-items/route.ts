@@ -49,12 +49,15 @@ export async function GET(request: NextRequest) {
         products!orders_product_id_fkey(제품명, 제작_소요일),
         metals!orders_metal_id_fkey(name, purity)
       ),
-      metal_prices!order_items_metal_price_id_fkey(price_per_gram)
+      metal_prices!order_items_metal_price_id_fkey(price_per_gram),
+      products!order_items_product_id_direct_fkey(제품명, 제작_소요일)
     `)
     .not("중단_취소", "is", true)
     .order("id", { ascending: false });
 
-  if (search) q = q.ilike("고유_번호", `%${search}%`);
+  if (search) {
+    q = q.or(`고유_번호.ilike.%${search}%,products.제품명.ilike.%${search}%`);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await q as { data: any[]; error: any };

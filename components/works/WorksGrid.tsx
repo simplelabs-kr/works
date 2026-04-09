@@ -46,6 +46,7 @@ type Item = {
   order_id: string | null
   orders: Orders | null
   metal_prices: { price_per_gram: number | null } | null
+  products: { 제품명: string; 제작_소요일: number | null } | null
 }
 
 type Row = {
@@ -110,7 +111,7 @@ function calcShipDate(item: Item, hs: Set<string>): string {
     return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
   }
   const 생산시작일 = item.orders?.생산시작일
-  const 제작_소요일 = item.orders?.products?.제작_소요일
+  const 제작_소요일 = item.products?.제작_소요일
   if (생산시작일 && 제작_소요일) {
     return addWorkdays(new Date(생산시작일), Number(제작_소요일), hs).toISOString().slice(0, 10)
   }
@@ -245,7 +246,7 @@ export default function WorksGrid() {
         if (error) { setApiError(error); return }
         setRows((data ?? []).map((item: Item) => {
           const o = item.orders
-          const 제품명 = o?.products?.['제품명'] ?? ''
+          const 제품명 = item.products?.['제품명'] ?? ''
           const 코드 = item.고유_번호?.length === 15
             ? item.고유_번호.slice(-4)
             : item.고유_번호?.slice(-6) ?? ''
