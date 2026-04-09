@@ -1,3 +1,76 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Base ─────────────────────────────────────────────────────── */
+body {
+  background: #F8F9FA;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Handsontable overrides ───────────────────────────────────── */
+.handsontable thead th {
+  background: #F9FAFB !important;
+  color: #374151 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+  border-bottom: 2px solid #E5E7EB !important;
+  padding: 8px 10px !important;
+}
+
+.handsontable td {
+  font-size: 13px !important;
+  color: #111827 !important;
+  padding: 8px 10px !important;
+  border-color: #F3F4F6 !important;
+  vertical-align: middle !important;
+}
+
+.handsontable tbody tr:hover td {
+  background: #F9FAFB !important;
+}
+
+.handsontable tbody tr:nth-child(even) td {
+  background: #FAFAFA !important;
+}
+
+.handsontable tr {
+  height: 36px !important;
+}
+
+/* row header */
+.handsontable th.htRowHeader {
+  background: #F9FAFB !important;
+  color: #9CA3AF !important;
+  font-size: 11px !important;
+  border-color: #F3F4F6 !important;
+}
+
+/* corner header */
+.handsontable .cornerHeader {
+  background: #F9FAFB !important;
+}
+
+/* selected cell */
+.handsontable td.area {
+  background: #EFF6FF !important;
+}
+.handsontable td.current {
+  outline: 2px solid #3B82F6 !important;
+  outline-offset: -2px;
+}
+
+/* scrollbar */
+.handsontable .wtHolder::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.handsontable .wtHolder::-webkit-scrollbar-track {
+  background: transparent;
+}
+.handsontable .wtHolder::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 3px;
+}

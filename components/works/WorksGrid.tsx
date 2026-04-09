@@ -467,60 +467,60 @@ export default function WorksGrid() {
   const showLoadMore = !loadingMore && totalCount !== null && rows.length < totalCount
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-0">
       {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-0.5">
-          <label className="text-xs text-gray-500">제품명/고유번호</label>
+      <div className="flex flex-wrap items-end gap-3 rounded-t-lg border border-[#E5E7EB] bg-white px-5 py-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">제품명/고유번호</label>
           <input
             type="text"
             placeholder="검색어"
             value={inputSearch}
             onChange={e => setInputSearch(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="border rounded px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-48 rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#6B7280] focus:outline-none"
           />
         </div>
-        <div className="flex flex-col gap-0.5">
-          <label className="text-xs text-gray-500">브랜드</label>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">브랜드</label>
           <input
             type="text"
             placeholder="브랜드명"
             value={inputBrand}
             onChange={e => setInputBrand(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="border rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="w-36 rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#6B7280] focus:outline-none"
           />
         </div>
-        <div className="flex flex-col gap-0.5">
-          <label className="text-xs text-gray-500">발주일</label>
-          <div className="flex items-center gap-1">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">발주일</label>
+          <div className="flex items-center gap-1.5">
             <input
               type="date"
               value={inputDateFrom}
               onChange={e => setInputDateFrom(e.target.value)}
-              className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] focus:border-[#6B7280] focus:outline-none"
             />
-            <span className="text-gray-400 text-sm">~</span>
+            <span className="text-[#9CA3AF] text-sm">–</span>
             <input
               type="date"
               value={inputDateTo}
               onChange={e => setInputDateTo(e.target.value)}
-              className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] focus:border-[#6B7280] focus:outline-none"
             />
           </div>
         </div>
         <button
           onClick={handleSearch}
-          className="rounded bg-blue-500 px-4 py-1.5 text-sm text-white hover:bg-blue-600 active:bg-blue-700 self-end"
+          className="self-end rounded-[6px] bg-[#111827] px-[14px] py-[6px] text-[13px] font-medium text-white hover:bg-[#1F2937] active:bg-[#374151] transition-colors"
         >
           검색
         </button>
-        <span className="ml-auto self-end text-sm text-gray-500">
+        <span className="ml-auto self-end text-[12px] text-[#6B7280]">
           {loading
             ? '로딩 중…'
             : apiError
-            ? <span className="text-red-500 text-xs">{apiError}</span>
+            ? <span className="text-red-500">{apiError}</span>
             : hasAnyFilter && totalCount !== null
             ? `총 ${totalCount.toLocaleString()}건 중 ${rows.length.toLocaleString()}건 표시`
             : null}
@@ -528,23 +528,23 @@ export default function WorksGrid() {
       </div>
 
       {!hasAnyFilter && (
-        <div className="flex h-64 items-center justify-center rounded border border-dashed border-gray-200 text-sm text-gray-400">
-          필터를 선택하면 결과가 표시됩니다
+        <div className="flex h-64 items-center justify-center rounded-b-lg border border-t-0 border-dashed border-[#E5E7EB] bg-white text-[13px] text-[#9CA3AF]">
+          필터를 입력하고 검색하면 결과가 표시됩니다
         </div>
       )}
 
-      <div className={`${!hasAnyFilter ? 'hidden' : ''} ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`${!hasAnyFilter ? 'hidden' : ''} ${loading ? 'opacity-50 pointer-events-none' : ''} rounded-b-lg border border-t-0 border-[#E5E7EB] bg-white overflow-hidden`}>
         <div ref={containerRef} />
       </div>
 
       {showLoadMore && (
-        <div className="flex justify-center">
+        <div className="flex justify-center pt-3">
           <button
             onClick={() => {
               isAppend.current = true
               setOffset(o => o + 100)
             }}
-            className="rounded border px-6 py-1.5 text-sm text-gray-600 hover:bg-gray-50 active:bg-gray-100"
+            className="rounded-[6px] border border-[#D1D5DB] bg-white px-6 py-[6px] text-[13px] text-[#374151] hover:bg-[#F9FAFB] active:bg-[#F3F4F6] transition-colors"
           >
             더보기 ({rows.length.toLocaleString()} / {totalCount.toLocaleString()})
           </button>
@@ -552,7 +552,7 @@ export default function WorksGrid() {
       )}
 
       {loadingMore && (
-        <div className="flex justify-center text-sm text-gray-400">로딩 중…</div>
+        <div className="flex justify-center pt-3 text-[12px] text-[#9CA3AF]">로딩 중…</div>
       )}
     </div>
   )

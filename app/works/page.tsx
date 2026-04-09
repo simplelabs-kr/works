@@ -9,9 +9,16 @@ const WorksGrid = dynamic(() => import('@/components/works/WorksGrid'), {
 
 export default function WorksPage() {
   return (
-    <div className="px-6 py-4">
-      <h1 className="mb-4 text-xl font-semibold">Works</h1>
-      <WorksGrid />
+    <div className="min-h-screen bg-[#F8F9FA]">
+      {/* Top bar */}
+      <div className="border-b border-[#E5E7EB] bg-white px-6 py-4">
+        <h1 className="text-[18px] font-bold text-[#111827] tracking-tight">Works</h1>
+      </div>
+
+      {/* Content */}
+      <div className="px-6 py-5">
+        <WorksGrid />
+      </div>
     </div>
   )
 }
