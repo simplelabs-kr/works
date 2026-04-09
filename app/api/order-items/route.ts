@@ -53,7 +53,17 @@ const SELECT = `
     metals!orders_metal_id_fkey(name, purity)
   ),
   metal_prices!order_items_metal_price_id_fkey(price_per_gram),
-  products!order_items_product_id_direct_fkey(제품명, 제작_소요일, 기준_중량, 기본_공임, 검수_유의),
+  products!order_items_product_id_direct_fkey(
+    제품명,
+    제작_소요일,
+    기준_중량,
+    기본_공임,
+    검수_유의,
+    molds!products_mold_id_fkey(
+      가다번호,
+      mold_positions!molds_mold_position_id_fkey(보관함_위치)
+    )
+  ),
   bundles!order_items_bundle_id_fkey(번들_고유번호),
   purchases!purchases_order_item_id_fkey(
     이름,

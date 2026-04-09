@@ -69,6 +69,10 @@ type Item = {
     기준_중량: number | null
     기본_공임: number | null
     검수_유의: string | null
+    molds: {
+      가다번호: string | null
+      mold_positions: { 보관함_위치: string | null } | null
+    } | null
   } | null
   bundles: { 번들_고유번호: string | null } | null
   purchases: Purchase[] | null
@@ -107,8 +111,8 @@ type Row = {
   검수_유의: string
   도금_색상: string
   사출_방식: string
-  가다번호: string
-  가다_위치: string
+  가다번호: string | null
+  가다_위치: string | null
   주물_후_수량: number | null
   포장: string
   순금_중량: string
@@ -286,8 +290,8 @@ function mapItem(item: Item): Row {
     검수_유의: item.products?.검수_유의 ?? '',
     도금_색상: o?.도금_색상 ?? '',
     사출_방식: o?.사출_방식 ?? '',
-    가다번호: item.가다번호 ?? '',
-    가다_위치: item.가다_위치 ?? '',
+    가다번호: item.products?.molds?.가다번호 ?? null,
+    가다_위치: item.products?.molds?.mold_positions?.보관함_위치 ?? null,
     주물_후_수량: item.주물_후_수량 ?? null,
     포장: item.포장 ? '✅' : '',
     순금_중량: (item.중량 != null && purity > 0)
