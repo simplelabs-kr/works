@@ -3,6 +3,12 @@
 @tailwind utilities;
 
 /* ── Base ─────────────────────────────────────────────────────── */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: #F8F9FA;
   color: #111827;

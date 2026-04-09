@@ -9,14 +9,14 @@ const WorksGrid = dynamic(() => import('@/components/works/WorksGrid'), {
 
 export default function WorksPage() {
   return (
-    <div className="min-h-screen bg-[#F8F9FA]">
-      {/* Top bar */}
-      <div className="border-b border-[#E5E7EB] bg-white px-6 py-4">
+    <div className="flex flex-col h-screen overflow-hidden bg-[#F8F9FA]">
+      {/* Top bar — shrink-0 */}
+      <div className="flex-shrink-0 border-b border-[#E5E7EB] bg-white px-6 py-4">
         <h1 className="text-[18px] font-bold text-[#111827] tracking-tight">Works</h1>
       </div>
 
-      {/* Content */}
-      <div className="px-6 py-5">
+      {/* Content — fills remaining height, no padding */}
+      <div className="flex-1 overflow-hidden min-h-0">
         <WorksGrid />
       </div>
     </div>

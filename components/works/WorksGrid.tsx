@@ -308,6 +308,7 @@ function mapItem(item: Item): Row {
 
 export default function WorksGrid() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const hotContainerRef = useRef<HTMLDivElement>(null)
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
@@ -423,6 +424,21 @@ export default function WorksGrid() {
     return () => { cancelled = true }
   }, [submittedFilters, sort, offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Resize HOT height to fill its container
+  useEffect(() => {
+    if (!hotContainerRef.current) return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const h = entry.contentRect.height
+        if (h > 0 && hotRef.current) {
+          hotRef.current.updateSettings({ height: h })
+        }
+      }
+    })
+    ro.observe(hotContainerRef.current)
+    return () => ro.disconnect()
+  }, [])
+
   // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
@@ -434,7 +450,7 @@ export default function WorksGrid() {
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
       stretchH: 'last',
-      height: 620,
+      height: hotContainerRef.current?.clientHeight || 600,
       wordWrap: false,
       manualColumnResize: true,
       manualColumnMove: true,
@@ -467,9 +483,9 @@ export default function WorksGrid() {
   const showLoadMore = !loadingMore && totalCount !== null && rows.length < totalCount
 
   return (
-    <div className="flex flex-col gap-0">
-      {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-3 rounded-t-lg border border-[#E5E7EB] bg-white px-5 py-3">
+    <div className="flex flex-col h-full">
+      {/* Filter bar — shrink-0, px-5 only */}
+      <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E5E7EB] bg-white px-5 py-3">
         <div className="flex flex-col gap-1">
           <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">제품명/고유번호</label>
           <input
@@ -527,33 +543,44 @@ export default function WorksGrid() {
         </span>
       </div>
 
+      {/* Empty state */}
       {!hasAnyFilter && (
-        <div className="flex h-64 items-center justify-center rounded-b-lg border border-t-0 border-dashed border-[#E5E7EB] bg-white text-[13px] text-[#9CA3AF]">
+        <div className="flex flex-1 items-center justify-center text-[13px] text-[#9CA3AF]">
           필터를 입력하고 검색하면 결과가 표시됩니다
         </div>
       )}
 
-      <div className={`${!hasAnyFilter ? 'hidden' : ''} ${loading ? 'opacity-50 pointer-events-none' : ''} rounded-b-lg border border-t-0 border-[#E5E7EB] bg-white overflow-hidden`}>
-        <div ref={containerRef} />
-      </div>
-
-      {showLoadMore && (
-        <div className="flex justify-center pt-3">
-          <button
-            onClick={() => {
-              isAppend.current = true
-              setOffset(o => o + 100)
-            }}
-            className="rounded-[6px] border border-[#D1D5DB] bg-white px-6 py-[6px] text-[13px] text-[#374151] hover:bg-[#F9FAFB] active:bg-[#F3F4F6] transition-colors"
-          >
-            더보기 ({rows.length.toLocaleString()} / {totalCount.toLocaleString()})
-          </button>
+      {/* Grid area — flex-1, fills remaining height */}
+      <div className={`flex flex-col flex-1 min-h-0 overflow-hidden${!hasAnyFilter ? ' hidden' : ''}`}>
+        {/* HOT container — fills all available space */}
+        <div
+          ref={hotContainerRef}
+          className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-50 pointer-events-none' : ''}`}
+        >
+          <div ref={containerRef} />
         </div>
-      )}
 
-      {loadingMore && (
-        <div className="flex justify-center pt-3 text-[12px] text-[#9CA3AF]">로딩 중…</div>
-      )}
+        {/* Load more — shrink-0, sits at bottom */}
+        {showLoadMore && (
+          <div className="flex-shrink-0 flex justify-center py-3 border-t border-[#E5E7EB] bg-white">
+            <button
+              onClick={() => {
+                isAppend.current = true
+                setOffset(o => o + 100)
+              }}
+              className="rounded-[6px] border border-[#D1D5DB] bg-white px-6 py-[6px] text-[13px] text-[#374151] hover:bg-[#F9FAFB] active:bg-[#F3F4F6] transition-colors"
+            >
+              더보기 ({rows.length.toLocaleString()} / {totalCount.toLocaleString()})
+            </button>
+          </div>
+        )}
+
+        {loadingMore && (
+          <div className="flex-shrink-0 flex justify-center py-3 border-t border-[#E5E7EB] bg-white text-[12px] text-[#9CA3AF]">
+            로딩 중…
+          </div>
+        )}
+      </div>
     </div>
   )
 }
