@@ -60,7 +60,8 @@ export async function GET(request: NextRequest) {
     const { data: productRows } = await supabaseAdmin
       .from("products")
       .select("id")
-      .ilike("제품명", `%${search}%`);
+      .ilike("제품명", `%${search}%`)
+      .limit(50);
 
     console.log("[order-items] search:", search);
     console.log("[order-items] productRows:", JSON.stringify(productRows));
