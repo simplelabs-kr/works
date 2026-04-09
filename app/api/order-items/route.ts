@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   if (search) {
     // Step 1: RPC로 검색 조건에 맞는 order_item id 목록 수집
     const { data: rpcRows, error: rpcError } = await supabaseAdmin
-      .rpc("search_order_items", { search_term: search });
+      .rpc("search_order_items", { search_term: search, result_limit: 500 });
 
     if (rpcError) {
       console.error("[order-items] rpc error:", rpcError.message);
