@@ -5,20 +5,47 @@ import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 
 type Orders = {
+  brand_id: string | null
+  product_id: string | null
+  수량: number | null
   발주일: string | null
   생산시작일: string | null
+  소재: string | null
+  metal_id: string | null
   고객명: string | null
+  각인_내용: string | null
+  각인_폰트: string | null
+  기타_옵션: string | null
+  호수: string | null
+  확정_공임: number | null
+  공임_조정액: number | null
+  회차: number | null
+  도금_색상: string | null
+  체인_길이: string | null
+  체인_두께: string | null
   brands: { name: string } | null
   products: { 제품명: string; 제작_소요일: number | null } | null
   metals: { name: string; purity: string | null } | null
-  metal_prices: { price_per_gram: number | null } | null
 }
 
 type Item = {
   id: string
   고유_번호: string
+  중량: number | null
   데드라인: string | null
+  출고일: string | null
+  발송일: string | null
+  중단_취소: boolean | null
+  검수: boolean | null
+  포장: boolean | null
+  출고: boolean | null
+  가다번호: string | null
+  가다_위치: string | null
+  bundle_id: string | null
+  metal_price_id: string | null
+  order_id: string | null
   orders: Orders | null
+  metal_prices: { price_per_gram: number | null } | null
 }
 
 type Row = {
@@ -218,7 +245,7 @@ export default function WorksGrid() {
           const 코드 = item.고유_번호?.length === 15
             ? item.고유_번호.slice(-4)
             : item.고유_번호?.slice(-6) ?? ''
-          const pricePerGram = o?.metal_prices?.price_per_gram ?? null
+          const pricePerGram = item.metal_prices?.price_per_gram ?? null
           const purity = Number(o?.metals?.purity ?? 0)
           return {
             고유_번호: item.고유_번호 ?? '',
