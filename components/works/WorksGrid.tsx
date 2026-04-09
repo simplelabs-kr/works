@@ -312,6 +312,15 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
+  // Column widths — tracked per-resize to keep header/cell in sync
+  const colWidthsRef = useRef<number[]>(COLUMNS.map(c => c.width))
+
+  // Refs for infinite scroll (avoid stale closures in HOT hooks)
+  const rowsRef = useRef<Row[]>([])
+  const totalCountRef = useRef<number | null>(null)
+  const isScrollLoadingRef = useRef(false)
+  const scrollLoadRef = useRef<(() => void) | null>(null)
+
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -329,6 +338,20 @@ export default function WorksGrid() {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: '발주일', dir: 'desc' })
   const [offset, setOffset] = useState(0)
   const isAppend = useRef(false)
+
+  // Sync refs for infinite scroll
+  useEffect(() => { rowsRef.current = rows }, [rows])
+  useEffect(() => { totalCountRef.current = totalCount }, [totalCount])
+
+  // Stable scroll-load callback (read by HOT afterScrollVertically hook)
+  scrollLoadRef.current = () => {
+    if (isScrollLoadingRef.current) return
+    const tc = totalCountRef.current
+    if (tc === null || rowsRef.current.length >= tc) return
+    isScrollLoadingRef.current = true
+    isAppend.current = true
+    setOffset(o => o + 100)
+  }
 
   // Stable ref for sort click handler (called from Handsontable hook)
   const sortClickRef = useRef<((col: SortCol) => void) | null>(null)
@@ -418,7 +441,7 @@ export default function WorksGrid() {
         }
       })
       .finally(() => {
-        if (!cancelled) { setLoading(false); setLoadingMore(false) }
+        if (!cancelled) { setLoading(false); setLoadingMore(false); isScrollLoadingRef.current = false }
       })
 
     return () => { cancelled = true }
@@ -445,6 +468,7 @@ export default function WorksGrid() {
     hotRef.current = new Handsontable(containerRef.current, {
       data: [],
       columns: COLUMNS,
+      colWidths: colWidthsRef.current,
       rowHeaders: true,
       colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
       readOnly: true,
@@ -455,11 +479,30 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
     })
+    // Sort header click
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
       if (coords.row !== -1) return
       const col = SORT_COL_INDEX[coords.col as number]
       if (col) sortClickRef.current?.(col)
+    })
+    // Column resize — keep colWidths ref in sync to fix header/cell misalignment
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterColumnResize', (newSize: number, column: any) => {
+      const next = [...colWidthsRef.current]
+      next[column as number] = newSize
+      colWidthsRef.current = next
+      hotRef.current?.updateSettings({ colWidths: next })
+    })
+    // Infinite scroll — load next page when near bottom (90% threshold)
+    hotRef.current.addHook('afterScrollVertically', () => {
+      const hot = hotRef.current
+      if (!hot) return
+      const lastVisible = hot.getLastFullyVisibleRow()
+      const total = hot.countRows()
+      if (total > 0 && lastVisible >= Math.floor(total * 0.9)) {
+        scrollLoadRef.current?.()
+      }
     })
     return () => {
       hotRef.current?.destroy()
@@ -479,8 +522,6 @@ export default function WorksGrid() {
     hotRef.current.loadData(rows)
     if (rows.length > 0) hotRef.current.refreshDimensions()
   }, [rows])
-
-  const showLoadMore = !loadingMore && totalCount !== null && rows.length < totalCount
 
   return (
     <div className="flex flex-col h-full">
@@ -560,23 +601,9 @@ export default function WorksGrid() {
           <div ref={containerRef} />
         </div>
 
-        {/* Load more — shrink-0, sits at bottom */}
-        {showLoadMore && (
-          <div className="flex-shrink-0 flex justify-center py-3 border-t border-[#E5E7EB] bg-white">
-            <button
-              onClick={() => {
-                isAppend.current = true
-                setOffset(o => o + 100)
-              }}
-              className="rounded-[6px] border border-[#D1D5DB] bg-white px-6 py-[6px] text-[13px] text-[#374151] hover:bg-[#F9FAFB] active:bg-[#F3F4F6] transition-colors"
-            >
-              더보기 ({rows.length.toLocaleString()} / {totalCount.toLocaleString()})
-            </button>
-          </div>
-        )}
-
+        {/* Infinite scroll loading indicator */}
         {loadingMore && (
-          <div className="flex-shrink-0 flex justify-center py-3 border-t border-[#E5E7EB] bg-white text-[12px] text-[#9CA3AF]">
+          <div className="flex-shrink-0 flex justify-center items-center py-2 border-t border-[#E5E7EB] bg-white text-[12px] text-[#9CA3AF]">
             로딩 중…
           </div>
         )}
