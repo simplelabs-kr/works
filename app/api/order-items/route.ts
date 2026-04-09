@@ -99,11 +99,12 @@ export async function GET(request: NextRequest) {
   }
 
   // Step 3: ids로 실제 데이터 조회
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await supabaseAdmin
     .from("order_items")
     .select(SELECT)
     .not("중단_취소", "is", true)
-    .in("id", ids) as { data: AnyRecord[]; error: AnyRecord };
+    .in("id", ids) as unknown as { data: any[]; error: any };
 
   if (error) {
     console.error("[order-items] query error:", error.message);
