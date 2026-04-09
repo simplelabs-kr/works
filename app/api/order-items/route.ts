@@ -52,7 +52,6 @@ export async function GET(request: NextRequest) {
       metal_prices!order_items_metal_price_id_fkey(price_per_gram)
     `)
     .not("중단_취소", "is", true)
-    .not("숨기기", "is", true)
     .order("id", { ascending: false });
 
   if (search) q = q.ilike("고유_번호", `%${search}%`);

@@ -206,6 +206,7 @@ export default function WorksGrid() {
 
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
 
   const [search, setSearch] = useState('')
 
@@ -226,19 +227,22 @@ export default function WorksGrid() {
   useEffect(() => {
     if (!hasFilters) {
       setRows([])
+      setApiError(null)
       return
     }
 
     let cancelled = false
     setLoading(true)
+    setApiError(null)
 
     const params = new URLSearchParams()
     if (debouncedSearch) params.set('search', debouncedSearch)
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (cancelled) return
+        if (error) { setApiError(error); return }
         setRows((data ?? []).map((item: Item) => {
           const o = item.orders
           const 제품명 = o?.products?.['제품명'] ?? ''
@@ -307,7 +311,7 @@ export default function WorksGrid() {
           className="border rounded px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
 <span className="ml-auto text-sm text-gray-500">
-          {loading ? '로딩 중…' : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
+          {loading ? '로딩 중…' : apiError ? <span className="text-red-500 text-xs">{apiError}</span> : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
         </span>
       </div>
 
