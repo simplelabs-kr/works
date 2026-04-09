@@ -59,9 +59,11 @@ const SELECT = `
     기준_중량,
     기본_공임,
     검수_유의,
-    molds!products_mold_id_fkey(
-      가다번호,
-      mold_positions!molds_mold_position_id_fkey(보관함_위치)
+    product_molds!product_molds_product_id_fkey(
+      molds!product_molds_mold_id_fkey(
+        가다번호,
+        mold_positions!molds_mold_position_id_fkey(보관함_위치)
+      )
     )
   ),
   bundles!order_items_bundle_id_fkey(번들_고유번호),
