@@ -9,6 +9,7 @@ type AnyRecord = Record<string, any>;
 const SELECT = `
   id,
   고유_번호,
+  수량,
   중량,
   데드라인,
   출고일,

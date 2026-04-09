@@ -31,6 +31,7 @@ type Orders = {
 type Item = {
   id: string
   고유_번호: string
+  수량: number | null
   중량: number | null
   데드라인: string | null
   출고일: string | null
@@ -60,6 +61,9 @@ type Row = {
   출고예정일: string
   시세_g당: string
   소재비: string
+  발주_수량: number | null
+  수량: number | null
+  호수: string | null
 }
 
 type SortCol = '발주일' | '생산시작일' | '데드라인'
@@ -84,6 +88,9 @@ const COLUMNS = [
   { data: '출고예정일',   title: '출고예정일',       width: 110 },
   { data: '시세_g당',    title: '시세 (g당)',       readOnly: true, width: 80  },
   { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
+  { data: '발주_수량',   title: '발주 수량',         readOnly: true, width: 80  },
+  { data: '수량',        title: '수량',             readOnly: true, width: 70  },
+  { data: '호수',        title: '호수',             readOnly: true, width: 70  },
 ]
 
 // 정렬 가능한 컬럼: 제목 → col index
@@ -169,6 +176,9 @@ function mapItem(item: Item): Row {
     소재비: (pricePerGram != null && purity > 0)
       ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
       : '',
+    발주_수량: o?.수량 ?? null,
+    수량: item.수량 ?? null,
+    호수: o?.호수 ?? null,
   }
 }
 
@@ -305,6 +315,7 @@ export default function WorksGrid() {
       height: 620,
       wordWrap: false,
       manualColumnResize: true,
+      manualColumnMove: true,
     })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
