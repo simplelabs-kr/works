@@ -62,9 +62,13 @@ export async function GET(request: NextRequest) {
       .select("id")
       .ilike("제품명", `%${search}%`);
 
+    console.log("[order-items] search:", search);
+    console.log("[order-items] productRows:", JSON.stringify(productRows));
     const productIds = (productRows ?? []).map((p: { id: number }) => p.id);
+    console.log("[order-items] productIds:", productIds);
 
     // Step 2: 고유번호 검색(q1)과 product_id 기반 검색(q2) 병렬 실행
+    console.log("[order-items] productIds.length before q2:", productIds.length);
     const baseQuery = () =>
       supabaseAdmin
         .from("order_items")
@@ -119,6 +123,9 @@ export async function GET(request: NextRequest) {
       : Promise.resolve({ data: [], error: null });
 
     const [r1, r2] = await Promise.all([q1Promise, q2Promise]);
+
+    console.log("[order-items] r1.data?.length:", r1.data?.length);
+    console.log("[order-items] r2.data?.length:", r2.data?.length);
 
     if (r1.error) {
       console.error("[order-items] q1 error:", r1.error.message);
