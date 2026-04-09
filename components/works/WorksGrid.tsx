@@ -62,6 +62,16 @@ type Row = {
   소재비: string
 }
 
+type SortCol = '발주일' | '생산시작일' | '데드라인'
+type SortDir = 'asc' | 'desc'
+
+type SubmittedFilters = {
+  search: string
+  brand: string
+  dateFrom: string
+  dateTo: string
+}
+
 const COLUMNS = [
   { data: '고유_번호',    title: '고유번호',        width: 140 },
   { data: '제품명',      title: '제품명',          width: 200 },
@@ -75,6 +85,22 @@ const COLUMNS = [
   { data: '시세_g당',    title: '시세 (g당)',       readOnly: true, width: 80  },
   { data: '소재비',      title: '소재비',           readOnly: true, width: 90  },
 ]
+
+// 정렬 가능한 컬럼: 제목 → col index
+const SORT_COL_INDEX: Partial<Record<number, SortCol>> = {
+  5: '발주일',
+  6: '생산시작일',
+  7: '데드라인',
+}
+const SORTABLE_TITLES = new Set<string>(['발주일', '생산시작일', '데드라인'])
+
+function buildColHeaders(sort: { col: SortCol; dir: SortDir }): string[] {
+  return COLUMNS.map(c => {
+    if (!SORTABLE_TITLES.has(c.title)) return c.title
+    if (c.title === sort.col) return `${c.title} ${sort.dir === 'asc' ? '▲' : '▼'}`
+    return `${c.title} ⇅`
+  })
+}
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
 
@@ -93,7 +119,6 @@ function nextWorkday(date: Date, hs: Set<string>): Date {
   return next
 }
 
-// 생산시작일을 1일차로 하여 영업일 기준 days일을 채운 후 다음 영업일 반환
 function addWorkdays(startDate: Date, days: number, hs: Set<string>): Date {
   let count = 0
   const current = new Date(startDate)
@@ -118,84 +143,33 @@ function calcShipDate(item: Item, hs: Set<string>): string {
   return '-'
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatDate(val: string | null | undefined): string {
   if (!val) return ''
   return String(val).slice(0, 10)
 }
 
-function useDebounce<T>(value: T, ms: number): T {
-  const [v, setV] = useState<T>(value)
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), ms)
-    return () => clearTimeout(t)
-  }, [value, ms])
-  return v
-}
-
-// ── MultiSelect ──────────────────────────────────────────────────────────────
-
-function MultiSelect({
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string
-  options: string[]
-  selected: string[]
-  onChange: (v: string[]) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', h)
-    return () => document.removeEventListener('mousedown', h)
-  }, [])
-
-  const toggle = (v: string) =>
-    onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v])
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 border rounded px-3 py-1.5 text-sm bg-white hover:bg-gray-50 transition-colors"
-      >
-        {label}
-        {selected.length > 0 && (
-          <span className="bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-medium">
-            {selected.length}
-          </span>
-        )}
-        <span className="text-[10px] text-gray-400">▾</span>
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 bg-white border rounded-md shadow-lg min-w-[160px] max-h-72 overflow-y-auto">
-          {options.map(opt => (
-            <label
-              key={opt}
-              className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(opt)}
-                onChange={() => toggle(opt)}
-                className="accent-blue-600"
-              />
-              {opt}
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+function mapItem(item: Item): Row {
+  const o = item.orders
+  const 제품명 = item.products?.['제품명'] ?? ''
+  const 코드 = item.고유_번호?.length === 15
+    ? item.고유_번호.slice(-4)
+    : item.고유_번호?.slice(-6) ?? ''
+  const pricePerGram = item.metal_prices?.price_per_gram ?? null
+  const purity = Number(o?.metals?.purity ?? 0)
+  return {
+    고유_번호: item.고유_번호 ?? '',
+    제품명,
+    제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
+    metals: { name: o?.metals?.name ?? '', purity: o?.metals?.purity ?? null },
+    발주일: formatDate(o?.발주일),
+    생산시작일: formatDate(o?.생산시작일),
+    데드라인: formatDate(item.데드라인),
+    출고예정일: calcShipDate(item, holidaySet),
+    시세_g당: pricePerGram != null ? Math.floor(pricePerGram).toLocaleString() : '',
+    소재비: (pricePerGram != null && purity > 0)
+      ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
+      : '',
+  }
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
@@ -207,14 +181,58 @@ export default function WorksGrid() {
 
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [totalCount, setTotalCount] = useState<number | null>(null)
 
-  const [search, setSearch] = useState('')
-  const [submittedSearch, setSubmittedSearch] = useState('')
+  // Filter input state (not yet submitted)
+  const [inputSearch, setInputSearch] = useState('')
+  const [inputBrand, setInputBrand] = useState('')
+  const [inputDateFrom, setInputDateFrom] = useState('')
+  const [inputDateTo, setInputDateTo] = useState('')
 
-  const handleSearch = () => setSubmittedSearch(search.trim())
+  // Submitted query state (triggers API)
+  const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: '발주일', dir: 'desc' })
+  const [offset, setOffset] = useState(0)
+  const isAppend = useRef(false)
 
-  // Load holidays once on mount (cached in module-level Set)
+  // Stable ref for sort click handler (called from Handsontable hook)
+  const sortClickRef = useRef<((col: SortCol) => void) | null>(null)
+  sortClickRef.current = (col: SortCol) => {
+    isAppend.current = false
+    setOffset(0)
+    setTotalCount(null)
+    setSort(prev => ({
+      col,
+      dir: prev.col === col ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc',
+    }))
+  }
+
+  const handleSearch = () => {
+    isAppend.current = false
+    setOffset(0)
+    setTotalCount(null)
+    setSubmittedFilters({
+      search: inputSearch.trim(),
+      brand: inputBrand.trim(),
+      dateFrom: inputDateFrom,
+      dateTo: inputDateTo,
+    })
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSearch()
+  }
+
+  const hasAnyFilter = !!submittedFilters && (
+    submittedFilters.search.length > 0 ||
+    submittedFilters.brand.length > 0 ||
+    submittedFilters.dateFrom.length > 0 ||
+    submittedFilters.dateTo.length > 0
+  )
+
+  // Load holidays once on mount
   useEffect(() => {
     if (holidaysLoaded.current) return
     holidaysLoaded.current = true
@@ -225,55 +243,53 @@ export default function WorksGrid() {
       })
   }, [])
 
-  const hasFilters = submittedSearch.length > 0
-
+  // Fetch data on filter/sort/offset change
   useEffect(() => {
-    if (!hasFilters) {
-      setRows([])
-      setApiError(null)
-      return
-    }
+    if (!submittedFilters) { setRows([]); setApiError(null); return }
+
+    const anyFilter =
+      submittedFilters.search.length > 0 ||
+      submittedFilters.brand.length > 0 ||
+      submittedFilters.dateFrom.length > 0 ||
+      submittedFilters.dateTo.length > 0
+    if (!anyFilter) { setRows([]); setApiError(null); return }
+
+    const shouldAppend = isAppend.current
+    isAppend.current = false
 
     let cancelled = false
-    setLoading(true)
+    if (shouldAppend) setLoadingMore(true)
+    else setLoading(true)
     setApiError(null)
 
     const params = new URLSearchParams()
-    params.set('search', submittedSearch)
+    if (submittedFilters.search)   params.set('search', submittedFilters.search)
+    if (submittedFilters.brand)    params.set('brand', submittedFilters.brand)
+    if (submittedFilters.dateFrom) params.set('dateFrom', submittedFilters.dateFrom)
+    if (submittedFilters.dateTo)   params.set('dateTo', submittedFilters.dateTo)
+    params.set('offset', String(offset))
+    params.set('sortCol', sort.col)
+    params.set('sortDir', sort.dir)
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
-      .then(({ data, error }) => {
+      .then(({ data, error, totalCount: tc }) => {
         if (cancelled) return
         if (error) { setApiError(error); return }
-        setRows((data ?? []).map((item: Item) => {
-          const o = item.orders
-          const 제품명 = item.products?.['제품명'] ?? ''
-          const 코드 = item.고유_번호?.length === 15
-            ? item.고유_번호.slice(-4)
-            : item.고유_번호?.slice(-6) ?? ''
-          const pricePerGram = item.metal_prices?.price_per_gram ?? null
-          const purity = Number(o?.metals?.purity ?? 0)
-          return {
-            고유_번호: item.고유_번호 ?? '',
-            제품명,
-            제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
-            metals: { name: o?.metals?.name ?? '', purity: o?.metals?.purity ?? null },
-            발주일: formatDate(o?.발주일),
-            생산시작일: formatDate(o?.생산시작일),
-            데드라인: formatDate(item.데드라인),
-            출고예정일: calcShipDate(item, holidaySet),
-            시세_g당: pricePerGram != null ? Math.floor(pricePerGram).toLocaleString() : '',
-            소재비: (pricePerGram != null && purity > 0)
-              ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
-              : '',
-          }
-        }))
+        const mapped = (data ?? []).map(mapItem)
+        if (shouldAppend) {
+          setRows(prev => [...prev, ...mapped])
+        } else {
+          setRows(mapped)
+          if (tc !== undefined) setTotalCount(Number(tc))
+        }
       })
-      .finally(() => { if (!cancelled) setLoading(false) })
+      .finally(() => {
+        if (!cancelled) { setLoading(false); setLoadingMore(false) }
+      })
 
     return () => { cancelled = true }
-  }, [submittedSearch, hasFilters])
+  }, [submittedFilters, sort, offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize Handsontable once
   useEffect(() => {
@@ -282,7 +298,7 @@ export default function WorksGrid() {
       data: [],
       columns: COLUMNS,
       rowHeaders: true,
-      colHeaders: true,
+      colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
       stretchH: 'last',
@@ -290,11 +306,23 @@ export default function WorksGrid() {
       wordWrap: false,
       manualColumnResize: true,
     })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
+      if (coords.row !== -1) return
+      const col = SORT_COL_INDEX[coords.col as number]
+      if (col) sortClickRef.current?.(col)
+    })
     return () => {
       hotRef.current?.destroy()
       hotRef.current = null
     }
   }, [])
+
+  // Update column headers when sort changes
+  useEffect(() => {
+    if (!hotRef.current) return
+    hotRef.current.updateSettings({ colHeaders: buildColHeaders(sort) })
+  }, [sort])
 
   // Update grid data
   useEffect(() => {
@@ -303,37 +331,96 @@ export default function WorksGrid() {
     if (rows.length > 0) hotRef.current.refreshDimensions()
   }, [rows])
 
+  const showLoadMore = !loadingMore && totalCount !== null && rows.length < totalCount
+
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          type="text"
-          placeholder="고유번호 또는 제품명 검색…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter') handleSearch() }}
-          className="border rounded px-3 py-1.5 text-sm w-60 focus:outline-none focus:ring-1 focus:ring-blue-400"
-        />
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-0.5">
+          <label className="text-xs text-gray-500">제품명/고유번호</label>
+          <input
+            type="text"
+            placeholder="검색어"
+            value={inputSearch}
+            onChange={e => setInputSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <label className="text-xs text-gray-500">브랜드</label>
+          <input
+            type="text"
+            placeholder="브랜드명"
+            value={inputBrand}
+            onChange={e => setInputBrand(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="border rounded px-3 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <label className="text-xs text-gray-500">발주일</label>
+          <div className="flex items-center gap-1">
+            <input
+              type="date"
+              value={inputDateFrom}
+              onChange={e => setInputDateFrom(e.target.value)}
+              className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <span className="text-gray-400 text-sm">~</span>
+            <input
+              type="date"
+              value={inputDateTo}
+              onChange={e => setInputDateTo(e.target.value)}
+              className="border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </div>
+        </div>
         <button
           onClick={handleSearch}
-          className="rounded bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600 active:bg-blue-700"
+          className="rounded bg-blue-500 px-4 py-1.5 text-sm text-white hover:bg-blue-600 active:bg-blue-700 self-end"
         >
           검색
         </button>
-<span className="ml-auto text-sm text-gray-500">
-          {loading ? '로딩 중…' : apiError ? <span className="text-red-500 text-xs">{apiError}</span> : hasFilters ? `총 ${rows.length.toLocaleString()}건` : ''}
+        <span className="ml-auto self-end text-sm text-gray-500">
+          {loading
+            ? '로딩 중…'
+            : apiError
+            ? <span className="text-red-500 text-xs">{apiError}</span>
+            : hasAnyFilter && totalCount !== null
+            ? `총 ${totalCount.toLocaleString()}건 중 ${rows.length.toLocaleString()}건 표시`
+            : null}
         </span>
       </div>
 
-      {!hasFilters && (
+      {!hasAnyFilter && (
         <div className="flex h-64 items-center justify-center rounded border border-dashed border-gray-200 text-sm text-gray-400">
           필터를 선택하면 결과가 표시됩니다
         </div>
       )}
 
-      <div className={`${!hasFilters ? 'hidden' : ''} ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
+      <div className={`${!hasAnyFilter ? 'hidden' : ''} ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
         <div ref={containerRef} />
       </div>
+
+      {showLoadMore && (
+        <div className="flex justify-center">
+          <button
+            onClick={() => {
+              isAppend.current = true
+              setOffset(o => o + 100)
+            }}
+            className="rounded border px-6 py-1.5 text-sm text-gray-600 hover:bg-gray-50 active:bg-gray-100"
+          >
+            더보기 ({rows.length.toLocaleString()} / {totalCount.toLocaleString()})
+          </button>
+        </div>
+      )}
+
+      {loadingMore && (
+        <div className="flex justify-center text-sm text-gray-400">로딩 중…</div>
+      )}
     </div>
   )
 }
