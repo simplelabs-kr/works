@@ -755,11 +755,26 @@ export default function WorksGrid() {
       }
 
     })
-    // 사출_방식 셀 클릭 → 커스텀 드롭다운 표시 (HOT editor 우회)
+    // 사출_방식 셀: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
+    // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
+    let sochulAlreadySelected = false
+    hotRef.current.addHook('beforeOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if ((COLUMNS as any[])[coords.col]?.data !== '사출_방식') {
+        sochulAlreadySelected = false
+        return
+      }
+      const sel = hotRef.current?.getSelected()
+      sochulAlreadySelected = sel?.some(([r1, c1, r2, c2]) =>
+        coords.row >= Math.min(r1, r2) && coords.row <= Math.max(r1, r2) &&
+        coords.col >= Math.min(c1, c2) && coords.col <= Math.max(c1, c2)
+      ) ?? false
+    })
     hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if ((COLUMNS as any[])[coords.col]?.data !== '사출_방식') return
+      if (!sochulAlreadySelected) return // 첫 클릭: 셀 선택만
       const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
       if (!td) return
       const rect = td.getBoundingClientRect()
