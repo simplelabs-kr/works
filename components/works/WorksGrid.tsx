@@ -637,6 +637,21 @@ export default function WorksGrid() {
       }
     })
 
+    // 선택 해제 시 모든 inline backgroundColor 초기화
+    hotRef.current.addHook('afterDeselect', () => {
+      const hot = hotRef.current
+      if (!hot) return
+      const rowCount = hot.countRows()
+      const colCount = hot.countCols()
+      for (let r = 0; r < rowCount; r++) {
+        for (let c = 0; c < colCount; c++) {
+          const td = hot.getCell(r, c) as HTMLElement | null
+          if (td) td.style.backgroundColor = ''
+        }
+      }
+      selectedRow = -1
+    })
+
     // Fix horizontal scroll misalignment:
     // ht_master has a vertical scrollbar (~17px) that reduces clientWidth,
     // making its max scrollLeft larger than ht_clone_top's max scrollLeft.
