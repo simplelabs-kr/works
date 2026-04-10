@@ -57,7 +57,12 @@ body {
   border-bottom: 1px solid #F1F5F9 !important;
   vertical-align: middle !important;
   text-align: left !important;
-  background: #ffffff;
+  background-color: #ffffff;
+}
+
+/* row hover */
+.handsontable tbody tr:hover td {
+  background-color: #F8FAFC;
 }
 
 
@@ -78,10 +83,17 @@ body {
   background: #F8FAFC !important;
 }
 
-/* selected cell */
+/* drag select 영역 */
 .handsontable td.area {
-  background: #EBF3FF !important;
+  background-color: #EBF3FF !important;
 }
+
+/* hover 시 area 색 유지 */
+.handsontable tbody tr:hover td.area {
+  background-color: #EBF3FF !important;
+}
+
+/* 선택된 단일 셀 */
 .handsontable td.current {
   outline: 2px solid #2D7FF9 !important;
   outline-offset: -2px !important;
