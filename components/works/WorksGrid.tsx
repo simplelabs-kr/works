@@ -520,6 +520,18 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
     })
+    // 헤더와 바디의 scrollWidth를 동기화해서 스크롤 끝 어긋남 방지
+    const hot = hotRef.current
+    const syncScroll = () => {
+      const master = hot.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+      const top = hot.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+      if (!master || !top) return
+
+      master.addEventListener('scroll', () => {
+        top.scrollLeft = master.scrollLeft
+      }, { passive: true })
+    }
+    syncScroll()
     // Sync header scrollLeft with body on horizontal scroll
     hotRef.current.addHook('afterScrollHorizontally', () => {
       const hot = hotRef.current
