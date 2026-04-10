@@ -101,6 +101,48 @@ body {
   cursor: pointer;
 }
 
+/* 편집 중 셀 스타일 - 크기/위치 변화 없이 seamless하게 */
+.handsontable .handsontableInput {
+  font-size: 13px !important;
+  font-family: inherit !important;
+  padding: 0 8px !important;
+  height: 100% !important;
+  line-height: normal !important;
+  border: 2px solid #2D7FF9 !important;
+  box-shadow: none !important;
+  background: #fff !important;
+  outline: none !important;
+  resize: none !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  top: 0 !important;
+  left: 0 !important;
+}
+
+/* textarea editor도 동일하게 */
+.handsontable .handsontableInputHolder {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Pikaday 캘린더 스타일 */
+.pika-single {
+  font-family: inherit !important;
+  font-size: 13px !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 6px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+.pika-button:hover {
+  background: #EBF3FF !important;
+  border-radius: 4px !important;
+}
+.is-selected .pika-button {
+  background: #2D7FF9 !important;
+  border-radius: 4px !important;
+}
+
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;
