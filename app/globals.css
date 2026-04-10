@@ -156,6 +156,9 @@ body {
   color: #ffffff !important;
   border-radius: 4px !important;
 }
+.is-today .pika-button {
+  color: #2D7FF9 !important;
+}
 .pika-prev, .pika-next {
   opacity: 0.6 !important;
 }

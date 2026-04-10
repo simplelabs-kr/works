@@ -175,11 +175,12 @@ const COLUMNS = [
       onDraw(picker: any) {
         const title = picker.el?.querySelector('.pika-title')
         if (!title) return
-        const monthEl = title.querySelector('.pika-select-month')
-        const yearEl = title.querySelector('.pika-select-year')
-        if (!monthEl || !yearEl) return
-        if (monthEl.previousElementSibling !== yearEl) {
-          title.insertBefore(yearEl, monthEl)
+        const labels = title.querySelectorAll('.pika-label')
+        if (labels.length < 2) return
+        const monthLabel = labels[0]  // 첫 번째가 월
+        const yearLabel = labels[1]   // 두 번째가 년도
+        if (yearLabel && monthLabel && monthLabel.previousElementSibling !== yearLabel) {
+          title.insertBefore(yearLabel, monthLabel)
         }
       },
     } as any,
