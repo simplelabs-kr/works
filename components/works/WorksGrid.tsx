@@ -139,7 +139,7 @@ const COLUMNS = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
       td.textContent = String(row + 1)
-      td.style.cssText = 'color:#9CA3AF;font-size:11px;text-align:center;vertical-align:middle;line-height:36px;background:#F9FAFB;'
+      td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;'
     },
   },
   { data: '고유_번호',    title: '고유번호',        width: 140, fieldType: 'text'     as FieldType },
@@ -218,18 +218,9 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   if (!c) return
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `
-    display:inline-block;
-    padding:2px 8px;
-    border-radius:9999px;
-    font-size:11px;
-    font-weight:600;
-    background:${c.bg};
-    color:${c.color};
-    white-space:nowrap;
-  `
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.style.verticalAlign = 'middle'
-  td.style.paddingTop = '6px'
+  td.style.padding = '0 8px'
   td.appendChild(badge)
 }
 
@@ -311,7 +302,7 @@ function mapItem(item: Item): Row {
     고객명: o?.고객명 ?? '',
     디자이너_노트: item.디자이너_노트 ?? '',
     중량: item.중량 ?? null,
-    검수: item.검수 ? '✅' : '',
+    검수: item.검수 ? '●' : '',
     허용_중량_범위: item.products?.기준_중량 != null
       ? `${(item.products.기준_중량 * 0.9).toFixed(2)} ~ ${(item.products.기준_중량 * 1.1).toFixed(2)} g`
       : '',
@@ -319,7 +310,7 @@ function mapItem(item: Item): Row {
       const w = item.중량
       const base = item.products?.기준_중량 ?? null
       if (w == null || base == null) return ''
-      return (w >= base * 0.9 && w <= base * 1.1) ? '✅' : '⚠️'
+      return (w >= base * 0.9 && w <= base * 1.1) ? '●' : '△'
     })(),
     기타_옵션: o?.기타_옵션 ?? '',
     각인_내용: o?.각인_내용 ?? '',
@@ -343,12 +334,12 @@ function mapItem(item: Item): Row {
     가다번호: item.products?.product_molds?.[0]?.molds?.가다번호 ?? null,
     가다_위치: item.products?.product_molds?.[0]?.molds?.mold_positions?.보관함_위치 ?? null,
     주물_후_수량: item.주물_후_수량 ?? null,
-    포장: item.포장 ? '✅' : '',
+    포장: item.포장 ? '●' : '',
     순금_중량: (item.중량 != null && purity > 0)
       ? (item.중량 * (purity / 100)).toFixed(3)
       : '',
-    rp_출력_시작: item.rp_출력_시작 ? '✅' : '',
-    왁스_파트_전달: item.왁스_파트_전달 ? '✅' : '',
+    rp_출력_시작: item.rp_출력_시작 ? '●' : '',
+    왁스_파트_전달: item.왁스_파트_전달 ? '●' : '',
   }
 }
 
@@ -539,6 +530,13 @@ export default function WorksGrid() {
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
       TH.style.verticalAlign = 'middle'
       TH.style.lineHeight = 'normal'
+      TH.style.paddingTop = '0'
+      TH.style.paddingBottom = '0'
+      const divBase = TH.querySelector('.colHeader') as HTMLElement | null
+      if (divBase) {
+        divBase.style.height = '100%'
+        divBase.style.lineHeight = 'normal'
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (COLUMNS as any[])[col]
       if (!colDef || !colDef.fieldType) return
@@ -590,50 +588,50 @@ export default function WorksGrid() {
   return (
     <div className="flex flex-col h-full">
       {/* Filter bar — shrink-0, px-5 only */}
-      <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E5E7EB] bg-white px-5 py-3">
+      <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">제품명/고유번호</label>
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">제품명/고유번호</label>
           <input
             type="text"
             placeholder="검색어"
             value={inputSearch}
             onChange={e => setInputSearch(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-48 h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">브랜드</label>
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">브랜드</label>
           <input
             type="text"
             placeholder="브랜드명"
             value={inputBrand}
             onChange={e => setInputBrand(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-36 h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
+            className="w-36 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-wide">발주일</label>
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">발주일</label>
           <div className="flex items-center gap-1.5">
             <input
               type="date"
               value={inputDateFrom}
               onChange={e => setInputDateFrom(e.target.value)}
-              className="h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
             />
             <span className="text-[#9CA3AF] text-sm">–</span>
             <input
               type="date"
               value={inputDateTo}
               onChange={e => setInputDateTo(e.target.value)}
-              className="h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
             />
           </div>
         </div>
         <button
           onClick={handleSearch}
-          className="self-end h-[30px] rounded-[6px] bg-[#111827] px-[14px] text-[13px] font-medium text-white hover:bg-[#1F2937] active:bg-[#374151] transition-colors"
+          className="self-end h-[28px] rounded-[4px] bg-[#1C1C1C] px-[14px] text-[12px] font-medium text-white hover:bg-[#333] active:bg-[#444] transition-colors"
         >
           검색
         </button>
@@ -662,7 +660,7 @@ export default function WorksGrid() {
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-50 pointer-events-none' : ''}`}
         >
-          <div ref={containerRef} />
+          <div ref={containerRef} className="pl-2" />
         </div>
 
         {/* Infinite scroll loading indicator */}

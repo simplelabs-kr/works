@@ -11,22 +11,22 @@ body {
 }
 
 body {
-  color: #111827;
+  color: #0F172A;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ── Handsontable overrides ───────────────────────────────────── */
 .handsontable thead th {
-  background: #F9FAFB !important;
+  background: #F8FAFC !important;
   color: #374151 !important;
   font-size: 12px !important;
-  font-weight: 500 !important;
-  letter-spacing: 0.02em !important;
-  border-right: 1px solid #E5E7EB !important;
-  border-bottom: 1px solid #D1D5DB !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  border-right: 1px solid #E2E8F0 !important;
+  border-bottom: 2px solid #E2E8F0 !important;
   padding: 0 8px !important;
   height: 29px !important;
-  line-height: 29px !important;
+  line-height: normal !important;
   text-align: left !important;
   vertical-align: middle !important;
   user-select: none !important;
@@ -34,7 +34,7 @@ body {
 }
 
 .handsontable thead th:hover {
-  background: #F3F4F6 !important;
+  background: #F1F5F9 !important;
   cursor: pointer;
 }
 
@@ -45,23 +45,22 @@ body {
   height: 100% !important;
   overflow: hidden !important;
   white-space: nowrap !important;
-  text-overflow: ellipsis !important;
 }
 
 .handsontable td {
   font-size: 13px !important;
-  color: #111827 !important;
+  color: #0F172A !important;
   padding: 0 8px !important;
   height: 29px !important;
   line-height: 29px !important;
-  border-right: 1px solid #F3F4F6 !important;
-  border-bottom: 1px solid #F3F4F6 !important;
+  border-right: 1px solid #F1F5F9 !important;
+  border-bottom: 1px solid #F1F5F9 !important;
   vertical-align: middle !important;
   text-align: left !important;
 }
 
 .handsontable tbody tr:hover td {
-  background: #F9FAFB !important;
+  background: #F8FAFC !important;
 }
 
 .handsontable tbody tr:nth-child(even) td {
@@ -74,41 +73,38 @@ body {
 
 /* row header */
 .handsontable th.htRowHeader {
-  background: #F9FAFB !important;
-  color: #9CA3AF !important;
+  background: #F8FAFC !important;
+  color: #94A3B8 !important;
   font-size: 11px !important;
-  border-color: #F3F4F6 !important;
+  border-color: #E2E8F0 !important;
 }
 
 /* corner header */
 .handsontable .cornerHeader {
-  background: #F9FAFB !important;
+  background: #F8FAFC !important;
 }
 
 /* selected cell */
 .handsontable td.area {
-  background: #EFF6FF !important;
+  background: #F0FDF9 !important;
 }
 .handsontable td.current {
-  outline: 2px solid #2563EB !important;
+  outline: 2px solid #3ECF8E !important;
   outline-offset: -2px !important;
 }
 
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 .handsontable .wtHolder::-webkit-scrollbar-track {
   background: transparent;
 }
 .handsontable .wtHolder::-webkit-scrollbar-thumb {
-  background: #D1D5DB;
-  border-radius: 4px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+  background: #CBD5E1;
+  border-radius: 3px;
 }
 .handsontable .wtHolder::-webkit-scrollbar-thumb:hover {
-  background: #9CA3AF;
-  background-clip: content-box;
+  background: #94A3B8;
 }
