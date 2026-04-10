@@ -652,16 +652,13 @@ export default function WorksGrid() {
 
   // Pagination
   const [offset, setOffset] = useState(0)
-  const [fetchKey, setFetchKey] = useState(0)
   const isAppend = useRef(false)
   const displayRowsRef = useRef<Row[]>([])
-  const filterConditionsRef = useRef<FilterCondition[]>([])
 
   // Sync refs during render
   rowsRef.current = rows
   totalCountRef.current = totalCount
   holidaySetRef.current = holidaySet
-  filterConditionsRef.current = filterConditions
 
   // Stable scroll-load callback
   scrollLoadRef.current = () => {
@@ -673,7 +670,7 @@ export default function WorksGrid() {
     setOffset(o => o + 100)
   }
 
-  // Computed display rows (filter + sort applied client-side)
+  // TODO: 필터는 현재 로드된 rows에만 적용됨. 전체 데이터 필터링은 추후 RPC 확장 필요
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const displayRows = useMemo(() => applySort(applyFilters(rows, filterConditions), sortConditions), [rows, filterConditions, sortConditions])
   displayRowsRef.current = displayRows
@@ -722,15 +719,7 @@ export default function WorksGrid() {
     })
   }, [holidaySet]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset and refetch when filter conditions change (server-side filtering)
-  useEffect(() => {
-    setRows([])
-    isAppend.current = false
-    setOffset(0)
-    setFetchKey(k => k + 1)
-  }, [filterConditions]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Fetch data (server-side filter applied via API params)
+  // Fetch data via RPC (무한스크롤, 100건씩)
   useEffect(() => {
     const shouldAppend = isAppend.current
     isAppend.current = false
@@ -742,12 +731,8 @@ export default function WorksGrid() {
 
     const params = new URLSearchParams()
     params.set('offset', String(offset))
-    params.set('sortCol', 'updated_at')
+    params.set('sortCol', '발주일')
     params.set('sortDir', 'desc')
-    const currentFilters = filterConditionsRef.current
-    if (currentFilters.length > 0) {
-      params.set('filters', JSON.stringify(currentFilters))
-    }
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
@@ -767,7 +752,7 @@ export default function WorksGrid() {
       })
 
     return () => { cancelled = true }
-  }, [offset, fetchKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
