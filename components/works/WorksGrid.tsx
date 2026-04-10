@@ -22,7 +22,6 @@ type Orders = {
   공임_조정액: number | null
   회차: number | null
   도금_색상: string | null
-  사출_방식: string | null
   체인_길이: string | null
   체인_두께: string | null
   brands: { name: string } | null
@@ -57,6 +56,7 @@ type Item = {
   가다번호: string | null
   가다_위치: string | null
   작업_위치: string | null
+  사출_방식: string | null
   주물_후_수량: number | null
   rp_출력_시작: boolean | null
   왁스_파트_전달: boolean | null
@@ -147,6 +147,7 @@ const COLUMN_MAP: Record<string, string> = {
   '왁스_파트_전달': '왁스_파트_전달',
   '주물_후_수량': '주물_후_수량',
   '디자이너_노트': '디자이너_노트',
+  '사출_방식': '사출_방식',
 }
 
 const COLUMNS = [
@@ -223,7 +224,7 @@ const COLUMNS = [
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 120, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
-  { data: '사출_방식',     title: '사출 방식', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, type: 'dropdown', source: ['RP', '왁스'], renderer: 사출방식Renderer },
   { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
@@ -270,6 +271,24 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
+  td.appendChild(badge)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+  td.innerHTML = ''
+  td.style.verticalAlign = 'middle'
+  td.style.padding = '0 8px'
+  if (!value) return
+  const config: Record<string, { bg: string; color: string }> = {
+    'RP':  { bg: '#EDE9FE', color: '#6D28D9' },
+    '왁스': { bg: '#DBEAFE', color: '#1D4ED8' },
+  }
+  const c = config[value]
+  if (!c) { td.textContent = value; return }
+  const badge = document.createElement('span')
+  badge.textContent = value
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.appendChild(badge)
 }
 
@@ -391,7 +410,7 @@ function mapItem(item: Item, hs: Set<string>): Row {
     작업_위치: item.작업_위치 ?? '',
     검수_유의: item.products?.검수_유의 ?? '',
     도금_색상: o?.도금_색상 ?? '',
-    사출_방식: o?.사출_방식 ?? '',
+    사출_방식: item.사출_방식 ?? '',
     가다번호: item.products?.product_molds?.[0]?.molds?.가다번호 ?? null,
     가다_위치: item.products?.product_molds?.[0]?.molds?.mold_positions?.보관함_위치 ?? null,
     주물_후_수량: item.주물_후_수량 ?? null,
@@ -760,6 +779,7 @@ export default function WorksGrid() {
               왁스_파트_전달: (n.왁스_파트_전달 as boolean) ?? row.왁스_파트_전달,
               주물_후_수량: (n.주물_후_수량 as number | null) ?? row.주물_후_수량,
               디자이너_노트: (n.디자이너_노트 as string) ?? row.디자이너_노트,
+              사출_방식: (n.사출_방식 as string) ?? row.사출_방식,
               updated_at: (n.updated_at as string) ?? row.updated_at,
             }
           }))
