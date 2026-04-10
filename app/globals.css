@@ -110,10 +110,6 @@ body {
   caret-color: #2D7FF9 !important;
 }
 
-.handsontable .handsontableInputHolder {
-  z-index: 9999 !important;
-}
-
 /* 편집 중 셀 - 파란 테두리로 강조 */
 .handsontable td.current.htEditorOpen {
   outline: 2px solid #2D7FF9 !important;
