@@ -22,6 +22,12 @@ const OPS_FOR_TYPE: Record<string, Op[]> = {
 }
 const OPS_DEFAULT: Op[] = ['none', 'count', 'empty', 'filled']
 
+// Lookup/formula columns whose values are numeric
+const NUMERIC_LOOKUP_KEYS = new Set([
+  'metals.purity', '시세_g당', '소재비', '기본_공임', '공임_조정액', '확정_공임',
+  '발주_수량', '순금_중량',
+])
+
 const OP_LABELS: Record<Op, string> = {
   none:     'None',
   sum:      'Sum',
@@ -146,7 +152,9 @@ export default function SummaryBar({
 
             const op = ops[i] ?? 'none'
             const val = calcSummary(op, activeRows, dataKey)
-            const availableOps = OPS_FOR_TYPE[col.fieldType] ?? OPS_DEFAULT
+            const availableOps = NUMERIC_LOOKUP_KEYS.has(dataKey)
+              ? OPS_FOR_TYPE['number']
+              : (OPS_FOR_TYPE[col.fieldType] ?? OPS_DEFAULT)
 
             return (
               <div
@@ -196,7 +204,14 @@ export default function SummaryBar({
             boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           }}
         >
-          {(OPS_FOR_TYPE[columns[dropdown.col]?.fieldType ?? ''] ?? OPS_DEFAULT).map(op => (
+          {(() => {
+            const col = columns[dropdown.col]
+            const dk = typeof col?.data === 'string' ? col.data : ''
+            const dropOps = NUMERIC_LOOKUP_KEYS.has(dk)
+              ? OPS_FOR_TYPE['number']
+              : (OPS_FOR_TYPE[col?.fieldType ?? ''] ?? OPS_DEFAULT)
+            return dropOps
+          })().map(op => (
             <div
               key={op}
               style={{ padding: '6px 12px', fontSize: 13, cursor: 'pointer', color: '#374151' }}

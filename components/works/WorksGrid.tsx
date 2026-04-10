@@ -482,6 +482,10 @@ export default function WorksGrid() {
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
 
   const summaryInnerRef = useRef<HTMLDivElement>(null)
+  const customScrollbarRef = useRef<HTMLDivElement>(null)
+  const customScrollbarInnerRef = useRef<HTMLDivElement>(null)
+  const scrollFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const syncingCustomScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
 
@@ -693,6 +697,20 @@ export default function WorksGrid() {
         if (summaryInnerRef.current) {
           summaryInnerRef.current.style.transform = `translateX(-${capped}px)`
         }
+        // Sync custom scrollbar position
+        if (!syncingCustomScrollRef.current && customScrollbarRef.current) {
+          syncingCustomScrollRef.current = true
+          customScrollbarRef.current.scrollLeft = capped
+          syncingCustomScrollRef.current = false
+        }
+        // Fade in scrollbar
+        if (customScrollbarRef.current) {
+          customScrollbarRef.current.style.opacity = '1'
+        }
+        if (scrollFadeTimerRef.current) clearTimeout(scrollFadeTimerRef.current)
+        scrollFadeTimerRef.current = setTimeout(() => {
+          if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '0'
+        }, 1000)
         syncing = false
       })
     }, 100)
@@ -971,7 +989,7 @@ export default function WorksGrid() {
       )}
 
       {/* Grid area — flex-1, fills remaining height */}
-      <div className={`flex flex-col flex-1 min-h-0 overflow-hidden${!hasAnyFilter ? ' hidden' : ''}`}>
+      <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasAnyFilter ? ' hidden' : ''}`}>
         {/* HOT container — fills all available space */}
         <div
           ref={hotContainerRef}
@@ -986,6 +1004,44 @@ export default function WorksGrid() {
             로딩 중…
           </div>
         )}
+
+        {/* Custom horizontal scrollbar — overlaps SummaryBar, fades in on scroll */}
+        <div
+          ref={customScrollbarRef}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 6,
+            overflowX: 'scroll',
+            overflowY: 'hidden',
+            opacity: 0,
+            transition: 'opacity 0.4s ease',
+            zIndex: 20,
+          }}
+          onScroll={() => {
+            if (syncingCustomScrollRef.current || !customScrollbarRef.current) return
+            syncingCustomScrollRef.current = true
+            const scrollLeft = customScrollbarRef.current.scrollLeft
+            // Sync to HOT
+            if (hotRef.current) {
+              const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+              const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+              if (masterEl) masterEl.scrollLeft = scrollLeft
+              if (topEl) topEl.scrollLeft = scrollLeft
+            }
+            if (summaryInnerRef.current) {
+              summaryInnerRef.current.style.transform = `translateX(-${scrollLeft}px)`
+            }
+            syncingCustomScrollRef.current = false
+          }}
+        >
+          <div
+            ref={customScrollbarInnerRef}
+            style={{ height: 1, width: colWidths.reduce((s, w) => s + w, 0) }}
+          />
+        </div>
 
         {/* Summary bar */}
         <SummaryBar

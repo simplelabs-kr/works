@@ -207,6 +207,11 @@ body {
   width: 6px;
   height: 6px;
 }
+
+/* Hide native horizontal scrollbar on ht_master — replaced by custom overlay scrollbar */
+.handsontable.ht_master .wtHolder::-webkit-scrollbar:horizontal {
+  height: 0 !important;
+}
 .handsontable .wtHolder::-webkit-scrollbar-track {
   background: transparent;
 }
