@@ -53,8 +53,8 @@ body {
   padding: 0 8px !important;
   height: 33px !important;
   line-height: 33px !important;
-  border-right: 1px solid #F1F5F9 !important;
-  border-bottom: 1px solid #F1F5F9 !important;
+  border-right: 1px solid #E2E8F0 !important;
+  border-bottom: 1px solid #E2E8F0 !important;
   vertical-align: middle !important;
   text-align: left !important;
   background-color: #ffffff;
@@ -111,11 +111,11 @@ body {
   outline-offset: -2px !important;
 }
 
-/* 사출 방식 셀: 선택 시 chevron 표시 */
-.handsontable td[data-sochul] {
+/* select 셀: 선택 시 chevron 표시 */
+.handsontable td[data-select-col] {
   position: relative;
 }
-.handsontable td[data-sochul].current::after {
+.handsontable td[data-select-col].current::after {
   content: '';
   position: absolute;
   right: 4px;
