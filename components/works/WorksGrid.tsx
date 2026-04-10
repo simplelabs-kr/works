@@ -134,6 +134,11 @@ type SubmittedFilters = {
   dateTo: string
 }
 
+const SOCHUL_OPTIONS = [
+  { value: 'RP', bg: '#EDE9FE' },
+  { value: '왁스', bg: '#DBEAFE' },
+]
+
 const WORK_POSITIONS = ['현장', '검수', '조립', '마무리 광', '조각', '도금', '각인', '광실', '세척/검수후재작업', '에폭시(연마)', '에폭시(일반)', '컷팅', '외부', '대기', '조립 대기 중', '유화', '초벌', '취소']
 
 // 편집 가능 컬럼 → Supabase 컬럼명 매핑
@@ -147,7 +152,6 @@ const COLUMN_MAP: Record<string, string> = {
   '왁스_파트_전달': '왁스_파트_전달',
   '주물_후_수량': '주물_후_수량',
   '디자이너_노트': '디자이너_노트',
-  '사출_방식': '사출_방식',
 }
 
 const COLUMNS = [
@@ -224,7 +228,7 @@ const COLUMNS = [
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 120, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
-  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, type: 'dropdown', source: ['RP', '왁스'], renderer: 사출방식Renderer },
+  { data: '사출_방식',     title: '사출 방식', readOnly: true,  width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
   { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
@@ -436,6 +440,9 @@ export default function WorksGrid() {
   const scrollLoadRef = useRef<(() => void) | null>(null)
   const holidaySetRef = useRef<Set<string>>(new Set())
 
+  const sochulMenuRef = useRef<HTMLDivElement>(null)
+  const [sochulMenu, setSochulMenu] = useState<{ top: number; left: number; row: number; width: number } | null>(null)
+
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -484,6 +491,27 @@ export default function WorksGrid() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSearch()
   }
+
+  const handleSochulSelect = (rowIdx: number, value: string) => {
+    const rowData = rowsRef.current[rowIdx]
+    if (!rowData?.id) return
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, 사출_방식: value } : r))
+    void fetch(`/api/order-items/${rowData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ column: '사출_방식', value, expected_updated_at: rowData.updated_at }),
+    })
+    setSochulMenu(null)
+  }
+
+  useEffect(() => {
+    if (!sochulMenu) return
+    const handler = (e: MouseEvent) => {
+      if (!sochulMenuRef.current?.contains(e.target as Node)) setSochulMenu(null)
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [sochulMenu])
 
   const hasAnyFilter = !!submittedFilters && (
     submittedFilters.search.length > 0 ||
@@ -726,25 +754,16 @@ export default function WorksGrid() {
         }, 30)
       }
 
-      if (colDef.data === '사출_방식') {
-        // 드롭다운 옵션 2개가 잘리지 않도록 max-height 제거
-        setTimeout(() => {
-          const wrapper = document.querySelector('.htAutocompleteWrapper') as HTMLElement | null
-          if (wrapper) wrapper.style.maxHeight = 'none'
-        }, 30)
-      }
     })
-    // 사출_방식 셀 단일 클릭으로 dropdown 오픈
+    // 사출_방식 셀 클릭 → 커스텀 드롭다운 표시 (HOT editor 우회)
     hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (COLUMNS as any[])[coords.col]
-      if (colDef?.data !== '사출_방식') return
-      setTimeout(() => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const editor = hotRef.current?.getActiveEditor() as any
-        if (editor && !editor.isOpened()) editor.open()
-      }, 0)
+      if ((COLUMNS as any[])[coords.col]?.data !== '사출_방식') return
+      const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
+      if (!td) return
+      const rect = td.getBoundingClientRect()
+      setSochulMenu({ top: rect.bottom + 4, left: rect.left, row: coords.row, width: Math.max(rect.width, 120) })
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -892,6 +911,30 @@ export default function WorksGrid() {
           </div>
         )}
       </div>
+
+      {/* 사출 방식 커스텀 드롭다운 */}
+      {sochulMenu && (
+        <div
+          ref={sochulMenuRef}
+          style={{ position: 'fixed', top: sochulMenu.top, left: sochulMenu.left, minWidth: sochulMenu.width, zIndex: 9999 }}
+          className="bg-white border border-[#E2E8F0] rounded-[6px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] p-1"
+        >
+          {SOCHUL_OPTIONS.map(({ value, bg }) => (
+            <div
+              key={value}
+              className="flex items-center px-2 py-[5px] rounded-[4px] cursor-pointer hover:bg-[#F8FAFC]"
+              onMouseDown={e => { e.preventDefault(); handleSochulSelect(sochulMenu.row, value) }}
+            >
+              <span
+                style={{ background: bg }}
+                className="inline-flex items-center px-[6px] h-[16px] rounded-[4px] text-[11px] font-medium text-[#111827] whitespace-nowrap"
+              >
+                {value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
