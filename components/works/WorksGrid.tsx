@@ -657,13 +657,16 @@ export default function WorksGrid() {
 
   // Pagination
   const [offset, setOffset] = useState(0)
+  const [fetchKey, setFetchKey] = useState(0)
   const isAppend = useRef(false)
   const displayRowsRef = useRef<Row[]>([])
+  const filterConditionsRef = useRef<FilterCondition[]>([])
 
   // Sync refs during render
   rowsRef.current = rows
   totalCountRef.current = totalCount
   holidaySetRef.current = holidaySet
+  filterConditionsRef.current = filterConditions
 
   // Stable scroll-load callback
   scrollLoadRef.current = () => {
@@ -724,7 +727,15 @@ export default function WorksGrid() {
     })
   }, [holidaySet]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch all data (client-side filter/sort applied separately)
+  // Reset and refetch when filter conditions change (server-side filtering)
+  useEffect(() => {
+    setRows([])
+    isAppend.current = false
+    setOffset(0)
+    setFetchKey(k => k + 1)
+  }, [filterConditions]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch data (server-side filter applied via API params)
   useEffect(() => {
     const shouldAppend = isAppend.current
     isAppend.current = false
@@ -738,6 +749,10 @@ export default function WorksGrid() {
     params.set('offset', String(offset))
     params.set('sortCol', '발주일')
     params.set('sortDir', 'desc')
+    const currentFilters = filterConditionsRef.current
+    if (currentFilters.length > 0) {
+      params.set('filters', JSON.stringify(currentFilters))
+    }
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
@@ -757,16 +772,7 @@ export default function WorksGrid() {
       })
 
     return () => { cancelled = true }
-  }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-load remaining pages so client-side filter works on full dataset
-  useEffect(() => {
-    if (loading || loadingMore) return
-    const tc = totalCount
-    if (tc === null || rows.length === 0 || rows.length >= tc) return
-    isAppend.current = true
-    setOffset(o => o + 100)
-  }, [rows.length, totalCount, loading, loadingMore])
+  }, [offset, fetchKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
@@ -1159,8 +1165,12 @@ export default function WorksGrid() {
 
         {/* Count + status */}
         <div className="ml-auto flex items-center gap-3 text-[12px] text-[#6B7280]">
-          {totalCount !== null && !loading && (
-            <span>{totalCount.toLocaleString()}건 로드 / {displayRows.length.toLocaleString()}건 표시</span>
+          {!loading && (
+            <span>
+              {rows.length.toLocaleString()}건 로드
+              {totalCount !== null && ` / 전체 ${totalCount.toLocaleString()}건`}
+              {displayRows.length !== rows.length && ` / ${displayRows.length.toLocaleString()}건 표시`}
+            </span>
           )}
           {loading && <span>로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}
