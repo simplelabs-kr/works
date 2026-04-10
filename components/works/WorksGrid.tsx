@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
+import SummaryBar from '@/components/works/SummaryBar'
+import type { SummaryColDef } from '@/components/works/SummaryBar'
 
 type Orders = {
   brand_id: string | null
@@ -479,6 +481,10 @@ export default function WorksGrid() {
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
 
+  const summaryInnerRef = useRef<HTMLDivElement>(null)
+  const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
+
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -684,6 +690,9 @@ export default function WorksGrid() {
         const capped = Math.min(masterEl.scrollLeft, maxScroll)
         masterEl.scrollLeft = capped
         topEl.scrollLeft = capped
+        if (summaryInnerRef.current) {
+          summaryInnerRef.current.style.transform = `translateX(-${capped}px)`
+        }
         syncing = false
       })
     }, 100)
@@ -819,6 +828,25 @@ export default function WorksGrid() {
       const rect = td.getBoundingClientRect()
       setSelectMenu({ top: rect.bottom + 4, left: rect.left, row: coords.row, width: Math.max(rect.width, 120), column, options })
     })
+    // Column resize → sync summary bar widths
+    hotRef.current.addHook('afterColumnResize', (newSize: number, column: number) => {
+      setColWidths(prev => {
+        const next = [...prev]
+        next[column] = newSize
+        return next
+      })
+    })
+    // Selection → update selectedRowIndices for summary bar
+    hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
+      if (r1 < 0) { setSelectedRowIndices(null); return }
+      const minR = Math.min(r1, r2)
+      const maxR = Math.max(r1, r2)
+      if (minR === maxR) { setSelectedRowIndices(null); return }
+      const indices: number[] = []
+      for (let i = minR; i <= maxR; i++) indices.push(i)
+      setSelectedRowIndices(indices)
+    })
+    hotRef.current.addHook('afterDeselect', () => setSelectedRowIndices(null))
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
       const hot = hotRef.current
@@ -931,13 +959,7 @@ export default function WorksGrid() {
           검색
         </button>
         <span className="ml-auto self-end text-[12px] text-[#6B7280]">
-          {loading
-            ? '로딩 중…'
-            : apiError
-            ? <span className="text-red-500">{apiError}</span>
-            : hasAnyFilter && totalCount !== null
-            ? `총 ${totalCount.toLocaleString()}건 중 ${rows.length.toLocaleString()}건 표시`
-            : null}
+          {loading ? '로딩 중…' : apiError ? <span className="text-red-500">{apiError}</span> : null}
         </span>
       </div>
 
@@ -964,6 +986,17 @@ export default function WorksGrid() {
             로딩 중…
           </div>
         )}
+
+        {/* Summary bar */}
+        <SummaryBar
+          rows={rows as unknown as Record<string, unknown>[]}
+          selectedRowIndices={selectedRowIndices}
+          columns={(COLUMNS as unknown) as SummaryColDef[]}
+          colWidths={colWidths}
+          innerRef={summaryInnerRef}
+          totalCount={totalCount}
+          displayCount={rows.length}
+        />
       </div>
 
       {/* select 컬럼 커스텀 드롭다운 */}
