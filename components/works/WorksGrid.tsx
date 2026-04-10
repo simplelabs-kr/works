@@ -133,6 +133,18 @@ type SubmittedFilters = {
 }
 
 const COLUMNS = [
+  {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: (_row: any) => '',
+    title: '',
+    width: 40,
+    readOnly: true,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
+      td.textContent = String(row + 1)
+      td.style.cssText = 'color:#9CA3AF;font-size:11px;text-align:center;vertical-align:middle;background:#F9FAFB;'
+    },
+  },
   { data: '고유_번호',    title: '고유번호',        width: 140 },
   { data: '제품명',      title: '제품명',          width: 200 },
   { data: '제품명_코드',  title: '제품명(코드 포함)', width: 220 },
@@ -207,9 +219,9 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 
 // 정렬 가능한 컬럼: 제목 → col index
 const SORT_COL_INDEX: Partial<Record<number, SortCol>> = {
-  5: '발주일',
-  6: '생산시작일',
-  7: '데드라인',
+  6: '발주일',
+  7: '생산시작일',
+  8: '데드라인',
 }
 const SORTABLE_TITLES = new Set<string>(['발주일', '생산시작일', '데드라인'])
 
@@ -497,13 +509,14 @@ export default function WorksGrid() {
       data: [],
       columns: COLUMNS,
       colWidths: COLUMNS.map(c => c.width),
-      rowHeaders: true,
+      rowHeaders: false,
       colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
       stretchH: 'none',
       height: hotContainerRef.current?.clientHeight || 600,
       wordWrap: false,
+      autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
     })
