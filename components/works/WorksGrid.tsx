@@ -91,6 +91,7 @@ type Row = {
   metals: { name: string; purity: string | null }
   발주일: string
   생산시작일: string
+  제작_소요일: number | null
   데드라인: string
   출고예정일: string
   시세_g당: string
@@ -266,7 +267,7 @@ function buildColHeaders(): string[] {
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
 
-let holidaySet = new Set<string>()
+// holidaySet은 React state로 관리 (컴포넌트 내부)
 
 function isWorkday(date: Date, hs: Set<string>): boolean {
   const day = date.getDay()
@@ -293,6 +294,17 @@ function addWorkdays(startDate: Date, days: number, hs: Set<string>): Date {
   return nextWorkday(current, hs)
 }
 
+// Row 기반 재계산 (afterChange / Realtime 용)
+function calcShipDateFromRow(row: Pick<Row, '데드라인' | '생산시작일' | '제작_소요일'>, hs: Set<string>): string {
+  if (row.데드라인) {
+    return nextWorkday(new Date(row.데드라인), hs).toISOString().slice(0, 10)
+  }
+  if (row.생산시작일 && row.제작_소요일) {
+    return addWorkdays(new Date(row.생산시작일), Number(row.제작_소요일), hs).toISOString().slice(0, 10)
+  }
+  return '-'
+}
+
 function calcShipDate(item: Item, hs: Set<string>): string {
   if (item.데드라인) {
     return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
@@ -310,7 +322,7 @@ function formatDate(val: string | null | undefined): string {
   return String(val).slice(0, 10)
 }
 
-function mapItem(item: Item): Row {
+function mapItem(item: Item, hs: Set<string>): Row {
   const o = item.orders
   const 제품명 = item.products?.['제품명'] ?? ''
   const 코드 = item.고유_번호?.length === 15
@@ -327,8 +339,9 @@ function mapItem(item: Item): Row {
     metals: { name: o?.metals?.name ?? '', purity: o?.metals?.purity ?? null },
     발주일: formatDate(o?.발주일),
     생산시작일: formatDate(o?.생산시작일),
+    제작_소요일: item.products?.제작_소요일 ?? null,
     데드라인: formatDate(item.데드라인),
-    출고예정일: calcShipDate(item, holidaySet),
+    출고예정일: calcShipDate(item, hs),
     시세_g당: pricePerGram != null ? Math.floor(pricePerGram).toLocaleString() : '',
     소재비: (pricePerGram != null && purity > 0)
       ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
@@ -388,13 +401,15 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
-  // Refs for infinite scroll (avoid stale closures in HOT hooks)
+  // Refs for infinite scroll and stale-closure-safe access in HOT hooks
   const rowsRef = useRef<Row[]>([])
   const totalCountRef = useRef<number | null>(null)
   const isScrollLoadingRef = useRef(false)
   const scrollLoadRef = useRef<(() => void) | null>(null)
+  const holidaySetRef = useRef<Set<string>>(new Set())
 
   const [rows, setRows] = useState<Row[]>([])
+  const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
@@ -411,9 +426,10 @@ export default function WorksGrid() {
   const [offset, setOffset] = useState(0)
   const isAppend = useRef(false)
 
-  // Sync refs for infinite scroll
+  // Sync refs for infinite scroll and stale-closure safety
   useEffect(() => { rowsRef.current = rows }, [rows])
   useEffect(() => { totalCountRef.current = totalCount }, [totalCount])
+  useEffect(() => { holidaySetRef.current = holidaySet }, [holidaySet])
 
   // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
@@ -455,9 +471,21 @@ export default function WorksGrid() {
     fetch('/api/holidays')
       .then(res => res.json())
       .then(({ dates }) => {
-        if (Array.isArray(dates)) holidaySet = new Set<string>(dates)
+        if (Array.isArray(dates)) setHolidaySet(new Set<string>(dates))
       })
   }, [])
+
+  // holidaySet 로드/변경 시 전체 rows 출고예정일 재계산
+  useEffect(() => {
+    if (holidaySet.size === 0) return
+    setRows(prev => {
+      if (prev.length === 0) return prev
+      return prev.map(row => ({
+        ...row,
+        출고예정일: calcShipDateFromRow(row, holidaySet),
+      }))
+    })
+  }, [holidaySet]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch data on filter/sort/offset change
   useEffect(() => {
@@ -492,7 +520,7 @@ export default function WorksGrid() {
       .then(({ data, error, totalCount: tc }) => {
         if (cancelled) return
         if (error) { setApiError(error); return }
-        const mapped = (data ?? []).map(mapItem)
+        const mapped = (data ?? []).map((item: Item) => mapItem(item, holidaySetRef.current))
         if (shouldAppend) {
           setRows(prev => [...prev, ...mapped])
         } else {
@@ -628,6 +656,16 @@ export default function WorksGrid() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ column: supabaseColumn, value: newVal, expected_updated_at: rowData.updated_at }),
         })
+        // 데드라인 변경 시 출고예정일 즉시 재계산
+        if (supabaseColumn === '데드라인') {
+          const rowIdx = row as number
+          const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
+          setRows(prev => prev.map((r, i) => {
+            if (i !== rowIdx) return r
+            const updated = { ...r, 데드라인: newDeadline }
+            return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
+          }))
+        }
       }
     })
     // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈
@@ -706,11 +744,14 @@ export default function WorksGrid() {
           const updatedId = n.id as string
           setRows(prev => prev.map(row => {
             if (row.id !== updatedId) return row
+            const newDeadline = n.데드라인 !== undefined
+              ? (n.데드라인 ? String(n.데드라인).slice(0, 10) : '')
+              : row.데드라인
             return {
               ...row,
               중량: (n.중량 as number | null) ?? row.중량,
-              데드라인: n.데드라인 ? String(n.데드라인).slice(0, 10) : row.데드라인,
-              출고예정일: n.출고일 ? String(n.출고일).slice(0, 10) : row.출고예정일,
+              데드라인: newDeadline,
+              출고예정일: calcShipDateFromRow({ ...row, 데드라인: newDeadline }, holidaySetRef.current),
               작업_위치: (n.작업_위치 as string) ?? row.작업_위치,
               검수: (n.검수 as boolean) ?? row.검수,
               포장: (n.포장 as boolean) ?? row.포장,
