@@ -686,7 +686,7 @@ export default function WorksGrid() {
         }
       }
     })
-    // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈
+    // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈, 사출_방식 → 드롭다운 전체 표시
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterBeginEditing', (row: number, col: number) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -725,6 +725,26 @@ export default function WorksGrid() {
           }
         }, 30)
       }
+
+      if (colDef.data === '사출_방식') {
+        // 드롭다운 옵션 2개가 잘리지 않도록 max-height 제거
+        setTimeout(() => {
+          const wrapper = document.querySelector('.htAutocompleteWrapper') as HTMLElement | null
+          if (wrapper) wrapper.style.maxHeight = 'none'
+        }, 30)
+      }
+    })
+    // 사출_방식 셀 단일 클릭으로 dropdown 오픈
+    hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      if (coords.row < 0) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const colDef = (COLUMNS as any[])[coords.col]
+      if (colDef?.data !== '사출_방식') return
+      setTimeout(() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const editor = hotRef.current?.getActiveEditor() as any
+        if (editor && !editor.isOpened()) editor.open()
+      }, 0)
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
