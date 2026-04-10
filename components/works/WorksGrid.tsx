@@ -134,18 +134,37 @@ type SubmittedFilters = {
   dateTo: string
 }
 
-const SOCHUL_OPTIONS = [
-  { value: 'RP', bg: '#EDE9FE' },
-  { value: '왁스', bg: '#DBEAFE' },
-]
-
-const WORK_POSITIONS = ['현장', '검수', '조립', '마무리 광', '조각', '도금', '각인', '광실', '세척/검수후재작업', '에폭시(연마)', '에폭시(일반)', '컷팅', '외부', '대기', '조립 대기 중', '유화', '초벌', '취소']
+const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
+  '사출_방식': [
+    { value: 'RP', bg: '#EDE9FE' },
+    { value: '왁스', bg: '#DBEAFE' },
+  ],
+  '작업_위치': [
+    { value: '현장', bg: '#DCFCE7' },
+    { value: '검수', bg: '#DBEAFE' },
+    { value: '조립', bg: '#EDE9FE' },
+    { value: '마무리 광', bg: '#FEF9C3' },
+    { value: '조각', bg: '#FFEDD5' },
+    { value: '도금', bg: '#FEF3C7' },
+    { value: '각인', bg: '#FCE7F3' },
+    { value: '광실', bg: '#F3F4F6' },
+    { value: '세척/검수후재작업', bg: '#CCFBF1' },
+    { value: '에폭시(연마)', bg: '#FEF2F2' },
+    { value: '에폭시(일반)', bg: '#FEF2F2' },
+    { value: '컷팅', bg: '#F3F4F6' },
+    { value: '외부', bg: '#F1F5F9' },
+    { value: '대기', bg: '#F9FAFB' },
+    { value: '취소', bg: '#FEE2E2' },
+    { value: '조립 대기 중', bg: '#EDE9FE' },
+    { value: '유화', bg: '#F3F4F6' },
+    { value: '초벌', bg: '#F3F4F6' },
+  ],
+}
 
 // 편집 가능 컬럼 → Supabase 컬럼명 매핑
 const COLUMN_MAP: Record<string, string> = {
   '중량': '중량',
   '데드라인': '데드라인',
-  '작업_위치': '작업_위치',
   '검수': '검수',
   '포장': '포장',
   'rp_출력_시작': 'rp_출력_시작',
@@ -225,7 +244,7 @@ const COLUMNS = [
   { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'lookup'  as FieldType },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS, renderer: 작업위치Renderer },
+  { data: '작업_위치',     title: '작업 위치', readOnly: true,  width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '사출_방식',     title: '사출 방식', readOnly: true,  width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
@@ -257,6 +276,20 @@ function getFieldTypeIcon(type: FieldType): string {
   return icons[type] ?? ''
 }
 
+// ── Common select badge renderer ──────────────────────────────────────────────
+
+function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string) {
+  td.innerHTML = ''
+  td.style.verticalAlign = 'middle'
+  td.style.padding = '0 8px'
+  td.dataset.selectCol = 'true'
+  if (!value) return
+  const badge = document.createElement('span')
+  badge.textContent = value
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:2px 8px;border-radius:9999px;font-size:13px;font-weight:500;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
+  td.appendChild(badge)
+}
+
 // ── Purchase status renderer ──────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -280,52 +313,14 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  td.innerHTML = ''
-  td.style.verticalAlign = 'middle'
-  td.style.padding = '0 8px'
-  td.dataset.sochul = 'true'
-  if (!value) return
-  const bgMap: Record<string, string> = { 'RP': '#EDE9FE', '왁스': '#DBEAFE' }
-  const bg = bgMap[value]
-  if (!bg) { td.textContent = value; return }
-  const badge = document.createElement('span')
-  badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
-  td.appendChild(badge)
-}
-
-const WORK_POSITION_COLORS: Record<string, { bg: string; color: string }> = {
-  '현장':           { bg: '#DCFCE7', color: '#166534' },
-  '검수':           { bg: '#DBEAFE', color: '#1D4ED8' },
-  '조립':           { bg: '#EDE9FE', color: '#6D28D9' },
-  '마무리 광':      { bg: '#FEF9C3', color: '#854D0E' },
-  '조각':           { bg: '#FFEDD5', color: '#9A3412' },
-  '도금':           { bg: '#FEF3C7', color: '#92400E' },
-  '각인':           { bg: '#FCE7F3', color: '#9D174D' },
-  '광실':           { bg: '#F3F4F6', color: '#374151' },
-  '세척/검수후재작업': { bg: '#CCFBF1', color: '#115E59' },
-  '에폭시(연마)':   { bg: '#FEF2F2', color: '#991B1B' },
-  '에폭시(일반)':   { bg: '#FEF2F2', color: '#991B1B' },
-  '컷팅':           { bg: '#F3F4F6', color: '#374151' },
-  '외부':           { bg: '#F1F5F9', color: '#475569' },
-  '대기':           { bg: '#F9FAFB', color: '#6B7280' },
-  '취소':           { bg: '#FEE2E2', color: '#991B1B' },
-  '조립 대기 중':   { bg: '#EDE9FE', color: '#6D28D9' },
-  '유화':           { bg: '#F3F4F6', color: '#374151' },
-  '초벌':           { bg: '#F3F4F6', color: '#374151' },
+  const bg = SELECT_COLUMN_OPTIONS['사출_방식']?.find(o => o.value === value)?.bg ?? ''
+  renderSelectBadge(td, value, bg)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  td.innerHTML = ''
-  td.style.verticalAlign = 'middle'
-  td.style.padding = '0 8px'
-  if (!value) return
-  const bg = (WORK_POSITION_COLORS[value] ?? { bg: '#F3F4F6' }).bg
-  const badge = document.createElement('span')
-  badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
-  td.appendChild(badge)
+  const bg = SELECT_COLUMN_OPTIONS['작업_위치']?.find(o => o.value === value)?.bg ?? ''
+  renderSelectBadge(td, value, bg)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -474,8 +469,8 @@ export default function WorksGrid() {
   const scrollLoadRef = useRef<(() => void) | null>(null)
   const holidaySetRef = useRef<Set<string>>(new Set())
 
-  const sochulMenuRef = useRef<HTMLDivElement>(null)
-  const [sochulMenu, setSochulMenu] = useState<{ top: number; left: number; row: number; width: number } | null>(null)
+  const selectMenuRef = useRef<HTMLDivElement>(null)
+  const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
@@ -526,26 +521,26 @@ export default function WorksGrid() {
     if (e.key === 'Enter') handleSearch()
   }
 
-  const handleSochulSelect = (rowIdx: number, value: string) => {
+  const handleSelectOption = (column: string, rowIdx: number, value: string) => {
     const rowData = rowsRef.current[rowIdx]
     if (!rowData?.id) return
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, 사출_방식: value } : r))
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [column]: value } : r))
     void fetch(`/api/order-items/${rowData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ column: '사출_방식', value, expected_updated_at: rowData.updated_at }),
+      body: JSON.stringify({ column, value, expected_updated_at: rowData.updated_at }),
     })
-    setSochulMenu(null)
+    setSelectMenu(null)
   }
 
   useEffect(() => {
-    if (!sochulMenu) return
+    if (!selectMenu) return
     const handler = (e: MouseEvent) => {
-      if (!sochulMenuRef.current?.contains(e.target as Node)) setSochulMenu(null)
+      if (!selectMenuRef.current?.contains(e.target as Node)) setSelectMenu(null)
     }
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
-  }, [sochulMenu])
+  }, [selectMenu])
 
   const hasAnyFilter = !!submittedFilters && (
     submittedFilters.search.length > 0 ||
@@ -789,17 +784,17 @@ export default function WorksGrid() {
       }
 
     })
-    // 사출_방식 셀: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
+    // select 컬럼: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
     // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
-    let sochulAlreadySelected = false
+    let selectAlreadySelected = false
     hotRef.current.addHook('beforeOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((COLUMNS as any[])[coords.col]?.data !== '사출_방식') {
-        sochulAlreadySelected = false
+      if ((COLUMNS as any[])[coords.col]?.fieldType !== 'select') {
+        selectAlreadySelected = false
         return
       }
       const sel = hotRef.current?.getSelected()
-      sochulAlreadySelected = sel?.some(([r1, c1, r2, c2]) =>
+      selectAlreadySelected = sel?.some(([r1, c1, r2, c2]) =>
         coords.row >= Math.min(r1, r2) && coords.row <= Math.max(r1, r2) &&
         coords.col >= Math.min(c1, c2) && coords.col <= Math.max(c1, c2)
       ) ?? false
@@ -807,12 +802,15 @@ export default function WorksGrid() {
     hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((COLUMNS as any[])[coords.col]?.data !== '사출_방식') return
-      if (!sochulAlreadySelected) return // 첫 클릭: 셀 선택만
+      const colDef = (COLUMNS as any[])[coords.col]
+      if (colDef?.fieldType !== 'select') return
+      if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
+      const column = colDef.data as string
+      const options = SELECT_COLUMN_OPTIONS[column] ?? []
       const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
       if (!td) return
       const rect = td.getBoundingClientRect()
-      setSochulMenu({ top: rect.bottom + 4, left: rect.left, row: coords.row, width: Math.max(rect.width, 120) })
+      setSelectMenu({ top: rect.bottom + 4, left: rect.left, row: coords.row, width: Math.max(rect.width, 120), column, options })
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -961,22 +959,22 @@ export default function WorksGrid() {
         )}
       </div>
 
-      {/* 사출 방식 커스텀 드롭다운 */}
-      {sochulMenu && (
+      {/* select 컬럼 커스텀 드롭다운 */}
+      {selectMenu && (
         <div
-          ref={sochulMenuRef}
-          style={{ position: 'fixed', top: sochulMenu.top, left: sochulMenu.left, minWidth: sochulMenu.width, zIndex: 9999 }}
-          className="bg-white border border-[#E2E8F0] rounded-[6px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] p-1"
+          ref={selectMenuRef}
+          style={{ position: 'fixed', top: selectMenu.top, left: selectMenu.left, minWidth: selectMenu.width, zIndex: 9999 }}
+          className="bg-white border border-[#E2E8F0] rounded-[6px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] p-1 max-h-[320px] overflow-y-auto"
         >
-          {SOCHUL_OPTIONS.map(({ value, bg }) => (
+          {selectMenu.options.map(({ value, bg }) => (
             <div
               key={value}
               className="flex items-center px-2 py-[5px] rounded-[4px] cursor-pointer hover:bg-[#F8FAFC]"
-              onMouseDown={e => { e.preventDefault(); handleSochulSelect(sochulMenu.row, value) }}
+              onMouseDown={e => { e.preventDefault(); handleSelectOption(selectMenu.column, selectMenu.row, value) }}
             >
               <span
                 style={{ background: bg }}
-                className="inline-flex items-center px-[6px] h-[16px] rounded-[4px] text-[11px] font-medium text-[#111827] whitespace-nowrap"
+                className="inline-flex items-center px-2 py-[2px] rounded-[9999px] text-[13px] font-medium text-[#111827] whitespace-nowrap"
               >
                 {value}
               </span>
