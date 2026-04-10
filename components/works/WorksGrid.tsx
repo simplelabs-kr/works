@@ -234,7 +234,7 @@ const COLUMNS = [
   { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
-  { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false, renderer: checkboxRenderer },
+  { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
   { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 70, fieldType: 'formula'  as FieldType },
   { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
@@ -253,10 +253,10 @@ const COLUMNS = [
   { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
-  { data: '포장',          title: '포장',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false, renderer: checkboxRenderer },
+  { data: '포장',          title: '포장',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '순금_중량',     title: '순금 중량', readOnly: true, width: 80, fieldType: 'formula'  as FieldType },
-  { data: 'rp_출력_시작',  title: 'RP 출력 시작', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false, renderer: checkboxRenderer },
-  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: false, width: 100, fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false, renderer: checkboxRenderer },
+  { data: 'rp_출력_시작',  title: 'RP 출력 시작', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
+  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: false, width: 100, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
 ]
 
 // ── Field type icons ─────────────────────────────────────────────────────────
@@ -320,7 +320,7 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   td.appendChild(wrap)
 }
 
-// ── Custom checkbox renderer (Airtable style) ─────────────────────────────────
+// ── Custom checkbox renderer ──────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
@@ -329,31 +329,23 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
   td.style.textAlign = 'center'
   td.style.padding = '0'
   td.style.cursor = 'pointer'
+  td.style.lineHeight = 'normal'
 
-  const box = document.createElement('span')
   const checked = value === true
-  box.style.cssText = checked
-    ? 'display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:3px;background:#2D7FF9;flex-shrink:0;line-height:normal;'
-    : 'display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:3px;border:1.5px solid #D1D5DB;background:transparent;flex-shrink:0;line-height:normal;'
+
+  // Wrapper: full cell size, centers content, shows hover ring
+  const wrap = document.createElement('span')
+  wrap.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;transition:background 0.1s;'
 
   if (checked) {
-    box.innerHTML = `<svg width="11" height="9" viewBox="0 0 11 9" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1,4.5 4,7.5 10,1.5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    wrap.innerHTML = `<svg width="14" height="12" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,6 5.5,10 12.5,1.5" stroke="#2D7FF9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
   }
 
-  // hover effect
-  box.addEventListener('mouseenter', () => {
-    if (box.dataset.checked !== 'true') {
-      box.style.borderColor = '#2D7FF9'
-    }
-  })
-  box.addEventListener('mouseleave', () => {
-    if (box.dataset.checked !== 'true') {
-      box.style.borderColor = '#D1D5DB'
-    }
-  })
-  box.dataset.checked = checked ? 'true' : 'false'
+  // hover: light gray background ring
+  td.onmouseenter = () => { wrap.style.background = '#E5E7EB' }
+  td.onmouseleave = () => { wrap.style.background = 'transparent' }
 
-  td.appendChild(box)
+  td.appendChild(wrap)
 
   // Click: toggle via setDataAtCell (triggers afterChange → PATCH)
   td.onclick = (e) => {
