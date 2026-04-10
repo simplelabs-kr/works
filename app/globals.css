@@ -101,30 +101,16 @@ body {
   cursor: pointer;
 }
 
-/* 편집 input */
+/* 편집 input - 위치/크기는 HOT 내부 계산에 맡김 */
 .handsontable .handsontableInput {
   font-size: 13px !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif !important;
   color: #0F172A !important;
-  padding: 0 8px !important;
-  width: 100% !important;
-  height: 100% !important;
-  border: none !important;
-  outline: none !important;
-  box-shadow: none !important;
   background: #ffffff !important;
-  resize: none !important;
-  line-height: 29px !important;
-  margin: 0 !important;
-  display: block !important;
-  box-sizing: border-box !important;
   caret-color: #2D7FF9 !important;
 }
 
 .handsontable .handsontableInputHolder {
-  top: 0 !important;
-  left: 0 !important;
-  padding: 0 !important;
   z-index: 9999 !important;
 }
 
