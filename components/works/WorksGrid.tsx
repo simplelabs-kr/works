@@ -321,10 +321,10 @@ function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _c
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
   if (!value) return
-  const c = WORK_POSITION_COLORS[value] ?? { bg: '#F3F4F6', color: '#374151' }
+  const bg = (WORK_POSITION_COLORS[value] ?? { bg: '#F3F4F6' }).bg
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
   td.appendChild(badge)
 }
 
@@ -657,8 +657,8 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
-      columnHeaderHeight: 41,
-      rowHeights: 41,
+      columnHeaderHeight: 33,
+      rowHeights: 33,
       outsideClickDeselects: false,
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
