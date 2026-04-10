@@ -60,10 +60,6 @@ body {
   background: #ffffff !important;
 }
 
-/* 짝수 행 줄무늬 완전 제거 */
-.handsontable tbody tr:nth-child(even) td {
-  background: #ffffff !important;
-}
 
 .handsontable tr {
   height: 29px !important;
@@ -89,7 +85,6 @@ body {
 .handsontable td.current {
   outline: 2px solid #2D7FF9 !important;
   outline-offset: -2px !important;
-  background: #ffffff !important;
 }
 
 /* checkbox */

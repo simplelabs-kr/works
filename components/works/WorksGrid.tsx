@@ -576,46 +576,64 @@ export default function WorksGrid() {
     })
 
     // Row hover / selection highlight via JS (CSS :hover doesn't work reliably in HOT)
+    let hoveredRow = -1
     let selectedRow = -1
 
     hotRef.current.addHook('afterOnCellMouseOver', (_e: MouseEvent, coords: { row: number; col: number }) => {
       const hot = hotRef.current
-      if (!hot || coords.row < 0) return
-      const colCount = hot.countCols()
-      for (let c = 0; c < colCount; c++) {
-        const td = hot.getCell(coords.row, c) as HTMLElement | null
-        if (td && !td.classList.contains('area')) td.style.background = '#F8FAFC'
+      if (!hot || coords.row < 0 || coords.row === hoveredRow) return
+      // 이전 hover row 초기화 (selected면 #F1F5F9 복원)
+      if (hoveredRow >= 0) {
+        const count = hot.countCols()
+        for (let c = 0; c < count; c++) {
+          const td = hot.getCell(hoveredRow, c) as HTMLElement | null
+          if (td) td.style.backgroundColor = hoveredRow === selectedRow ? '#F1F5F9' : ''
+        }
+      }
+      hoveredRow = coords.row
+      const count = hot.countCols()
+      for (let c = 0; c < count; c++) {
+        const td = hot.getCell(hoveredRow, c) as HTMLElement | null
+        if (td && !td.classList.contains('area')) td.style.backgroundColor = '#F8FAFC'
       }
     })
 
     hotRef.current.addHook('afterOnCellMouseOut', (_e: MouseEvent, coords: { row: number; col: number }) => {
       const hot = hotRef.current
       if (!hot || coords.row < 0) return
-      const colCount = hot.countCols()
-      for (let c = 0; c < colCount; c++) {
+      const count = hot.countCols()
+      for (let c = 0; c < count; c++) {
         const td = hot.getCell(coords.row, c) as HTMLElement | null
-        if (td && !td.classList.contains('area')) td.style.background = ''
+        if (td && !td.classList.contains('area')) {
+          td.style.backgroundColor = coords.row === selectedRow ? '#F1F5F9' : ''
+        }
       }
+      hoveredRow = -1
     })
 
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
       const hot = hotRef.current
       if (!hot) return
-      const colCount = hot.countCols()
-      // 이전 선택 row 초기화
+      const count = hot.countCols()
+      // 이전 selected row 초기화
       if (selectedRow >= 0 && selectedRow !== r1) {
-        for (let c = 0; c < colCount; c++) {
+        for (let c = 0; c < count; c++) {
           const td = hot.getCell(selectedRow, c) as HTMLElement | null
-          if (td) td.style.background = ''
+          if (td && !td.classList.contains('area')) {
+            td.style.backgroundColor = selectedRow === hoveredRow ? '#F8FAFC' : ''
+          }
         }
       }
-      // 단일 행 선택 시 row 하이라이트
       if (r1 === r2) {
+        // 단일 행 선택
         selectedRow = r1
-        for (let c = 0; c < colCount; c++) {
+        for (let c = 0; c < count; c++) {
           const td = hot.getCell(r1, c) as HTMLElement | null
-          if (td && !td.classList.contains('area')) td.style.background = '#F1F5F9'
+          if (td && !td.classList.contains('area')) td.style.backgroundColor = '#F1F5F9'
         }
+      } else {
+        // drag 다중 선택 — selectedRow 초기화
+        selectedRow = -1
       }
     })
 
