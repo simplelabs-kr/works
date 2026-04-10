@@ -16,34 +16,37 @@ interface FilterCondition {
   value: string | boolean | null
 }
 
-// Row의 columnKey → 실제 DB 컬럼 경로 (null = 서버 필터 불가, 클라이언트 처리)
+// order_items 직접 컬럼만 서버 필터 적용 (orders.* 등 embedded 필터는 제외)
+// null = 서버 필터 불가 → 클라이언트 applyFilters 에서 처리
 const FILTER_COL_MAP: Record<string, string | null> = {
-  '제품명_코드':     'products.제품명',
-  '발주일':          'orders.발주일',
-  '생산시작일':      'orders.생산시작일',
+  // ── order_items 직접 컬럼 ──────────────────────────────
   '데드라인':        '데드라인',
   '수량':            '수량',
-  '발주_수량':       'orders.수량',
-  '호수':            'orders.호수',
-  '고객명':          'orders.고객명',
   '디자이너_노트':   '디자이너_노트',
   '중량':            '중량',
   '검수':            '검수',
-  '기타_옵션':       'orders.기타_옵션',
-  '각인_내용':       'orders.각인_내용',
-  '각인_폰트':       'orders.각인_폰트',
-  '기본_공임':       'products.기본_공임',
-  '공임_조정액':     'orders.공임_조정액',
-  '확정_공임':       'orders.확정_공임',
   '작업_위치':       '작업_위치',
-  '검수_유의':       'products.검수_유의',
-  '도금_색상':       'orders.도금_색상',
   '사출_방식':       '사출_방식',
   '주물_후_수량':    '주물_후_수량',
   '포장':            '포장',
   'rp_출력_시작':    'rp_출력_시작',
   '왁스_파트_전달':  '왁스_파트_전달',
-  // 계산 컬럼 – 서버 필터 불가
+  // ── orders / products join 컬럼 → 클라이언트 처리 ─────
+  '제품명_코드':     null,
+  '발주일':          null,
+  '생산시작일':      null,
+  '발주_수량':       null,
+  '호수':            null,
+  '고객명':          null,
+  '기타_옵션':       null,
+  '각인_내용':       null,
+  '각인_폰트':       null,
+  '기본_공임':       null,
+  '공임_조정액':     null,
+  '확정_공임':       null,
+  '검수_유의':       null,
+  '도금_색상':       null,
+  // ── 계산 컬럼 ─────────────────────────────────────────
   '시세_g당':        null,
   '소재비':          null,
   '허용_중량_범위':  null,
@@ -255,11 +258,20 @@ const SELECT = `
   )
 `;
 
+// order_items에서 직접 정렬 가능한 컬럼 목록 (orders.* 등 join 컬럼 제외)
+const DIRECT_SORT_COLS = new Set([
+  'updated_at', 'created_at', '데드라인', '중량', '수량', '주물_후_수량',
+  '작업_위치', '사출_방식', '고유_번호',
+])
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const offset  = Number(searchParams.get("offset") ?? 0);
-  const sortCol = searchParams.get("sortCol") || "발주일";
   const sortDir = searchParams.get("sortDir") || "desc";
+  const sortColParam = searchParams.get("sortCol") || "updated_at";
+
+  // orders.* 등 join 컬럼은 서버 정렬 불가 → updated_at 으로 대체
+  const dbSortCol = DIRECT_SORT_COLS.has(sortColParam) ? sortColParam : "updated_at";
 
   // Parse filter conditions from WorksGrid
   let filters: FilterCondition[] = []
@@ -267,9 +279,6 @@ export async function GET(request: NextRequest) {
     const fp = searchParams.get("filters")
     if (fp) filters = JSON.parse(fp)
   } catch { /* ignore malformed JSON */ }
-
-  // 발주일은 orders 테이블 컬럼 → embedded 정렬 사용
-  const dbSortCol = sortCol === "발주일" ? "orders.발주일" : sortCol;
 
   // Build base query
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

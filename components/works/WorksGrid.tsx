@@ -650,11 +650,6 @@ export default function WorksGrid() {
   const [filterBtnRect, setFilterBtnRect] = useState<DOMRect | null>(null)
   const [sortBtnRect, setSortBtnRect] = useState<DOMRect | null>(null)
 
-  // User key
-  const [userKey, setUserKey] = useState<string>('')
-  const [userKeyInput, setUserKeyInput] = useState('')
-  const [showUserKeyModal, setShowUserKeyModal] = useState(false)
-
   // Pagination
   const [offset, setOffset] = useState(0)
   const [fetchKey, setFetchKey] = useState(0)
@@ -747,7 +742,7 @@ export default function WorksGrid() {
 
     const params = new URLSearchParams()
     params.set('offset', String(offset))
-    params.set('sortCol', '발주일')
+    params.set('sortCol', 'updated_at')
     params.set('sortDir', 'desc')
     const currentFilters = filterConditionsRef.current
     if (currentFilters.length > 0) {
@@ -1070,37 +1065,6 @@ export default function WorksGrid() {
     }
   }, [fixedCols])
 
-  // UserKey: check localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem('works:userKey')
-    if (stored) {
-      setUserKey(stored)
-      // Load saved settings
-      fetch(`/api/user-view-settings?user_key=${encodeURIComponent(stored)}&page_key=works`)
-        .then(res => res.json())
-        .then(({ data }) => {
-          if (data?.filters) setFilterConditions(data.filters)
-          if (data?.sort) setSortConditions(data.sort)
-        })
-        .catch(() => {})
-    } else {
-      setShowUserKeyModal(true)
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Auto-save filter/sort settings (debounced 1s)
-  useEffect(() => {
-    if (!userKey) return
-    const t = setTimeout(() => {
-      void fetch('/api/user-view-settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_key: userKey, page_key: 'works', filters: filterConditions, sort: sortConditions }),
-      })
-    }, 1000)
-    return () => clearTimeout(t)
-  }, [filterConditions, sortConditions, userKey])
-
   // Column defs for modals (string-keyed only)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filterColDefs: FilterColDef[] = (COLUMNS as any[])
@@ -1271,42 +1235,6 @@ export default function WorksGrid() {
         />
       )}
 
-      {/* User key modal */}
-      {showUserKeyModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.3)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'white', borderRadius: 10, padding: 28, minWidth: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-            <div style={{ fontSize: 16, fontWeight: 600, color: '#111827', marginBottom: 8 }}>이름을 입력해주세요</div>
-            <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 16 }}>설정이 이름별로 저장됩니다.</div>
-            <input
-              autoFocus
-              style={{ width: '100%', border: '1px solid #E2E8F0', borderRadius: 4, padding: '8px 10px', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-              value={userKeyInput}
-              onChange={e => setUserKeyInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && userKeyInput.trim()) {
-                  const k = userKeyInput.trim()
-                  localStorage.setItem('works:userKey', k)
-                  setUserKey(k)
-                  setShowUserKeyModal(false)
-                }
-              }}
-              placeholder="이름"
-            />
-            <button
-              style={{ marginTop: 12, width: '100%', background: '#2D7FF9', color: 'white', border: 'none', borderRadius: 4, padding: '8px', fontSize: 14, cursor: 'pointer' }}
-              onClick={() => {
-                const k = userKeyInput.trim()
-                if (!k) return
-                localStorage.setItem('works:userKey', k)
-                setUserKey(k)
-                setShowUserKeyModal(false)
-              }}
-            >
-              확인
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
