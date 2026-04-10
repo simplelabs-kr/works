@@ -759,6 +759,15 @@ export default function WorksGrid() {
     return () => { cancelled = true }
   }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-load remaining pages so client-side filter works on full dataset
+  useEffect(() => {
+    if (loading || loadingMore) return
+    const tc = totalCount
+    if (tc === null || rows.length === 0 || rows.length >= tc) return
+    isAppend.current = true
+    setOffset(o => o + 100)
+  }, [rows.length, totalCount, loading, loadingMore])
+
   // Resize HOT height to fill its container
   useEffect(() => {
     if (!hotContainerRef.current) return

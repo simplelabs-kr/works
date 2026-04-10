@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -107,6 +107,7 @@ export default function FilterModal({
   selectOptions,
 }: FilterModalProps) {
   const modalRef = useRef<HTMLDivElement>(null)
+  const [colSearch, setColSearch] = useState('')
 
   // Close on outside click
   useEffect(() => {
@@ -118,9 +119,12 @@ export default function FilterModal({
   }, [onClose])
 
   const filteredCols = columns.filter(c => typeof c.data === 'string' && c.data !== '')
+  const searchedCols = colSearch
+    ? filteredCols.filter(c => c.title.toLowerCase().includes(colSearch.toLowerCase()))
+    : filteredCols
 
   const addCondition = () => {
-    const firstCol = filteredCols[0]
+    const firstCol = searchedCols[0] ?? filteredCols[0]
     if (!firstCol) return
     const ops = getOpsForCol(firstCol)
     onChange([...conditions, {
@@ -163,23 +167,25 @@ export default function FilterModal({
   const dropdownStyle: React.CSSProperties = {
     border: '1px solid #E2E8F0',
     borderRadius: 4,
-    padding: '3px 6px',
-    fontSize: 13,
+    padding: '5px 8px',
+    fontSize: 14,
     background: 'white',
     cursor: 'pointer',
     outline: 'none',
     color: '#111827',
+    height: 34,
   }
 
   const inputStyle: React.CSSProperties = {
     border: '1px solid #E2E8F0',
     borderRadius: 4,
-    padding: '3px 8px',
-    fontSize: 13,
+    padding: '5px 10px',
+    fontSize: 14,
     outline: 'none',
     color: '#111827',
-    minWidth: 120,
+    minWidth: 130,
     flex: 1,
+    height: 34,
   }
 
   return (
@@ -195,14 +201,25 @@ export default function FilterModal({
         borderRadius: 8,
         boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
         padding: 16,
-        minWidth: 520,
+        minWidth: 620,
         maxWidth: '90vw',
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#111827', marginBottom: 12 }}>필터</div>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#111827', marginBottom: 14 }}>필터</div>
+
+      {/* Column search */}
+      <div style={{ marginBottom: 12 }}>
+        <input
+          style={{ ...inputStyle, width: '100%', minWidth: 0, flex: 'none' }}
+          type="text"
+          placeholder="컬럼 검색..."
+          value={colSearch}
+          onChange={e => setColSearch(e.target.value)}
+        />
+      </div>
 
       {conditions.length === 0 && (
-        <div style={{ fontSize: 13, color: '#9CA3AF', marginBottom: 12 }}>필터 조건이 없습니다.</div>
+        <div style={{ fontSize: 14, color: '#9CA3AF', marginBottom: 12 }}>필터 조건이 없습니다.</div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -212,15 +229,19 @@ export default function FilterModal({
           const showValue = needsValueInput(cond.operator)
           const isSelect = col?.fieldType === 'select'
           const opts = isSelect ? (selectOptions[cond.columnKey] ?? []) : []
+          const colsForDropdown = colSearch
+            ? filteredCols.filter(c => c.title.toLowerCase().includes(colSearch.toLowerCase()))
+            : filteredCols
+          const colsToShow = colsForDropdown.length > 0 ? colsForDropdown : filteredCols
 
           return (
-            <div key={cond.id} style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div key={cond.id} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               {/* Logic */}
               {i === 0 ? (
-                <span style={{ fontSize: 12, color: '#6B7280', width: 44, textAlign: 'center' }}>조건</span>
+                <span style={{ fontSize: 13, color: '#6B7280', width: 64, textAlign: 'center', flexShrink: 0 }}>조건</span>
               ) : (
                 <select
-                  style={{ ...dropdownStyle, width: 52 }}
+                  style={{ ...dropdownStyle, width: 72, flexShrink: 0 }}
                   value={cond.logic}
                   onChange={e => updateCondition(cond.id, { logic: e.target.value as 'AND' | 'OR' })}
                 >
@@ -231,18 +252,18 @@ export default function FilterModal({
 
               {/* Column */}
               <select
-                style={{ ...dropdownStyle, maxWidth: 150 }}
+                style={{ ...dropdownStyle, width: 160 }}
                 value={cond.columnKey}
                 onChange={e => updateCondition(cond.id, { columnKey: e.target.value })}
               >
-                {filteredCols.map(c => (
+                {colsToShow.map(c => (
                   <option key={c.data} value={c.data}>{c.title}</option>
                 ))}
               </select>
 
               {/* Operator */}
               <select
-                style={{ ...dropdownStyle, maxWidth: 130 }}
+                style={{ ...dropdownStyle, width: 140 }}
                 value={cond.operator}
                 onChange={e => updateCondition(cond.id, { operator: e.target.value })}
               >
@@ -255,7 +276,7 @@ export default function FilterModal({
               {showValue && (
                 isSelect && opts.length > 0 ? (
                   <select
-                    style={{ ...dropdownStyle, flex: 1, minWidth: 100 }}
+                    style={{ ...dropdownStyle, flex: 1, minWidth: 110 }}
                     value={String(cond.value ?? '')}
                     onChange={e => updateCondition(cond.id, { value: e.target.value })}
                   >
@@ -276,7 +297,7 @@ export default function FilterModal({
               {/* Remove */}
               <button
                 onClick={() => removeCondition(cond.id)}
-                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 16, padding: '0 4px', lineHeight: 1 }}
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#9CA3AF', fontSize: 18, padding: '0 4px', lineHeight: 1, flexShrink: 0 }}
               >×</button>
             </div>
           )
@@ -285,7 +306,7 @@ export default function FilterModal({
 
       <button
         onClick={addCondition}
-        style={{ fontSize: 13, color: '#2D7FF9', border: 'none', background: 'none', cursor: 'pointer', padding: '0 0 12px', display: 'block' }}
+        style={{ fontSize: 14, color: '#2D7FF9', border: 'none', background: 'none', cursor: 'pointer', padding: '0 0 14px', display: 'block' }}
       >
         + 조건 추가
       </button>
@@ -293,13 +314,13 @@ export default function FilterModal({
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #F1F5F9', paddingTop: 12 }}>
         <button
           onClick={() => { onChange([]); onApply() }}
-          style={{ fontSize: 13, color: '#6B7280', border: '1px solid #E2E8F0', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', background: 'white' }}
+          style={{ fontSize: 14, color: '#6B7280', border: '1px solid #E2E8F0', borderRadius: 4, padding: '6px 14px', cursor: 'pointer', background: 'white' }}
         >
           초기화
         </button>
         <button
           onClick={() => { onApply(); onClose() }}
-          style={{ fontSize: 13, color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', cursor: 'pointer', background: '#2D7FF9' }}
+          style={{ fontSize: 14, color: 'white', border: 'none', borderRadius: 4, padding: '6px 14px', cursor: 'pointer', background: '#2D7FF9' }}
         >
           적용
         </button>

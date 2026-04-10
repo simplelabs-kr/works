@@ -87,6 +87,37 @@ export async function GET(request: NextRequest) {
   const sortCol  = searchParams.get("sortCol")  || "발주일";
   const sortDir  = searchParams.get("sortDir")  || "desc";
 
+  const hasFilter = search || brand || dateFrom || dateTo;
+
+  // 검색 조건이 없으면 직접 테이블 쿼리 (RPC는 all-null 시 0 반환)
+  if (!hasFilter) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let query = (supabaseAdmin as any)
+      .from("order_items")
+      .select(SELECT)
+      .not("중단_취소", "is", true)
+      .order(sortCol, { ascending: sortDir === "asc" })
+      .range(offset, offset + 99);
+
+    const { data, error } = await query as { data: AnyRecord[]; error: any };
+
+    if (error) {
+      console.error("[order-items] query error:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    let totalCount: number | undefined;
+    if (offset === 0) {
+      const { count, error: countError } = await supabaseAdmin
+        .from("order_items")
+        .select("id", { count: "exact", head: true })
+        .not("중단_취소", "is", true) as { count: number | null; error: any };
+      if (!countError) totalCount = count ?? 0;
+    }
+
+    return NextResponse.json({ data: data ?? [], totalCount });
+  }
+
   // Step 1: RPC로 id 목록 수집
   const { data: rpcRows, error: rpcError } = await supabaseAdmin
     .rpc("search_order_items", {
