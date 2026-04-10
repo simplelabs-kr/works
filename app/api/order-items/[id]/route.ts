@@ -5,7 +5,7 @@ export const maxDuration = 10
 
 // Editable columns whitelist (order_items direct columns only)
 const EDITABLE_COLUMNS = [
-  '중량', '데드라인', '출고일', '작업_위치', '검수', '포장',
+  '중량', '데드라인', '작업_위치', '검수', '포장',
   'rp_출력_시작', '왁스_파트_전달', '주물_후_수량', '디자이너_노트',
 ]
 
