@@ -86,10 +86,10 @@ body {
 
 /* selected cell */
 .handsontable td.area {
-  background: #F0FDF9 !important;
+  background: #EBF3FF !important;
 }
 .handsontable td.current {
-  outline: 2px solid #3ECF8E !important;
+  outline: 2px solid #2D7FF9 !important;
   outline-offset: -2px !important;
 }
 

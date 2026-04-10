@@ -189,16 +189,16 @@ const COLUMNS = [
 type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'lookup' | 'formula'
 
 function getFieldTypeIcon(type: FieldType): string {
-  const s = 'stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
+  const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
   const icons: Record<FieldType, string> = {
-    text:     `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none">A</text></svg>`,
-    longtext: `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
-    number:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
-    date:     `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
-    checkbox: `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
-    select:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
-    lookup:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
-    formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none" font-style="italic">fx</text></svg>`,
+    text:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none">A</text></svg>`,
+    longtext: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
+    number:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
+    date:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
+    checkbox: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
+    select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
+    lookup:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
+    formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
   }
   return icons[type] ?? ''
 }
@@ -598,7 +598,7 @@ export default function WorksGrid() {
             value={inputSearch}
             onChange={e => setInputSearch(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -609,7 +609,7 @@ export default function WorksGrid() {
             value={inputBrand}
             onChange={e => setInputBrand(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-36 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
+            className="w-36 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -619,14 +619,14 @@ export default function WorksGrid() {
               type="date"
               value={inputDateFrom}
               onChange={e => setInputDateFrom(e.target.value)}
-              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
             />
             <span className="text-[#9CA3AF] text-sm">–</span>
             <input
               type="date"
               value={inputDateTo}
               onChange={e => setInputDateTo(e.target.value)}
-              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#3ECF8E] focus:outline-none focus:shadow-[0_0_0_2px_rgba(62,207,142,0.15)]"
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
             />
           </div>
         </div>
