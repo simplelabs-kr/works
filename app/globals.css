@@ -93,6 +93,14 @@ body {
   outline-offset: -2px !important;
 }
 
+/* 첫 번째 컬럼 좌측 여백 */
+.handsontable thead th:first-child {
+  padding-left: 12px !important;
+}
+.handsontable tbody td:first-child {
+  padding-left: 12px !important;
+}
+
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;

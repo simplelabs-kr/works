@@ -660,7 +660,7 @@ export default function WorksGrid() {
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-50 pointer-events-none' : ''}`}
         >
-          <div ref={containerRef} className="pl-2" />
+          <div ref={containerRef} />
         </div>
 
         {/* Infinite scroll loading indicator */}
