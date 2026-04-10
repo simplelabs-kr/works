@@ -194,14 +194,14 @@ type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select'
 function getFieldTypeIcon(type: FieldType): string {
   const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
   const icons: Record<FieldType, string> = {
-    text:     `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><text x="1" y="10" font-size="10" font-weight="600" font-family="serif" fill="#9CA3AF" stroke="none">A</text></svg>`,
+    text:     `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none">A</text></svg>`,
     longtext: `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
     number:   `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
     date:     `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
     checkbox: `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
-    select:   `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><circle cx="6" cy="6" r="4.5"/><circle cx="6" cy="6" r="2" fill="#9CA3AF" stroke="none"/></svg>`,
+    select:   `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
     lookup:   `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
-    formula:  `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M9 1.5 C9 1.5 7 1.5 6.5 3 L3.5 10.5"/><path d="M3 1.5 L5 1.5"/><path d="M2.5 6.5 L7.5 6.5"/></svg>`,
+    formula:  `<svg width="13" height="11" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
   }
   return icons[type] ?? ''
 }
@@ -541,6 +541,7 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
+      rowHeights: 28,
     })
     // Fix horizontal scroll misalignment:
     // ht_master has a vertical scrollbar (~17px) that reduces clientWidth,

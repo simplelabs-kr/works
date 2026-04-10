@@ -23,15 +23,29 @@ body {
   font-weight: 600 !important;
   letter-spacing: 0.02em !important;
   border-bottom: 2px solid #E5E7EB !important;
-  padding: 8px 10px !important;
+  padding: 0 8px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  text-align: left !important;
 }
 
 .handsontable td {
   font-size: 13px !important;
   color: #111827 !important;
-  padding: 8px 10px !important;
+  padding: 0 8px !important;
+  height: 28px !important;
+  line-height: 28px !important;
   border-color: #F3F4F6 !important;
   vertical-align: middle !important;
+  text-align: left !important;
+}
+
+.handsontable .colHeader {
+  text-align: left !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  width: 100% !important;
 }
 
 .handsontable tbody tr:hover td {
@@ -43,7 +57,7 @@ body {
 }
 
 .handsontable tr {
-  height: 36px !important;
+  height: 28px !important;
 }
 
 /* row header */
