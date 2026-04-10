@@ -68,6 +68,22 @@ body {
   outline-offset: -2px;
 }
 
+/* Handsontable 헤더/바디 스크롤 동기화 */
+.handsontable .wtHolder {
+  overflow-x: scroll !important;
+  overflow-y: auto !important;
+}
+
+.handsontable .ht_master .wtHolder {
+  overflow-x: scroll !important;
+  overflow-y: scroll !important;
+}
+
+.handsontable .ht_clone_top .wtHolder {
+  overflow-x: hidden !important;
+  overflow-y: hidden !important;
+}
+
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;

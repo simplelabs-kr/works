@@ -520,6 +520,16 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
     })
+    // Sync header scrollLeft with body on horizontal scroll
+    hotRef.current.addHook('afterScrollHorizontally', () => {
+      const hot = hotRef.current
+      if (!hot) return
+      const masterHolder = hot.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+      const topHolder = hot.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+      if (masterHolder && topHolder) {
+        topHolder.scrollLeft = masterHolder.scrollLeft
+      }
+    })
     // Sort header click
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
