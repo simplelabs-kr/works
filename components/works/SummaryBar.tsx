@@ -86,8 +86,6 @@ interface SummaryBarProps {
   columns: SummaryColDef[]
   colWidths: number[]
   innerRef: React.RefObject<HTMLDivElement>
-  totalCount: number | null
-  displayCount: number
 }
 
 export default function SummaryBar({
@@ -96,8 +94,6 @@ export default function SummaryBar({
   columns,
   colWidths,
   innerRef,
-  totalCount,
-  displayCount,
 }: SummaryBarProps) {
   const [ops, setOps] = useState<Record<number, Op>>({})
   const [dropdown, setDropdown] = useState<{ col: number; top: number; left: number; width: number } | null>(null)
@@ -126,19 +122,16 @@ export default function SummaryBar({
           {columns.map((col, i) => {
             const w = colWidths[i] ?? col.width
 
-            {/* First cell: count text */}
+            {/* First cell: selection info */}
             if (i === 0) {
               return (
                 <div
                   key={i}
                   style={{ width: w, flexShrink: 0, padding: '0 8px', display: 'flex', alignItems: 'center' }}
                 >
-                  {totalCount !== null && (
+                  {selectedRowIndices && selectedRowIndices.length > 1 && (
                     <span style={{ fontSize: 12, color: '#6B7280', whiteSpace: 'nowrap' }}>
-                      {selectedRowIndices && selectedRowIndices.length > 1
-                        ? `${selectedRowIndices.length}행 선택`
-                        : `총 ${totalCount.toLocaleString()}건 중 ${displayCount.toLocaleString()}건`
-                      }
+                      {selectedRowIndices.length}행 선택
                     </span>
                   )}
                 </div>
@@ -147,7 +140,7 @@ export default function SummaryBar({
 
             const dataKey = typeof col.data === 'string' ? col.data : null
             if (!dataKey || !col.fieldType) {
-              return <div key={i} style={{ width: w, flexShrink: 0, borderLeft: '1px solid #E2E8F0' }} />
+              return <div key={i} style={{ width: w, flexShrink: 0 }} />
             }
 
             const op = ops[i] ?? 'none'
@@ -163,7 +156,7 @@ export default function SummaryBar({
                   width: w, flexShrink: 0, padding: '0 6px',
                   display: 'flex', flexDirection: 'column',
                   justifyContent: 'center', alignItems: 'flex-end',
-                  borderLeft: '1px solid #E2E8F0', cursor: 'pointer',
+                  cursor: 'pointer',
                 }}
                 className="hover:bg-[#F1F5F9]"
                 onClick={e => {

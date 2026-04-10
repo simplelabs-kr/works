@@ -488,6 +488,7 @@ export default function WorksGrid() {
   const syncingCustomScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
+  const [fixedCols, setFixedCols] = useState(1)
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
@@ -671,6 +672,7 @@ export default function WorksGrid() {
       manualColumnMove: true,
       columnHeaderHeight: 33,
       rowHeights: 33,
+      fixedColumnsStart: 1,
       outsideClickDeselects: false,
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
@@ -926,6 +928,12 @@ export default function WorksGrid() {
     return () => { void supabase.removeChannel(channel) }
   }, [])
 
+  useEffect(() => {
+    if (hotRef.current) {
+      hotRef.current.updateSettings({ fixedColumnsStart: fixedCols })
+    }
+  }, [fixedCols])
+
   return (
     <div className="flex flex-col h-full">
       {/* Filter bar — shrink-0, px-5 only */}
@@ -976,9 +984,28 @@ export default function WorksGrid() {
         >
           검색
         </button>
-        <span className="ml-auto self-end text-[12px] text-[#6B7280]">
-          {loading ? '로딩 중…' : apiError ? <span className="text-red-500">{apiError}</span> : null}
-        </span>
+
+        {/* Freeze column control */}
+        <div className="flex items-center gap-1 self-end ml-auto">
+          <span className="text-[12px] text-[#6B7280]">고정: {fixedCols}열</span>
+          <button
+            onClick={() => setFixedCols(n => Math.max(0, n - 1))}
+            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
+          >−</button>
+          <button
+            onClick={() => setFixedCols(n => Math.min(COLUMNS.length, n + 1))}
+            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
+          >+</button>
+        </div>
+
+        {/* Count + status */}
+        <div className="self-end flex items-center gap-3 text-[12px] text-[#6B7280]">
+          {totalCount !== null && !loading && (
+            <span>{totalCount.toLocaleString()}건 중 {rows.length.toLocaleString()}건</span>
+          )}
+          {loading && <span>로딩 중…</span>}
+          {apiError && <span className="text-red-500">{apiError}</span>}
+        </div>
       </div>
 
       {/* Empty state */}
@@ -1050,8 +1077,6 @@ export default function WorksGrid() {
           columns={(COLUMNS as unknown) as SummaryColDef[]}
           colWidths={colWidths}
           innerRef={summaryInnerRef}
-          totalCount={totalCount}
-          displayCount={rows.length}
         />
       </div>
 
