@@ -537,6 +537,8 @@ export default function WorksGrid() {
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
+      TH.style.verticalAlign = 'middle'
+      TH.style.lineHeight = 'normal'
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (COLUMNS as any[])[col]
       if (!colDef || !colDef.fieldType) return
@@ -545,11 +547,21 @@ export default function WorksGrid() {
       if (!div) return
       const icon = document.createElement('span')
       icon.className = 'field-type-icon'
-      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:6px;vertical-align:middle;flex-shrink:0;'
+      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:6px;flex-shrink:0;'
       icon.innerHTML = getFieldTypeIcon(colDef.fieldType as FieldType)
+      const textSpan = document.createElement('span')
+      textSpan.style.overflow = 'hidden'
+      textSpan.style.textOverflow = 'ellipsis'
+      textSpan.style.whiteSpace = 'nowrap'
+      textSpan.style.minWidth = '0'
+      textSpan.textContent = div.textContent ?? ''
+      div.textContent = ''
       div.style.display = 'inline-flex'
       div.style.alignItems = 'center'
-      div.insertBefore(icon, div.firstChild)
+      div.style.width = '100%'
+      div.style.overflow = 'hidden'
+      div.appendChild(icon)
+      div.appendChild(textSpan)
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -587,7 +599,7 @@ export default function WorksGrid() {
             value={inputSearch}
             onChange={e => setInputSearch(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-48 rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#6B7280] focus:outline-none"
+            className="w-48 h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -598,7 +610,7 @@ export default function WorksGrid() {
             value={inputBrand}
             onChange={e => setInputBrand(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-36 rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#6B7280] focus:outline-none"
+            className="w-36 h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
           />
         </div>
         <div className="flex flex-col gap-1">
@@ -608,20 +620,20 @@ export default function WorksGrid() {
               type="date"
               value={inputDateFrom}
               onChange={e => setInputDateFrom(e.target.value)}
-              className="rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] focus:border-[#6B7280] focus:outline-none"
+              className="h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
             />
             <span className="text-[#9CA3AF] text-sm">–</span>
             <input
               type="date"
               value={inputDateTo}
               onChange={e => setInputDateTo(e.target.value)}
-              className="rounded-[6px] border border-[#D1D5DB] px-[10px] py-[6px] text-[13px] text-[#111827] focus:border-[#6B7280] focus:outline-none"
+              className="h-[30px] rounded-[6px] border border-[#E5E7EB] px-[10px] text-[13px] text-[#111827] focus:border-[#2563EB] focus:outline-none focus:shadow-[0_0_0_2px_rgba(37,99,235,0.1)]"
             />
           </div>
         </div>
         <button
           onClick={handleSearch}
-          className="self-end rounded-[6px] bg-[#111827] px-[14px] py-[6px] text-[13px] font-medium text-white hover:bg-[#1F2937] active:bg-[#374151] transition-colors"
+          className="self-end h-[30px] rounded-[6px] bg-[#111827] px-[14px] text-[13px] font-medium text-white hover:bg-[#1F2937] active:bg-[#374151] transition-colors"
         >
           검색
         </button>

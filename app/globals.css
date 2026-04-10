@@ -7,10 +7,10 @@ html,
 body {
   height: 100%;
   overflow: hidden;
+  background: #ffffff !important;
 }
 
 body {
-  background: #F8F9FA;
   color: #111827;
   -webkit-font-smoothing: antialiased;
 }
@@ -20,13 +20,32 @@ body {
   background: #F9FAFB !important;
   color: #374151 !important;
   font-size: 12px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   letter-spacing: 0.02em !important;
-  border-bottom: 2px solid #E5E7EB !important;
+  border-right: 1px solid #E5E7EB !important;
+  border-bottom: 1px solid #D1D5DB !important;
   padding: 0 8px !important;
   height: 29px !important;
   line-height: 29px !important;
   text-align: left !important;
+  vertical-align: middle !important;
+  user-select: none !important;
+  transition: background 0.1s ease !important;
+}
+
+.handsontable thead th:hover {
+  background: #F3F4F6 !important;
+  cursor: pointer;
+}
+
+.handsontable thead th .colHeader {
+  display: inline-flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
 }
 
 .handsontable td {
@@ -35,17 +54,10 @@ body {
   padding: 0 8px !important;
   height: 29px !important;
   line-height: 29px !important;
-  border-color: #F3F4F6 !important;
+  border-right: 1px solid #F3F4F6 !important;
+  border-bottom: 1px solid #F3F4F6 !important;
   vertical-align: middle !important;
   text-align: left !important;
-}
-
-.handsontable .colHeader {
-  text-align: left !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: flex-start !important;
-  width: 100% !important;
 }
 
 .handsontable tbody tr:hover td {
@@ -53,7 +65,7 @@ body {
 }
 
 .handsontable tbody tr:nth-child(even) td {
-  background: #FAFAFA !important;
+  background: transparent !important;
 }
 
 .handsontable tr {
@@ -78,19 +90,25 @@ body {
   background: #EFF6FF !important;
 }
 .handsontable td.current {
-  outline: 2px solid #3B82F6 !important;
-  outline-offset: -2px;
+  outline: 2px solid #2563EB !important;
+  outline-offset: -2px !important;
 }
 
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 .handsontable .wtHolder::-webkit-scrollbar-track {
   background: transparent;
 }
 .handsontable .wtHolder::-webkit-scrollbar-thumb {
   background: #D1D5DB;
-  border-radius: 3px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.handsontable .wtHolder::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+  background-clip: content-box;
 }
