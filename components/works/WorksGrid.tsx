@@ -164,6 +164,23 @@ const COLUMNS = [
       },
       firstDay: 0,
       showDaysInNextAndPreviousMonths: true,
+      toString(date: Date) {
+        const y = date.getFullYear()
+        const m = String(date.getMonth() + 1).padStart(2, '0')
+        const d = String(date.getDate()).padStart(2, '0')
+        return `${y}-${m}-${d}`
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      onDraw(picker: any) {
+        const title = picker.el?.querySelector('.pika-title')
+        if (!title) return
+        const monthEl = title.querySelector('.pika-select-month')
+        const yearEl = title.querySelector('.pika-select-year')
+        if (!monthEl || !yearEl) return
+        if (monthEl.previousElementSibling !== yearEl) {
+          title.insertBefore(yearEl, monthEl)
+        }
+      },
     },
   },
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType },

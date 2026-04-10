@@ -142,12 +142,18 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
   z-index: 9999 !important;
 }
-.pika-button:hover {
+.pika-button {
+  color: #111827 !important;
+}
+.pika-button:hover,
+.pika-button:focus {
   background: #EBF3FF !important;
+  color: #111827 !important;
   border-radius: 4px !important;
 }
 .is-selected .pika-button {
   background: #2D7FF9 !important;
+  color: #ffffff !important;
   border-radius: 4px !important;
 }
 .pika-prev, .pika-next {
