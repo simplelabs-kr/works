@@ -520,6 +520,26 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
     })
+    // Fix horizontal scroll misalignment:
+    // ht_master has a vertical scrollbar (~17px) that reduces clientWidth,
+    // making its max scrollLeft larger than ht_clone_top's max scrollLeft.
+    // Cap master.scrollLeft to top's max to keep them aligned.
+    setTimeout(() => {
+      if (!hotRef.current) return
+      const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+      const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+      if (!masterEl || !topEl) return
+      let syncing = false
+      masterEl.addEventListener('scroll', () => {
+        if (syncing) return
+        syncing = true
+        const maxScroll = topEl.scrollWidth - topEl.clientWidth
+        const capped = Math.min(masterEl.scrollLeft, maxScroll)
+        masterEl.scrollLeft = capped
+        topEl.scrollLeft = capped
+        syncing = false
+      })
+    }, 100)
     // Sort header click
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
