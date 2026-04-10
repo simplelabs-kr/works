@@ -225,7 +225,7 @@ const COLUMNS = [
   { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'lookup'  as FieldType },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 120, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS },
+  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS, renderer: 작업위치Renderer },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
   { data: '사출_방식',     title: '사출 방식', readOnly: true,  width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
@@ -272,7 +272,7 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   if (!c) return
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
   td.appendChild(badge)
@@ -290,7 +290,41 @@ function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _c
   if (!bg) { td.textContent = value; return }
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
+  td.appendChild(badge)
+}
+
+const WORK_POSITION_COLORS: Record<string, { bg: string; color: string }> = {
+  '현장':           { bg: '#DCFCE7', color: '#166534' },
+  '검수':           { bg: '#DBEAFE', color: '#1D4ED8' },
+  '조립':           { bg: '#EDE9FE', color: '#6D28D9' },
+  '마무리 광':      { bg: '#FEF9C3', color: '#854D0E' },
+  '조각':           { bg: '#FFEDD5', color: '#9A3412' },
+  '도금':           { bg: '#FEF3C7', color: '#92400E' },
+  '각인':           { bg: '#FCE7F3', color: '#9D174D' },
+  '광실':           { bg: '#F3F4F6', color: '#374151' },
+  '세척/검수후재작업': { bg: '#CCFBF1', color: '#115E59' },
+  '에폭시(연마)':   { bg: '#FEF2F2', color: '#991B1B' },
+  '에폭시(일반)':   { bg: '#FEF2F2', color: '#991B1B' },
+  '컷팅':           { bg: '#F3F4F6', color: '#374151' },
+  '외부':           { bg: '#F1F5F9', color: '#475569' },
+  '대기':           { bg: '#F9FAFB', color: '#6B7280' },
+  '취소':           { bg: '#FEE2E2', color: '#991B1B' },
+  '조립 대기 중':   { bg: '#EDE9FE', color: '#6D28D9' },
+  '유화':           { bg: '#F3F4F6', color: '#374151' },
+  '초벌':           { bg: '#F3F4F6', color: '#374151' },
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+  td.innerHTML = ''
+  td.style.verticalAlign = 'middle'
+  td.style.padding = '0 8px'
+  if (!value) return
+  const c = WORK_POSITION_COLORS[value] ?? { bg: '#F3F4F6', color: '#374151' }
+  const badge = document.createElement('span')
+  badge.textContent = value
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.appendChild(badge)
 }
 
@@ -623,8 +657,8 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
-      columnHeaderHeight: 29,
-      rowHeights: 29,
+      columnHeaderHeight: 41,
+      rowHeights: 41,
       outsideClickDeselects: false,
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
