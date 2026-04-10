@@ -632,8 +632,19 @@ export default function WorksGrid() {
 
       if (colDef.type === 'date') {
         setTimeout(() => {
+          // 버튼 숨기기 + input 너비 확장 (버튼에 고정 class 없어서 DOM 직접 조작)
+          document.querySelectorAll('.htDateInput').forEach(el => {
+            const btn = el.querySelector('button')
+            if (btn) btn.style.display = 'none'
+            const input = el.querySelector('input') as HTMLElement | null
+            if (input) input.style.width = '100%'
+          })
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const editor = hotRef.current?.getActiveEditor() as any
+          // editor 객체에 직접 button 참조가 있으면 숨기기
+          if (editor?.datePickerButton) {
+            editor.datePickerButton.style.display = 'none'
+          }
           if (editor?.datePicker) {
             editor.datePicker.show()
           }

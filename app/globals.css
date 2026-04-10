@@ -117,9 +117,10 @@ body {
   background: #fff !important;
 }
 
-/* 날짜 editor 화살표 버튼 숨기기 */
+/* 날짜 editor 화살표/toggle 버튼 숨기기 */
 .handsontable .htDateInput .changeMonth,
-.handsontable .htDateInput button {
+.handsontable .htDateInput button,
+.handsontable .handsontableInputHolder button {
   display: none !important;
 }
 
