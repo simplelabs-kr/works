@@ -154,6 +154,7 @@ const COLUMNS = [
   { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'lookup'   as FieldType },
   { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'lookup'  as FieldType },
   { data: '데드라인',   title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date',
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     datePickerConfig: {
       i18n: {
         previousMonth: '이전 달',
@@ -181,7 +182,7 @@ const COLUMNS = [
           title.insertBefore(yearEl, monthEl)
         }
       },
-    },
+    } as any,
   },
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType },
   { data: '시세_g당',      title: '시세 (g당)', readOnly: true, width: 80, fieldType: 'lookup'  as FieldType },
