@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
+import { supabase } from '@/lib/supabase/client'
 
 type Orders = {
   brand_id: string | null
@@ -41,6 +42,7 @@ type Purchase = {
 
 type Item = {
   id: string
+  updated_at: string | null
   고유_번호: string
   수량: number | null
   중량: number | null
@@ -81,6 +83,8 @@ type Item = {
 }
 
 type Row = {
+  id: string
+  updated_at: string | null
   고유_번호: string
   제품명: string
   제품명_코드: string
@@ -97,7 +101,7 @@ type Row = {
   고객명: string
   디자이너_노트: string
   중량: number | null
-  검수: string
+  검수: boolean
   허용_중량_범위: string
   중량_검토: string
   기타_옵션: string
@@ -116,10 +120,10 @@ type Row = {
   가다번호: string | null
   가다_위치: string | null
   주물_후_수량: number | null
-  포장: string
+  포장: boolean
   순금_중량: string
-  rp_출력_시작: string
-  왁스_파트_전달: string
+  rp_출력_시작: boolean
+  왁스_파트_전달: boolean
 }
 
 type SubmittedFilters = {
@@ -128,6 +132,8 @@ type SubmittedFilters = {
   dateFrom: string
   dateTo: string
 }
+
+const WORK_POSITIONS = ['현장', '검수', '조립', '마무리 광', '조각', '도금', '각인', '광실', '세척/검수후재작업', '에폭시(연마)', '에폭시(일반)', '컷팅', '외부', '대기', '조립 대기 중', '유화', '초벌', '취소']
 
 const COLUMNS = [
   {
@@ -142,46 +148,44 @@ const COLUMNS = [
       td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;padding-left:12px;'
     },
   },
-  { data: '고유_번호',    title: '고유번호',        width: 140, fieldType: 'text'     as FieldType },
-  { data: '제품명',      title: '제품명',          width: 200, fieldType: 'lookup'   as FieldType },
-  { data: '제품명_코드',  title: '제품명(코드 포함)', width: 220, fieldType: 'lookup'   as FieldType },
-  { data: 'metals.name',  title: '소재',   readOnly: true, width: 100, fieldType: 'lookup'   as FieldType },
-  { data: 'metals.purity', title: '함량비', readOnly: true, width: 70,  fieldType: 'lookup'   as FieldType },
-  { data: '발주일',      title: '발주일',           width: 110, fieldType: 'lookup'   as FieldType },
-  { data: '생산시작일',   title: '생산시작일',       width: 110, fieldType: 'lookup'   as FieldType },
-  { data: '데드라인',    title: '데드라인',          width: 110, fieldType: 'date'     as FieldType },
-  { data: '출고예정일',   title: '출고예정일',       width: 110, fieldType: 'date'     as FieldType },
-  { data: '시세_g당',    title: '시세 (g당)',  readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '소재비',      title: '소재비',     readOnly: true, width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '발주_수량',    title: '발주 수량',  readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '수량',         title: '수량',      readOnly: true, width: 70,  fieldType: 'number'   as FieldType },
-  { data: '호수',         title: '호수',      readOnly: true, width: 70,  fieldType: 'lookup'   as FieldType },
-  { data: '고객명',       title: '고객명',    readOnly: true, width: 100, fieldType: 'lookup'   as FieldType },
-  { data: '디자이너_노트', title: '디자이너 노트', readOnly: true, width: 200, fieldType: 'longtext' as FieldType },
-  { data: '중량',         title: '중량',      readOnly: true, width: 70,  fieldType: 'number'   as FieldType },
-  { data: '검수',         title: '검수',      readOnly: true, width: 50,  fieldType: 'checkbox' as FieldType },
-  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula'  as FieldType },
-  { data: '중량_검토',    title: '중량 검토',  readOnly: true, width: 70,  fieldType: 'formula'  as FieldType },
-  { data: '기타_옵션',    title: '기타 옵션',  readOnly: true, width: 120, fieldType: 'lookup'   as FieldType },
-  { data: '각인_내용',    title: '각인 내용',  readOnly: true, width: 100, fieldType: 'lookup'   as FieldType },
-  { data: '각인_폰트',    title: '각인 폰트',  readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '기본_공임',    title: '기본 공임',  readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '공임_조정액',  title: '공임 조정액', readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '확정_공임',    title: '확정 공임',  readOnly: true, width: 80,  fieldType: 'lookup'   as FieldType },
-  { data: '번들_명칭',    title: '번들 명칭',  readOnly: true, width: 120, fieldType: 'lookup'   as FieldType },
-  { data: '원부자재',     title: '원부자재',   readOnly: true, width: 150, fieldType: 'lookup'   as FieldType },
-  { data: '발주_현황',    title: '발주 현황',  readOnly: true, width: 150, fieldType: 'formula'  as FieldType, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',    title: '작업 위치',  readOnly: true, width: 90,  fieldType: 'select'   as FieldType },
-  { data: '검수_유의',    title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup'   as FieldType },
-  { data: '도금_색상',    title: '도금 색상',  readOnly: true, width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '사출_방식',    title: '사출 방식',  readOnly: true, width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '가다번호',     title: '가다번호',   readOnly: true, width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '가다_위치',    title: '가다 위치',  readOnly: true, width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '주물_후_수량', title: '주물 후 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '포장',         title: '포장',      readOnly: true, width: 50,  fieldType: 'checkbox' as FieldType },
-  { data: '순금_중량',    title: '순금 중량',  readOnly: true, width: 80,  fieldType: 'formula'  as FieldType },
-  { data: 'rp_출력_시작', title: 'RP 출력 시작', readOnly: true, width: 80, fieldType: 'checkbox' as FieldType },
-  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: true, width: 100, fieldType: 'checkbox' as FieldType },
+  { data: '제품명_코드',   title: '제품명[코드]',    width: 220, fieldType: 'lookup'   as FieldType },
+  { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
+  { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'lookup'   as FieldType },
+  { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'lookup'   as FieldType },
+  { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'lookup'  as FieldType },
+  { data: '데드라인',      title: '데드라인', readOnly: false, width: 110, fieldType: 'date'    as FieldType },
+  { data: '출고예정일',    title: '출고예정일', readOnly: false, width: 110, fieldType: 'date'  as FieldType },
+  { data: '시세_g당',      title: '시세 (g당)', readOnly: true, width: 80, fieldType: 'lookup'  as FieldType },
+  { data: '소재비',        title: '소재비',  readOnly: true,  width: 90,  fieldType: 'lookup'   as FieldType },
+  { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
+  { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
+  { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'lookup'   as FieldType },
+  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
+  { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType },
+  { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType },
+  { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false },
+  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
+  { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 70, fieldType: 'formula'  as FieldType },
+  { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'lookup'  as FieldType },
+  { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
+  { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
+  { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'lookup' as FieldType },
+  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
+  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'lookup'  as FieldType },
+  { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, renderer: purchaseStatusRenderer },
+  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 120, fieldType: 'select' as FieldType, type: 'dropdown', source: WORK_POSITIONS },
+  { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
+  { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '사출_방식',     title: '사출 방식', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType },
+  { data: '포장',          title: '포장',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false },
+  { data: '순금_중량',     title: '순금 중량', readOnly: true, width: 80, fieldType: 'formula'  as FieldType },
+  { data: 'rp_출력_시작',  title: 'RP 출력 시작', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false },
+  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: false, width: 100, fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false },
 ]
 
 // ── Field type icons ─────────────────────────────────────────────────────────
@@ -284,6 +288,8 @@ function mapItem(item: Item): Row {
   const pricePerGram = item.metal_prices?.price_per_gram ?? null
   const purity = Number(o?.metals?.purity ?? 0)
   return {
+    id: item.id,
+    updated_at: item.updated_at ?? null,
     고유_번호: item.고유_번호 ?? '',
     제품명,
     제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
@@ -302,7 +308,7 @@ function mapItem(item: Item): Row {
     고객명: o?.고객명 ?? '',
     디자이너_노트: item.디자이너_노트 ?? '',
     중량: item.중량 ?? null,
-    검수: item.검수 ? '●' : '',
+    검수: item.검수 ?? false,
     허용_중량_범위: item.products?.기준_중량 != null
       ? `${(item.products.기준_중량 * 0.9).toFixed(2)} ~ ${(item.products.기준_중량 * 1.1).toFixed(2)} g`
       : '',
@@ -334,12 +340,12 @@ function mapItem(item: Item): Row {
     가다번호: item.products?.product_molds?.[0]?.molds?.가다번호 ?? null,
     가다_위치: item.products?.product_molds?.[0]?.molds?.mold_positions?.보관함_위치 ?? null,
     주물_후_수량: item.주물_후_수량 ?? null,
-    포장: item.포장 ? '●' : '',
+    포장: item.포장 ?? false,
     순금_중량: (item.중량 != null && purity > 0)
       ? (item.중량 * (purity / 100)).toFixed(3)
       : '',
-    rp_출력_시작: item.rp_출력_시작 ? '●' : '',
-    왁스_파트_전달: item.왁스_파트_전달 ? '●' : '',
+    rp_출력_시작: item.rp_출력_시작 ?? false,
+    왁스_파트_전달: item.왁스_파트_전달 ?? false,
   }
 }
 
@@ -562,6 +568,34 @@ export default function WorksGrid() {
       div.appendChild(icon)
       div.appendChild(textSpan)
     })
+    // Cell edit → PATCH API
+    hotRef.current.addHook('afterChange', (changes, source) => {
+      if (source === 'loadData' || !changes) return
+      const columnMap: Record<string, string> = {
+        '중량': '중량',
+        '데드라인': '데드라인',
+        '출고예정일': '출고일',
+        '작업_위치': '작업_위치',
+        '검수': '검수',
+        '포장': '포장',
+        'rp_출력_시작': 'rp_출력_시작',
+        '왁스_파트_전달': '왁스_파트_전달',
+        '주물_후_수량': '주물_후_수량',
+        '디자이너_노트': '디자이너_노트',
+      }
+      for (const [row, prop, oldVal, newVal] of changes) {
+        if (oldVal === newVal) continue
+        const rowData = rowsRef.current[row as number]
+        if (!rowData?.id) continue
+        const supabaseColumn = columnMap[prop as string]
+        if (!supabaseColumn) continue
+        void fetch(`/api/order-items/${rowData.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ column: supabaseColumn, value: newVal, expected_updated_at: rowData.updated_at }),
+        })
+      }
+    })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
       const hot = hotRef.current
@@ -586,15 +620,49 @@ export default function WorksGrid() {
     if (rows.length > 0) hotRef.current.refreshDimensions()
   }, [rows])
 
+  // Realtime subscription — sync editable fields from other clients
+  useEffect(() => {
+    const channel = supabase
+      .channel('order_items_changes')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'order_items' },
+        (payload) => {
+          const n = payload.new as Record<string, unknown>
+          const updatedId = n.id as string
+          setRows(prev => prev.map(row => {
+            if (row.id !== updatedId) return row
+            return {
+              ...row,
+              중량: (n.중량 as number | null) ?? row.중량,
+              데드라인: n.데드라인 ? String(n.데드라인).slice(0, 10) : row.데드라인,
+              출고예정일: n.출고일 ? String(n.출고일).slice(0, 10) : row.출고예정일,
+              작업_위치: (n.작업_위치 as string) ?? row.작업_위치,
+              검수: (n.검수 as boolean) ?? row.검수,
+              포장: (n.포장 as boolean) ?? row.포장,
+              rp_출력_시작: (n.rp_출력_시작 as boolean) ?? row.rp_출력_시작,
+              왁스_파트_전달: (n.왁스_파트_전달 as boolean) ?? row.왁스_파트_전달,
+              주물_후_수량: (n.주물_후_수량 as number | null) ?? row.주물_후_수량,
+              디자이너_노트: (n.디자이너_노트 as string) ?? row.디자이너_노트,
+              updated_at: (n.updated_at as string) ?? row.updated_at,
+            }
+          }))
+          hotRef.current?.render()
+        }
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       {/* Filter bar — shrink-0, px-5 only */}
       <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">제품명/고유번호</label>
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">제품명</label>
           <input
             type="text"
-            placeholder="검색어"
+            placeholder="제품명 검색"
             value={inputSearch}
             onChange={e => setInputSearch(e.target.value)}
             onKeyDown={handleKeyDown}
