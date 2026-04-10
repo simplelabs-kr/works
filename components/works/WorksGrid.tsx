@@ -142,7 +142,7 @@ const COLUMNS = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
       td.textContent = String(row + 1)
-      td.style.cssText = 'color:#9CA3AF;font-size:11px;text-align:center;vertical-align:middle;background:#F9FAFB;'
+      td.style.cssText = 'color:#9CA3AF;font-size:11px;text-align:center;vertical-align:middle;line-height:36px;background:#F9FAFB;'
     },
   },
   { data: '고유_번호',    title: '고유번호',        width: 140 },
@@ -519,28 +519,6 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
-    })
-    // 헤더와 바디의 scrollWidth를 동기화해서 스크롤 끝 어긋남 방지
-    const hot = hotRef.current
-    const syncScroll = () => {
-      const master = hot.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
-      const top = hot.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-      if (!master || !top) return
-
-      master.addEventListener('scroll', () => {
-        top.scrollLeft = master.scrollLeft
-      }, { passive: true })
-    }
-    syncScroll()
-    // Sync header scrollLeft with body on horizontal scroll
-    hotRef.current.addHook('afterScrollHorizontally', () => {
-      const hot = hotRef.current
-      if (!hot) return
-      const masterHolder = hot.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
-      const topHolder = hot.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-      if (masterHolder && topHolder) {
-        topHolder.scrollLeft = masterHolder.scrollLeft
-      }
     })
     // Sort header click
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
