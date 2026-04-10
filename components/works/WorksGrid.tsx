@@ -122,9 +122,6 @@ type Row = {
   왁스_파트_전달: string
 }
 
-type SortCol = '발주일' | '생산시작일' | '데드라인'
-type SortDir = 'asc' | 'desc'
-
 type SubmittedFilters = {
   search: string
   brand: string
@@ -194,14 +191,14 @@ type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select'
 function getFieldTypeIcon(type: FieldType): string {
   const s = 'stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
   const icons: Record<FieldType, string> = {
-    text:     `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none">A</text></svg>`,
-    longtext: `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
-    number:   `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
-    date:     `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
-    checkbox: `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
-    select:   `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
-    lookup:   `<svg width="13" height="13" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
-    formula:  `<svg width="15" height="13" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none" font-style="italic">fx</text></svg>`,
+    text:     `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none">A</text></svg>`,
+    longtext: `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
+    number:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
+    date:     `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
+    checkbox: `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
+    select:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#374151" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
+    lookup:   `<svg width="15" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
+    formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#374151" stroke="none" font-style="italic">fx</text></svg>`,
   }
   return icons[type] ?? ''
 }
@@ -236,23 +233,9 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   td.appendChild(badge)
 }
 
-// 정렬 가능한 컬럼: 제목 → col index
-const SORT_COL_INDEX: Partial<Record<number, SortCol>> = {
-  6: '발주일',
-  7: '생산시작일',
-  8: '데드라인',
-}
-const SORTABLE_TITLES = new Set<string>(['발주일', '생산시작일', '데드라인'])
-
-function buildColHeaders(sort: { col: SortCol; dir: SortDir }): string[] {
+function buildColHeaders(): string[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (COLUMNS as any[]).map((c) => {
-    if (!c.title) return ''
-    const sortArrow = SORTABLE_TITLES.has(c.title)
-      ? ` ${c.title === sort.col ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}`
-      : ''
-    return `${c.title}${sortArrow}`
-  })
+  return (COLUMNS as any[]).map((c) => c.title ?? '')
 }
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
@@ -397,7 +380,6 @@ export default function WorksGrid() {
 
   // Submitted query state (triggers API)
   const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
-  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({ col: '발주일', dir: 'desc' })
   const [offset, setOffset] = useState(0)
   const isAppend = useRef(false)
 
@@ -413,18 +395,6 @@ export default function WorksGrid() {
     isScrollLoadingRef.current = true
     isAppend.current = true
     setOffset(o => o + 100)
-  }
-
-  // Stable ref for sort click handler (called from Handsontable hook)
-  const sortClickRef = useRef<((col: SortCol) => void) | null>(null)
-  sortClickRef.current = (col: SortCol) => {
-    isAppend.current = false
-    setOffset(0)
-    setTotalCount(null)
-    setSort(prev => ({
-      col,
-      dir: prev.col === col ? (prev.dir === 'asc' ? 'desc' : 'asc') : 'desc',
-    }))
   }
 
   const handleSearch = () => {
@@ -486,8 +456,8 @@ export default function WorksGrid() {
     if (submittedFilters.dateFrom) params.set('dateFrom', submittedFilters.dateFrom)
     if (submittedFilters.dateTo)   params.set('dateTo', submittedFilters.dateTo)
     params.set('offset', String(offset))
-    params.set('sortCol', sort.col)
-    params.set('sortDir', sort.dir)
+    params.set('sortCol', '발주일')
+    params.set('sortDir', 'desc')
 
     fetch(`/api/order-items?${params}`)
       .then(res => res.json())
@@ -507,7 +477,7 @@ export default function WorksGrid() {
       })
 
     return () => { cancelled = true }
-  }, [submittedFilters, sort, offset]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [submittedFilters, offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
@@ -532,7 +502,7 @@ export default function WorksGrid() {
       columns: COLUMNS,
       colWidths: COLUMNS.map(c => c.width),
       rowHeaders: false,
-      colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
+      colHeaders: buildColHeaders(),
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
       stretchH: 'none',
@@ -575,18 +545,11 @@ export default function WorksGrid() {
       if (!div) return
       const icon = document.createElement('span')
       icon.className = 'field-type-icon'
-      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:5px;vertical-align:middle;flex-shrink:0;'
+      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:6px;vertical-align:middle;flex-shrink:0;'
       icon.innerHTML = getFieldTypeIcon(colDef.fieldType as FieldType)
       div.style.display = 'inline-flex'
       div.style.alignItems = 'center'
       div.insertBefore(icon, div.firstChild)
-    })
-    // Sort header click
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
-      if (coords.row !== -1) return
-      const col = SORT_COL_INDEX[coords.col as number]
-      if (col) sortClickRef.current?.(col)
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -604,12 +567,6 @@ export default function WorksGrid() {
       hotRef.current = null
     }
   }, [])
-
-  // Update column headers when sort changes
-  useEffect(() => {
-    if (!hotRef.current) return
-    hotRef.current.updateSettings({ colHeaders: buildColHeaders(sort) })
-  }, [sort])
 
   // Update grid data
   useEffect(() => {
