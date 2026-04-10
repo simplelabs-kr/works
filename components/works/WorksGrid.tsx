@@ -349,8 +349,8 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
     box.innerHTML = `<svg width="14" height="12" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,6 5.5,10 12.5,1.5" stroke="#2D7FF9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
   }
 
-  box.onmouseenter = () => { box.style.background = '#E5E7EB' }
-  box.onmouseleave = () => { box.style.background = 'transparent' }
+  box.onmouseenter = () => { box.style.border = '1.5px solid #D1D5DB' }
+  box.onmouseleave = () => { box.style.border = 'none' }
 
   box.onclick = (e) => {
     e.stopPropagation()
