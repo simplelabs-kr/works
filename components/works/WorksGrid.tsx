@@ -325,34 +325,41 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
   td.innerHTML = ''
-  td.style.verticalAlign = 'middle'
+  // td must not add extra height — use flex to center content
+  td.style.cssText += ';padding:0;overflow:hidden;cursor:default;'
   td.style.textAlign = 'center'
-  td.style.padding = '0'
-  td.style.cursor = 'pointer'
-  td.style.lineHeight = 'normal'
+  td.style.verticalAlign = 'middle'
+  td.style.lineHeight = '0'
+
+  td.onmouseenter = null
+  td.onmouseleave = null
+  td.onclick = null
 
   const checked = value === true
 
-  // Wrapper: full cell size, centers content, shows hover ring
-  const wrap = document.createElement('span')
-  wrap.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:4px;transition:background 0.1s;'
+  // Outer container: fills the td completely, flex-centers the hit target
+  const outer = document.createElement('div')
+  outer.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:33px;overflow:hidden;'
+
+  // Hit target: fixed 24×24, shows hover background, contains the checkmark
+  const box = document.createElement('span')
+  box.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border-radius:4px;transition:background 0.1s;cursor:pointer;'
 
   if (checked) {
-    wrap.innerHTML = `<svg width="14" height="12" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,6 5.5,10 12.5,1.5" stroke="#2D7FF9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    box.innerHTML = `<svg width="14" height="12" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,6 5.5,10 12.5,1.5" stroke="#2D7FF9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
   }
 
-  // hover: light gray background ring
-  td.onmouseenter = () => { wrap.style.background = '#E5E7EB' }
-  td.onmouseleave = () => { wrap.style.background = 'transparent' }
+  box.onmouseenter = () => { box.style.background = '#E5E7EB' }
+  box.onmouseleave = () => { box.style.background = 'transparent' }
 
-  td.appendChild(wrap)
-
-  // Click: toggle via setDataAtCell (triggers afterChange → PATCH)
-  td.onclick = (e) => {
+  box.onclick = (e) => {
     e.stopPropagation()
     const currentVal = hot.getDataAtCell(row, col)
     hot.setDataAtCell(row, col, currentVal !== true, 'checkboxClick')
   }
+
+  outer.appendChild(box)
+  td.appendChild(outer)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
