@@ -248,11 +248,10 @@ function buildColHeaders(sort: { col: SortCol; dir: SortDir }): string[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (COLUMNS as any[]).map((c) => {
     if (!c.title) return ''
-    const icon = c.fieldType ? getFieldTypeIcon(c.fieldType as FieldType) : ''
     const sortArrow = SORTABLE_TITLES.has(c.title)
       ? ` ${c.title === sort.col ? (sort.dir === 'asc' ? '▲' : '▼') : '⇅'}`
       : ''
-    return `<span style="display:inline-flex;align-items:center;gap:4px;">${icon}<span>${c.title}${sortArrow}</span></span>`
+    return `${c.title}${sortArrow}`
   })
 }
 
@@ -563,6 +562,23 @@ export default function WorksGrid() {
         syncing = false
       })
     }, 100)
+    // Field type icons via DOM manipulation (avoids HOT HTML escaping)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const colDef = (COLUMNS as any[])[col]
+      if (!colDef || !colDef.fieldType) return
+      if (TH.querySelector('.field-type-icon')) return
+      const div = TH.querySelector('.colHeader') as HTMLElement | null
+      if (!div) return
+      const icon = document.createElement('span')
+      icon.className = 'field-type-icon'
+      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:4px;vertical-align:middle;flex-shrink:0;'
+      icon.innerHTML = getFieldTypeIcon(colDef.fieldType as FieldType)
+      div.style.display = 'inline-flex'
+      div.style.alignItems = 'center'
+      div.insertBefore(icon, div.firstChild)
+    })
     // Sort header click
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterOnCellMouseDown', (_event: MouseEvent, coords: any) => {
