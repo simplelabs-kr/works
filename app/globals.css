@@ -65,6 +65,11 @@ body {
   background-color: #F8FAFC;
 }
 
+/* 단일 셀 선택 시 해당 row 하이라이트 (drag select 제외) */
+.handsontable tbody:not(:has(td.area)) tr:has(td.current) td {
+  background-color: #F1F5F9;
+}
+
 
 .handsontable tr {
   height: 29px !important;
