@@ -161,7 +161,7 @@ const COLUMNS = [
   { data: '확정_공임',    title: '확정 공임',    readOnly: true, width: 80  },
   { data: '번들_명칭',    title: '번들 명칭',    readOnly: true, width: 120 },
   { data: '원부자재',     title: '원부자재',     readOnly: true, width: 150 },
-  { data: '발주_현황',    title: '발주 현황',    readOnly: true, width: 150 },
+  { data: '발주_현황',    title: '발주 현황',    readOnly: true, width: 150, renderer: purchaseStatusRenderer },
   { data: '작업_위치',    title: '작업 위치',    readOnly: true, width: 90  },
   { data: '검수_유의',    title: '검수 포인트',   readOnly: true, width: 150 },
   { data: '도금_색상',    title: '도금 색상',    readOnly: true, width: 90  },
@@ -174,6 +174,36 @@ const COLUMNS = [
   { data: 'rp_출력_시작', title: 'RP 출력 시작',  readOnly: true, width: 80  },
   { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: true, width: 100 },
 ]
+
+// ── Purchase status renderer ──────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+  td.innerHTML = ''
+  if (!value) return
+  const config: Record<string, { bg: string; color: string }> = {
+    '발주 필요': { bg: '#FEE2E2', color: '#991B1B' },
+    '수령 필요': { bg: '#FEF3C7', color: '#92400E' },
+    '수령 완료': { bg: '#D1FAE5', color: '#065F46' },
+  }
+  const c = config[value]
+  if (!c) return
+  const badge = document.createElement('span')
+  badge.textContent = value
+  badge.style.cssText = `
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:9999px;
+    font-size:11px;
+    font-weight:600;
+    background:${c.bg};
+    color:${c.color};
+    white-space:nowrap;
+  `
+  td.style.verticalAlign = 'middle'
+  td.style.paddingTop = '6px'
+  td.appendChild(badge)
+}
 
 // 정렬 가능한 컬럼: 제목 → col index
 const SORT_COL_INDEX: Partial<Record<number, SortCol>> = {
@@ -282,12 +312,13 @@ function mapItem(item: Item): Row {
     확정_공임: o?.확정_공임 ?? null,
     번들_명칭: item.bundles?.번들_고유번호 ?? '',
     원부자재: (item.purchases ?? []).map(p => p.materials?.품목명 || p.이름 || '').join('\n'),
-    발주_현황: (item.purchases ?? []).map(p => {
-      if (p.재고_사용) return '재고사용'
-      if (p.수령) return '✅발주 ✅수령'
-      if (p.발주) return '✅발주 수령대기'
-      return '발주대기'
-    }).join('\n'),
+    발주_현황: (() => {
+      const purchases = item.purchases ?? []
+      if (purchases.length === 0) return ''
+      if (purchases.some(p => !p.발주)) return '발주 필요'
+      if (purchases.some(p => !p.수령)) return '수령 필요'
+      return '수령 완료'
+    })(),
     작업_위치: item.작업_위치 ?? '',
     검수_유의: item.products?.검수_유의 ?? '',
     도금_색상: o?.도금_색상 ?? '',
@@ -473,7 +504,7 @@ export default function WorksGrid() {
       colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
-      stretchH: 'last',
+      stretchH: 'none',
       height: hotContainerRef.current?.clientHeight || 600,
       wordWrap: false,
       manualColumnResize: true,
@@ -486,13 +517,13 @@ export default function WorksGrid() {
       const col = SORT_COL_INDEX[coords.col as number]
       if (col) sortClickRef.current?.(col)
     })
-    // Column resize — keep colWidths ref in sync to fix header/cell misalignment
+    // Column resize — update ref and render to sync header/cell widths
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterColumnResize', (newSize: number, column: any) => {
       const next = [...colWidthsRef.current]
       next[column as number] = newSize
       colWidthsRef.current = next
-      hotRef.current?.updateSettings({ colWidths: next })
+      hotRef.current?.render()
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
