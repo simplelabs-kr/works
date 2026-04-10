@@ -296,20 +296,26 @@ function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string) 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
   td.innerHTML = ''
-  if (!value) return
-  const config: Record<string, { bg: string; color: string }> = {
-    '발주 필요': { bg: '#FEE2E2', color: '#991B1B' },
-    '수령 필요': { bg: '#FEF3C7', color: '#92400E' },
-    '수령 완료': { bg: '#D1FAE5', color: '#065F46' },
-  }
-  const c = config[value]
-  if (!c) return
-  const badge = document.createElement('span')
-  badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:18px;border-radius:9999px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
-  td.appendChild(badge)
+  if (!value) return
+  const dotColor: Record<string, string> = {
+    '발주 필요': '#EF4444',
+    '수령 필요': '#F97316',
+    '수령 완료': '#22C55E',
+  }
+  const color = dotColor[value]
+  if (!color) return
+  const wrap = document.createElement('span')
+  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;line-height:normal;'
+  const dot = document.createElement('span')
+  dot.style.cssText = `display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;`
+  const text = document.createElement('span')
+  text.textContent = value
+  text.style.cssText = 'font-size:13px;color:#111827;white-space:nowrap;'
+  wrap.appendChild(dot)
+  wrap.appendChild(text)
+  td.appendChild(wrap)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
