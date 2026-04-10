@@ -343,9 +343,6 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
-  // Column widths — tracked per-resize to keep header/cell in sync
-  const colWidthsRef = useRef<number[]>(COLUMNS.map(c => c.width))
-
   // Refs for infinite scroll (avoid stale closures in HOT hooks)
   const rowsRef = useRef<Row[]>([])
   const totalCountRef = useRef<number | null>(null)
@@ -499,7 +496,7 @@ export default function WorksGrid() {
     hotRef.current = new Handsontable(containerRef.current, {
       data: [],
       columns: COLUMNS,
-      colWidths: colWidthsRef.current,
+      colWidths: COLUMNS.map(c => c.width),
       rowHeaders: true,
       colHeaders: buildColHeaders({ col: '발주일', dir: 'desc' }),
       readOnly: true,
@@ -516,14 +513,6 @@ export default function WorksGrid() {
       if (coords.row !== -1) return
       const col = SORT_COL_INDEX[coords.col as number]
       if (col) sortClickRef.current?.(col)
-    })
-    // Column resize — update ref and render to sync header/cell widths
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hotRef.current.addHook('afterColumnResize', (newSize: number, column: any) => {
-      const next = [...colWidthsRef.current]
-      next[column as number] = newSize
-      colWidthsRef.current = next
-      hotRef.current?.render()
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
