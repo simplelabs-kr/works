@@ -282,11 +282,12 @@ function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string) 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
+  td.style.position = 'relative'  // chevron ::after 기준점
   td.dataset.selectCol = 'true'
   if (!value) return
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:2px 8px;border-radius:9999px;font-size:13px;font-weight:500;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
+  badge.style.cssText = `display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:2px 10px;border-radius:9999px;font-size:13px;font-weight:500;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
   td.appendChild(badge)
 }
 
