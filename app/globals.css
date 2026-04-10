@@ -82,6 +82,7 @@ body {
 .handsontable .ht_clone_top .wtHolder {
   overflow-x: hidden !important;
   overflow-y: hidden !important;
+  pointer-events: none !important;
 }
 
 /* scrollbar */
