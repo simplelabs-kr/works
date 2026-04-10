@@ -279,16 +279,14 @@ function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _c
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
+  td.dataset.sochul = 'true'
   if (!value) return
-  const config: Record<string, { bg: string; color: string }> = {
-    'RP':  { bg: '#EDE9FE', color: '#6D28D9' },
-    '왁스': { bg: '#DBEAFE', color: '#1D4ED8' },
-  }
-  const c = config[value]
-  if (!c) { td.textContent = value; return }
+  const bgMap: Record<string, string> = { 'RP': '#EDE9FE', '왁스': '#DBEAFE' }
+  const bg = bgMap[value]
+  if (!bg) { td.textContent = value; return }
   const badge = document.createElement('span')
   badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${c.bg};color:${c.color};white-space:nowrap;`
+  badge.style.cssText = `display:inline-flex;align-items:center;padding:0 6px;height:16px;border-radius:4px;font-size:11px;font-weight:500;background:${bg};color:#111827;white-space:nowrap;`
   td.appendChild(badge)
 }
 
