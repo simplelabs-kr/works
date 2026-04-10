@@ -136,6 +136,19 @@ type SubmittedFilters = {
 
 const WORK_POSITIONS = ['현장', '검수', '조립', '마무리 광', '조각', '도금', '각인', '광실', '세척/검수후재작업', '에폭시(연마)', '에폭시(일반)', '컷팅', '외부', '대기', '조립 대기 중', '유화', '초벌', '취소']
 
+// 편집 가능 컬럼 → Supabase 컬럼명 매핑
+const COLUMN_MAP: Record<string, string> = {
+  '중량': '중량',
+  '데드라인': '데드라인',
+  '작업_위치': '작업_위치',
+  '검수': '검수',
+  '포장': '포장',
+  'rp_출력_시작': 'rp_출력_시작',
+  '왁스_파트_전달': '왁스_파트_전달',
+  '주물_후_수량': '주물_후_수량',
+  '디자이너_노트': '디자이너_노트',
+}
+
 const COLUMNS = [
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -260,10 +273,8 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   td.appendChild(badge)
 }
 
-function buildColHeaders(): string[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (COLUMNS as any[]).map((c) => c.title ?? '')
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const COL_HEADERS: string[] = (COLUMNS as any[]).map((c) => c.title ?? '')
 
 // ── Workday helpers ──────────────────────────────────────────────────────────
 
@@ -426,10 +437,10 @@ export default function WorksGrid() {
   const [offset, setOffset] = useState(0)
   const isAppend = useRef(false)
 
-  // Sync refs for infinite scroll and stale-closure safety
-  useEffect(() => { rowsRef.current = rows }, [rows])
-  useEffect(() => { totalCountRef.current = totalCount }, [totalCount])
-  useEffect(() => { holidaySetRef.current = holidaySet }, [holidaySet])
+  // Sync refs during render (no effect needed — refs don't cause re-renders)
+  rowsRef.current = rows
+  totalCountRef.current = totalCount
+  holidaySetRef.current = holidaySet
 
   // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
@@ -558,7 +569,7 @@ export default function WorksGrid() {
       columns: COLUMNS,
       colWidths: COLUMNS.map(c => c.width),
       rowHeaders: false,
-      colHeaders: buildColHeaders(),
+      colHeaders: COL_HEADERS,
       readOnly: true,
       licenseKey: 'non-commercial-and-evaluation',
       stretchH: 'none',
@@ -635,22 +646,11 @@ export default function WorksGrid() {
     // Cell edit → PATCH API
     hotRef.current.addHook('afterChange', (changes, source) => {
       if (source === 'loadData' || !changes) return
-      const columnMap: Record<string, string> = {
-        '중량': '중량',
-        '데드라인': '데드라인',
-        '작업_위치': '작업_위치',
-        '검수': '검수',
-        '포장': '포장',
-        'rp_출력_시작': 'rp_출력_시작',
-        '왁스_파트_전달': '왁스_파트_전달',
-        '주물_후_수량': '주물_후_수량',
-        '디자이너_노트': '디자이너_노트',
-      }
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
         const rowData = rowsRef.current[row as number]
         if (!rowData?.id) continue
-        const supabaseColumn = columnMap[prop as string]
+        const supabaseColumn = COLUMN_MAP[prop as string]
         if (!supabaseColumn) continue
         void fetch(`/api/order-items/${rowData.id}`, {
           method: 'PATCH',
@@ -763,7 +763,6 @@ export default function WorksGrid() {
               updated_at: (n.updated_at as string) ?? row.updated_at,
             }
           }))
-          hotRef.current?.render()
         }
       )
       .subscribe()
