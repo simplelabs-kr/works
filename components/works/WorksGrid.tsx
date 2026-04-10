@@ -574,6 +574,51 @@ export default function WorksGrid() {
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
     })
+
+    // Row hover / selection highlight via JS (CSS :hover doesn't work reliably in HOT)
+    let selectedRow = -1
+
+    hotRef.current.addHook('afterOnCellMouseOver', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      const hot = hotRef.current
+      if (!hot || coords.row < 0) return
+      const colCount = hot.countCols()
+      for (let c = 0; c < colCount; c++) {
+        const td = hot.getCell(coords.row, c) as HTMLElement | null
+        if (td && !td.classList.contains('area')) td.style.background = '#F8FAFC'
+      }
+    })
+
+    hotRef.current.addHook('afterOnCellMouseOut', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      const hot = hotRef.current
+      if (!hot || coords.row < 0) return
+      const colCount = hot.countCols()
+      for (let c = 0; c < colCount; c++) {
+        const td = hot.getCell(coords.row, c) as HTMLElement | null
+        if (td && !td.classList.contains('area')) td.style.background = ''
+      }
+    })
+
+    hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
+      const hot = hotRef.current
+      if (!hot) return
+      const colCount = hot.countCols()
+      // 이전 선택 row 초기화
+      if (selectedRow >= 0 && selectedRow !== r1) {
+        for (let c = 0; c < colCount; c++) {
+          const td = hot.getCell(selectedRow, c) as HTMLElement | null
+          if (td) td.style.background = ''
+        }
+      }
+      // 단일 행 선택 시 row 하이라이트
+      if (r1 === r2) {
+        selectedRow = r1
+        for (let c = 0; c < colCount; c++) {
+          const td = hot.getCell(r1, c) as HTMLElement | null
+          if (td && !td.classList.contains('area')) td.style.background = '#F1F5F9'
+        }
+      }
+    })
+
     // Fix horizontal scroll misalignment:
     // ht_master has a vertical scrollbar (~17px) that reduces clientWidth,
     // making its max scrollLeft larger than ht_clone_top's max scrollLeft.

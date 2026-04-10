@@ -57,14 +57,12 @@ body {
   border-bottom: 1px solid #F1F5F9 !important;
   vertical-align: middle !important;
   text-align: left !important;
+  background: #ffffff !important;
 }
 
-.handsontable tbody tr:hover td {
-  background: #F8FAFC !important;
-}
-
+/* 짝수 행 줄무늬 완전 제거 */
 .handsontable tbody tr:nth-child(even) td {
-  background: transparent !important;
+  background: #ffffff !important;
 }
 
 .handsontable tr {
@@ -91,6 +89,7 @@ body {
 .handsontable td.current {
   outline: 2px solid #2D7FF9 !important;
   outline-offset: -2px !important;
+  background: #ffffff !important;
 }
 
 /* checkbox */
