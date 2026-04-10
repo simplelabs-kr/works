@@ -90,13 +90,15 @@ export async function GET(request: NextRequest) {
   const hasFilter = search || brand || dateFrom || dateTo;
 
   // 검색 조건이 없으면 직접 테이블 쿼리 (RPC는 all-null 시 0 반환)
+  // 발주일은 orders 테이블 컬럼이므로 직접 정렬 불가 → updated_at으로 대체
   if (!hasFilter) {
+    const directSortCol = sortCol === "발주일" ? "updated_at" : sortCol;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let query = (supabaseAdmin as any)
       .from("order_items")
       .select(SELECT)
       .not("중단_취소", "is", true)
-      .order(sortCol, { ascending: sortDir === "asc" })
+      .order(directSortCol, { ascending: sortDir === "asc" })
       .range(offset, offset + 99);
 
     const { data, error } = await query as { data: AnyRecord[]; error: any };
