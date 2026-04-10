@@ -1,15 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
 import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
-import FilterModal from '@/components/works/FilterModal'
-import type { FilterCondition, FilterColDef } from '@/components/works/FilterModal'
-import SortModal from '@/components/works/SortModal'
-import type { SortCondition } from '@/components/works/SortModal'
 
 type Orders = {
   brand_id: string | null
@@ -131,6 +127,13 @@ type Row = {
   순금_중량: string
   rp_출력_시작: boolean
   왁스_파트_전달: boolean
+}
+
+type SubmittedFilters = {
+  search: string
+  brand: string
+  dateFrom: string
+  dateTo: string
 }
 
 const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
@@ -502,110 +505,6 @@ function mapItem(item: Item, hs: Set<string>): Row {
   }
 }
 
-// ── Filter & Sort logic ───────────────────────────────────────────────────────
-
-const NUMERIC_FILTER_KEYS = new Set([
-  'metals.purity', '시세_g당', '소재비', '기본_공임', '공임_조정액', '확정_공임',
-  '발주_수량', '순금_중량', '수량', '주물_후_수량', '중량',
-])
-const DATE_FILTER_KEYS = new Set(['발주일', '생산시작일', '데드라인', '출고예정일'])
-
-function getNestedVal(row: Row, key: string): unknown {
-  return key.split('.').reduce<unknown>((obj, k) => (obj as Record<string, unknown>)?.[k], row)
-}
-
-function startOfDay(d: Date): Date {
-  const r = new Date(d); r.setHours(0, 0, 0, 0); return r
-}
-function getWeekBounds(offset = 0): [Date, Date] {
-  const now = new Date(); const day = now.getDay()
-  const mon = new Date(now); mon.setDate(now.getDate() - day + 1 + offset * 7)
-  const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
-  return [startOfDay(mon), startOfDay(sun)]
-}
-function getMonthBounds(offset = 0): [Date, Date] {
-  const now = new Date()
-  const start = new Date(now.getFullYear(), now.getMonth() + offset, 1)
-  const end = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0)
-  return [startOfDay(start), startOfDay(end)]
-}
-
-function evalCondition(row: Row, cond: FilterCondition): boolean {
-  const raw = getNestedVal(row, cond.columnKey)
-  const strVal = String(raw ?? '').toLowerCase()
-  const condStr = String(cond.value ?? '').toLowerCase()
-
-  switch (cond.operator) {
-    case 'contains':     return strVal.includes(condStr)
-    case 'not_contains': return !strVal.includes(condStr)
-    case 'is':           return DATE_FILTER_KEYS.has(cond.columnKey)
-      ? strVal.slice(0, 10) === condStr.slice(0, 10)
-      : strVal === condStr
-    case 'is_not':       return strVal !== condStr
-    case 'is_empty':     return raw == null || raw === ''
-    case 'is_not_empty': return raw != null && raw !== ''
-    case 'eq':           return Number(raw) === Number(cond.value)
-    case 'neq':          return Number(raw) !== Number(cond.value)
-    case 'gt':           return Number(raw) > Number(cond.value)
-    case 'gte':          return Number(raw) >= Number(cond.value)
-    case 'lt':           return Number(raw) < Number(cond.value)
-    case 'lte':          return Number(raw) <= Number(cond.value)
-    case 'is_before':    return raw != null && raw !== '' && new Date(String(raw)) < new Date(String(cond.value ?? ''))
-    case 'is_after':     return raw != null && raw !== '' && new Date(String(raw)) > new Date(String(cond.value ?? ''))
-    case 'is_on_or_before': return raw != null && raw !== '' && new Date(String(raw)) <= new Date(String(cond.value ?? ''))
-    case 'is_on_or_after':  return raw != null && raw !== '' && new Date(String(raw)) >= new Date(String(cond.value ?? ''))
-    case 'is_today': { const t = startOfDay(new Date()); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d.getTime() === t.getTime() }
-    case 'is_yesterday': { const t = startOfDay(new Date()); t.setDate(t.getDate() - 1); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d.getTime() === t.getTime() }
-    case 'is_this_week': { const [s, e] = getWeekBounds(0); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d >= s && d <= e }
-    case 'is_last_week': { const [s, e] = getWeekBounds(-1); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d >= s && d <= e }
-    case 'is_this_month': { const [s, e] = getMonthBounds(0); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d >= s && d <= e }
-    case 'is_last_month': { const [s, e] = getMonthBounds(-1); const d = raw ? startOfDay(new Date(String(raw))) : null; return !!d && d >= s && d <= e }
-    case 'is_checked':   return raw === true
-    case 'is_unchecked': return raw !== true
-    default: return true
-  }
-}
-
-function applyFilters(rows: Row[], conditions: FilterCondition[]): Row[] {
-  if (!conditions.length) return rows
-  return rows.filter(row => {
-    // Split into AND-groups separated by OR
-    const groups: FilterCondition[][] = []
-    let cur: FilterCondition[] = []
-    for (let i = 0; i < conditions.length; i++) {
-      if (i > 0 && conditions[i].logic === 'OR' && cur.length > 0) {
-        groups.push(cur); cur = []
-      }
-      cur.push(conditions[i])
-    }
-    if (cur.length) groups.push(cur)
-    return groups.some(g => g.every(c => evalCondition(row, c)))
-  })
-}
-
-function applySort(rows: Row[], conditions: SortCondition[]): Row[] {
-  if (!conditions.length) return rows
-  return [...rows].sort((a, b) => {
-    for (const cond of conditions) {
-      const aRaw = getNestedVal(a, cond.columnKey)
-      const bRaw = getNestedVal(b, cond.columnKey)
-      // Nulls last
-      if (aRaw == null && bRaw == null) continue
-      if (aRaw == null) return 1
-      if (bRaw == null) return -1
-      const aIsNum = NUMERIC_FILTER_KEYS.has(cond.columnKey)
-      let cmp: number
-      if (aIsNum) {
-        cmp = Number(aRaw) - Number(bRaw)
-      } else {
-        cmp = String(aRaw).localeCompare(String(bRaw), 'ko')
-      }
-      if (cmp !== 0) return cond.direction === 'asc' ? cmp : -cmp
-    }
-    return 0
-  })
-}
-
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function WorksGrid() {
@@ -640,27 +539,23 @@ export default function WorksGrid() {
   const [apiError, setApiError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState<number | null>(null)
 
-  // Filter & Sort state
-  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
-  const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
-  const [showFilterModal, setShowFilterModal] = useState(false)
-  const [showSortModal, setShowSortModal] = useState(false)
-  const filterBtnRef = useRef<HTMLButtonElement>(null)
-  const sortBtnRef = useRef<HTMLButtonElement>(null)
-  const [filterBtnRect, setFilterBtnRect] = useState<DOMRect | null>(null)
-  const [sortBtnRect, setSortBtnRect] = useState<DOMRect | null>(null)
+  // Filter input state (not yet submitted)
+  const [inputSearch, setInputSearch] = useState('')
+  const [inputBrand, setInputBrand] = useState('')
+  const [inputDateFrom, setInputDateFrom] = useState('')
+  const [inputDateTo, setInputDateTo] = useState('')
 
-  // Pagination
+  // Submitted query state (triggers API)
+  const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
   const [offset, setOffset] = useState(0)
   const isAppend = useRef(false)
-  const displayRowsRef = useRef<Row[]>([])
 
-  // Sync refs during render
+  // Sync refs during render (no effect needed — refs don't cause re-renders)
   rowsRef.current = rows
   totalCountRef.current = totalCount
   holidaySetRef.current = holidaySet
 
-  // Stable scroll-load callback
+  // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
     if (isScrollLoadingRef.current) return
     const tc = totalCountRef.current
@@ -670,15 +565,26 @@ export default function WorksGrid() {
     setOffset(o => o + 100)
   }
 
-  // TODO: 필터는 현재 로드된 rows에만 적용됨. 전체 데이터 필터링은 추후 RPC 확장 필요
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const displayRows = useMemo(() => applySort(applyFilters(rows, filterConditions), sortConditions), [rows, filterConditions, sortConditions])
-  displayRowsRef.current = displayRows
+  const handleSearch = () => {
+    isAppend.current = false
+    setOffset(0)
+    setTotalCount(null)
+    setSubmittedFilters({
+      search: inputSearch.trim(),
+      brand: inputBrand.trim(),
+      dateFrom: inputDateFrom,
+      dateTo: inputDateTo,
+    })
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') handleSearch()
+  }
 
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
-    const rowData = displayRowsRef.current[rowIdx]
+    const rowData = rowsRef.current[rowIdx]
     if (!rowData?.id) return
-    setRows(prev => prev.map(r => r.id === rowData.id ? { ...r, [column]: value } : r))
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [column]: value } : r))
     void fetch(`/api/order-items/${rowData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -695,6 +601,13 @@ export default function WorksGrid() {
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
   }, [selectMenu])
+
+  const hasAnyFilter = !!submittedFilters && (
+    submittedFilters.search.length > 0 ||
+    submittedFilters.brand.length > 0 ||
+    submittedFilters.dateFrom.length > 0 ||
+    submittedFilters.dateTo.length > 0
+  )
 
   // Load holidays once on mount
   useEffect(() => {
@@ -719,8 +632,17 @@ export default function WorksGrid() {
     })
   }, [holidaySet]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch data via RPC (무한스크롤, 100건씩)
+  // Fetch data on filter/sort/offset change
   useEffect(() => {
+    if (!submittedFilters) { setRows([]); setApiError(null); return }
+
+    const anyFilter =
+      submittedFilters.search.length > 0 ||
+      submittedFilters.brand.length > 0 ||
+      submittedFilters.dateFrom.length > 0 ||
+      submittedFilters.dateTo.length > 0
+    if (!anyFilter) { setRows([]); setApiError(null); return }
+
     const shouldAppend = isAppend.current
     isAppend.current = false
 
@@ -730,6 +652,10 @@ export default function WorksGrid() {
     setApiError(null)
 
     const params = new URLSearchParams()
+    if (submittedFilters.search)   params.set('search', submittedFilters.search)
+    if (submittedFilters.brand)    params.set('brand', submittedFilters.brand)
+    if (submittedFilters.dateFrom) params.set('dateFrom', submittedFilters.dateFrom)
+    if (submittedFilters.dateTo)   params.set('dateTo', submittedFilters.dateTo)
     params.set('offset', String(offset))
     params.set('sortCol', '발주일')
     params.set('sortDir', 'desc')
@@ -752,7 +678,7 @@ export default function WorksGrid() {
       })
 
     return () => { cancelled = true }
-  }, [offset]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [submittedFilters, offset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
@@ -874,7 +800,7 @@ export default function WorksGrid() {
       if (source === 'loadData' || !changes) return
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
-        const rowData = displayRowsRef.current[row as number]
+        const rowData = rowsRef.current[row as number]
         if (!rowData?.id) continue
         const supabaseColumn = COLUMN_MAP[prop as string]
         if (!supabaseColumn) continue
@@ -885,10 +811,10 @@ export default function WorksGrid() {
         })
         // 데드라인 변경 시 출고예정일 즉시 재계산
         if (supabaseColumn === '데드라인') {
-          const rowId = rowData.id
+          const rowIdx = row as number
           const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
-          setRows(prev => prev.map(r => {
-            if (r.id !== rowId) return r
+          setRows(prev => prev.map((r, i) => {
+            if (i !== rowIdx) return r
             const updated = { ...r, 데드라인: newDeadline }
             return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
           }))
@@ -1000,12 +926,12 @@ export default function WorksGrid() {
     }
   }, [])
 
-  // Update grid data when display rows change
+  // Update grid data
   useEffect(() => {
     if (!hotRef.current) return
-    hotRef.current.loadData(displayRows)
-    if (displayRows.length > 0) hotRef.current.refreshDimensions()
-  }, [displayRows])
+    hotRef.current.loadData(rows)
+    if (rows.length > 0) hotRef.current.refreshDimensions()
+  }, [rows])
 
   // Realtime subscription — sync editable fields from other clients
   useEffect(() => {
@@ -1050,84 +976,90 @@ export default function WorksGrid() {
     }
   }, [fixedCols])
 
-  // Column defs for modals (string-keyed only)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filterColDefs: FilterColDef[] = (COLUMNS as any[])
-    .filter((c: any) => typeof c.data === 'string' && c.data !== '')
-    .map((c: any) => ({ data: c.data, title: c.title, fieldType: c.fieldType }))
-
-  const selectOptions: Record<string, string[]> = {
-    '사출_방식': SELECT_COLUMN_OPTIONS['사출_방식'].map(o => o.value),
-    '작업_위치': SELECT_COLUMN_OPTIONS['작업_위치'].map(o => o.value),
-  }
-
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar */}
-      <div className="flex-shrink-0 flex items-center gap-2 border-b border-[#E2E8F0] bg-white px-5 h-[44px]">
-        <h1 className="text-[15px] font-semibold text-[#0F172A] mr-3">Works</h1>
-
-        {/* Filter button */}
+      {/* Filter bar — shrink-0, px-5 only */}
+      <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">제품명</label>
+          <input
+            type="text"
+            placeholder="제품명 검색"
+            value={inputSearch}
+            onChange={e => setInputSearch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">브랜드</label>
+          <input
+            type="text"
+            placeholder="브랜드명"
+            value={inputBrand}
+            onChange={e => setInputBrand(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-36 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">발주일</label>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="date"
+              value={inputDateFrom}
+              onChange={e => setInputDateFrom(e.target.value)}
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            />
+            <span className="text-[#9CA3AF] text-sm">–</span>
+            <input
+              type="date"
+              value={inputDateTo}
+              onChange={e => setInputDateTo(e.target.value)}
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            />
+          </div>
+        </div>
         <button
-          ref={filterBtnRef}
-          onClick={() => {
-            if (showFilterModal) { setShowFilterModal(false); return }
-            setFilterBtnRect(filterBtnRef.current?.getBoundingClientRect() ?? null)
-            setShowFilterModal(true)
-            setShowSortModal(false)
-          }}
-          className="flex items-center gap-1.5 h-[28px] px-[10px] rounded border border-[#E2E8F0] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors"
-          style={{ background: filterConditions.length > 0 ? '#EFF6FF' : undefined, borderColor: filterConditions.length > 0 ? '#BFDBFE' : undefined }}
+          onClick={handleSearch}
+          className="self-end h-[28px] rounded-[4px] bg-[#1C1C1C] px-[14px] text-[12px] font-medium text-white hover:bg-[#333] active:bg-[#444] transition-colors"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1 3h12M3 7h8M5 11h4" stroke="#6B7280" strokeWidth="1.4" strokeLinecap="round"/></svg>
-          필터
-          {filterConditions.length > 0 && (
-            <span className="flex items-center justify-center w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-bold">{filterConditions.length}</span>
-          )}
+          검색
         </button>
 
-        {/* Sort button */}
-        <button
-          ref={sortBtnRef}
-          onClick={() => {
-            if (showSortModal) { setShowSortModal(false); return }
-            setSortBtnRect(sortBtnRef.current?.getBoundingClientRect() ?? null)
-            setShowSortModal(true)
-            setShowFilterModal(false)
-          }}
-          className="flex items-center gap-1.5 h-[28px] px-[10px] rounded border border-[#E2E8F0] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors"
-          style={{ background: sortConditions.length > 0 ? '#EFF6FF' : undefined, borderColor: sortConditions.length > 0 ? '#BFDBFE' : undefined }}
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4l3-3 3 3M5 1v12M9 10l3 3 3-3M12 13V1" stroke="#6B7280" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          정렬
-          {sortConditions.length > 0 && (
-            <span className="flex items-center justify-center w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-bold">{sortConditions.length}</span>
-          )}
-        </button>
-
-        {/* Freeze control */}
-        <div className="flex items-center gap-1 ml-3 border-l border-[#E2E8F0] pl-3">
+        {/* Freeze column control */}
+        <div className="flex items-center gap-1 self-end ml-auto">
           <span className="text-[12px] text-[#6B7280]">고정: {fixedCols}열</span>
-          <button onClick={() => setFixedCols(n => Math.max(0, n - 1))} className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none">−</button>
-          <button onClick={() => setFixedCols(n => Math.min(COLUMNS.length, n + 1))} className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none">+</button>
+          <button
+            onClick={() => setFixedCols(n => Math.max(0, n - 1))}
+            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
+          >−</button>
+          <button
+            onClick={() => setFixedCols(n => Math.min(COLUMNS.length, n + 1))}
+            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
+          >+</button>
         </div>
 
         {/* Count + status */}
-        <div className="ml-auto flex items-center gap-3 text-[12px] text-[#6B7280]">
-          {!loading && (
-            <span>
-              {rows.length.toLocaleString()}건 로드
-              {totalCount !== null && ` / 전체 ${totalCount.toLocaleString()}건`}
-              {displayRows.length !== rows.length && ` / ${displayRows.length.toLocaleString()}건 표시`}
-            </span>
+        <div className="self-end flex items-center gap-3 text-[12px] text-[#6B7280]">
+          {totalCount !== null && !loading && (
+            <span>{totalCount.toLocaleString()}건 중 {rows.length.toLocaleString()}건</span>
           )}
           {loading && <span>로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}
         </div>
       </div>
 
-      {/* Grid area */}
-      <div className="relative flex flex-col flex-1 min-h-0 overflow-hidden">
+      {/* Empty state */}
+      {!hasAnyFilter && (
+        <div className="flex flex-1 items-center justify-center text-[13px] text-[#9CA3AF]">
+          필터를 입력하고 검색하면 결과가 표시됩니다
+        </div>
+      )}
+
+      {/* Grid area — flex-1, fills remaining height */}
+      <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasAnyFilter ? ' hidden' : ''}`}>
+        {/* HOT container — fills all available space */}
         <div
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-50 pointer-events-none' : ''}`}
@@ -1135,35 +1067,54 @@ export default function WorksGrid() {
           <div ref={containerRef} />
         </div>
 
+        {/* Infinite scroll loading indicator */}
         {loadingMore && (
           <div className="flex-shrink-0 flex justify-center items-center py-2 border-t border-[#E5E7EB] bg-white text-[12px] text-[#9CA3AF]">
             로딩 중…
           </div>
         )}
 
-        {/* Custom horizontal scrollbar */}
+        {/* Custom horizontal scrollbar — overlaps SummaryBar, fades in on scroll */}
         <div
           ref={customScrollbarRef}
-          style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 6, overflowX: 'scroll', overflowY: 'hidden', opacity: 0, transition: 'opacity 0.4s ease', zIndex: 20 }}
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 6,
+            overflowX: 'scroll',
+            overflowY: 'hidden',
+            opacity: 0,
+            transition: 'opacity 0.4s ease',
+            zIndex: 20,
+          }}
           onScroll={() => {
             if (syncingCustomScrollRef.current || !customScrollbarRef.current) return
             syncingCustomScrollRef.current = true
             const scrollLeft = customScrollbarRef.current.scrollLeft
+            // Sync to HOT
             if (hotRef.current) {
               const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
               const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
               if (masterEl) masterEl.scrollLeft = scrollLeft
               if (topEl) topEl.scrollLeft = scrollLeft
             }
-            if (summaryInnerRef.current) summaryInnerRef.current.style.transform = `translateX(-${scrollLeft}px)`
+            if (summaryInnerRef.current) {
+              summaryInnerRef.current.style.transform = `translateX(-${scrollLeft}px)`
+            }
             syncingCustomScrollRef.current = false
           }}
         >
-          <div ref={customScrollbarInnerRef} style={{ height: 1, width: colWidths.reduce((s, w) => s + w, 0) }} />
+          <div
+            ref={customScrollbarInnerRef}
+            style={{ height: 1, width: colWidths.reduce((s, w) => s + w, 0) }}
+          />
         </div>
 
+        {/* Summary bar */}
         <SummaryBar
-          rows={displayRows as unknown as Record<string, unknown>[]}
+          rows={rows as unknown as Record<string, unknown>[]}
           selectedRowIndices={selectedRowIndices}
           columns={(COLUMNS as unknown) as SummaryColDef[]}
           colWidths={colWidths}
@@ -1171,7 +1122,7 @@ export default function WorksGrid() {
         />
       </div>
 
-      {/* Select column dropdown */}
+      {/* select 컬럼 커스텀 드롭다운 */}
       {selectMenu && (
         <div
           ref={selectMenuRef}
@@ -1194,32 +1145,6 @@ export default function WorksGrid() {
           ))}
         </div>
       )}
-
-      {/* Filter modal */}
-      {showFilterModal && (
-        <FilterModal
-          columns={filterColDefs}
-          conditions={filterConditions}
-          anchorRect={filterBtnRect}
-          onChange={setFilterConditions}
-          onApply={() => {}}
-          onClose={() => setShowFilterModal(false)}
-          selectOptions={selectOptions}
-        />
-      )}
-
-      {/* Sort modal */}
-      {showSortModal && (
-        <SortModal
-          columns={filterColDefs}
-          conditions={sortConditions}
-          anchorRect={sortBtnRect}
-          onChange={setSortConditions}
-          onApply={() => {}}
-          onClose={() => setShowSortModal(false)}
-        />
-      )}
-
     </div>
   )
 }
