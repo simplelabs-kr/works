@@ -139,7 +139,7 @@ const COLUMNS = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
       td.textContent = String(row + 1)
-      td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;'
+      td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;padding-left:12px;'
     },
   },
   { data: '고유_번호',    title: '고유번호',        width: 140, fieldType: 'text'     as FieldType },
@@ -532,6 +532,7 @@ export default function WorksGrid() {
       TH.style.lineHeight = 'normal'
       TH.style.paddingTop = '0'
       TH.style.paddingBottom = '0'
+      if (col === 0) TH.style.paddingLeft = '12px'
       const divBase = TH.querySelector('.colHeader') as HTMLElement | null
       if (divBase) {
         divBase.style.height = '100%'
