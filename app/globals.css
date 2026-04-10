@@ -117,6 +117,21 @@ body {
   background: #fff !important;
 }
 
+/* 날짜 editor 화살표 버튼 숨기기 */
+.handsontable .htDateInput .changeMonth,
+.handsontable .htDateInput button {
+  display: none !important;
+}
+
+/* 날짜 editor input 스타일 */
+.handsontable .htDateInput input {
+  font-size: 13px !important;
+  font-family: inherit !important;
+  color: #0F172A !important;
+  background: #ffffff !important;
+  caret-color: #2D7FF9 !important;
+}
+
 /* Pikaday 캘린더 스타일 */
 .pika-single {
   font-family: inherit !important;

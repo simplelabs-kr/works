@@ -173,7 +173,7 @@ const COLUMNS = [
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'lookup'   as FieldType },
   { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
-  { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'text' as FieldType, type: 'text' },
+  { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
   { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, type: 'checkbox', checkedTemplate: true, uncheckedTemplate: false },
   { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
@@ -609,6 +609,35 @@ export default function WorksGrid() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ column: supabaseColumn, value: newVal, expected_updated_at: rowData.updated_at }),
         })
+      }
+    })
+    // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterBeginEditing', (row: number, col: number) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const colDef = (COLUMNS as any[])[col]
+      if (!colDef) return
+
+      if (colDef.fieldType === 'longtext') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const editor = hotRef.current?.getActiveEditor() as any
+        const textarea = editor?.TEXTAREA
+        if (textarea) {
+          textarea.style.minHeight = '80px'
+          textarea.style.whiteSpace = 'pre-wrap'
+          textarea.style.resize = 'vertical'
+        }
+        return
+      }
+
+      if (colDef.type === 'date') {
+        setTimeout(() => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const editor = hotRef.current?.getActiveEditor() as any
+          if (editor?.datePicker) {
+            editor.datePicker.show()
+          }
+        }, 30)
       }
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
