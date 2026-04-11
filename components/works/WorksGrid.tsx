@@ -622,7 +622,9 @@ export default function WorksGrid() {
     submittedFilters.search.length > 0 ||
     submittedFilters.brand.length > 0 ||
     submittedFilters.dateFrom.length > 0 ||
-    submittedFilters.dateTo.length > 0
+    submittedFilters.dateTo.length > 0 ||
+    filterConditionsRef.current.length > 0 ||
+    sortConditionsRef.current.length > 0
   )
 
   // Load holidays once on mount
@@ -656,7 +658,9 @@ export default function WorksGrid() {
       submittedFilters.search.length > 0 ||
       submittedFilters.brand.length > 0 ||
       submittedFilters.dateFrom.length > 0 ||
-      submittedFilters.dateTo.length > 0
+      submittedFilters.dateTo.length > 0 ||
+      filterConditionsRef.current.length > 0 ||
+      sortConditionsRef.current.length > 0
     if (!anyFilter) { setRows([]); setApiError(null); return }
 
     const shouldAppend = isAppend.current
