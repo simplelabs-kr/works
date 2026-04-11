@@ -87,46 +87,39 @@ export async function POST(request: NextRequest) {
   const filters  = body.filters  ?? [];
   const sorts    = body.sorts    ?? [];
 
-  console.log("[order-items] filters_json:", JSON.stringify(filters));
-  console.log("[order-items] sorts_json:", JSON.stringify(sorts));
+  // Step 1+2: RPC id 목록 + 카운트 병렬 실행
+  const rpcParams = {
+    search_term:   search,
+    brand_term:    brand,
+    date_from:     dateFrom,
+    date_to:       dateTo,
+    filters_json:  filters,
+    sorts_json:    sorts,
+  };
 
-  // Step 1: RPC로 id 목록 수집
-  const { data: rpcRows, error: rpcError } = await supabaseAdmin
-    .rpc("search_order_items_v2", {
-      search_term:   search,
-      brand_term:    brand,
-      date_from:     dateFrom,
-      date_to:       dateTo,
+  const [rpcResult, countResult] = await Promise.all([
+    supabaseAdmin.rpc("search_order_items_v2", {
+      ...rpcParams,
       result_offset: offset,
       result_limit:  100,
-      filters_json:  filters,
-      sorts_json:    sorts,
-    });
+    }),
+    offset === 0
+      ? supabaseAdmin.rpc("count_order_items_v2", rpcParams)
+      : Promise.resolve({ data: null, error: null }),
+  ]);
 
-  if (rpcError) {
-    console.error("[order-items] rpc error:", rpcError.message);
-    return NextResponse.json({ error: rpcError.message }, { status: 500 });
+  if (rpcResult.error) {
+    console.error("[order-items] rpc error:", rpcResult.error.message);
+    return NextResponse.json({ error: rpcResult.error.message }, { status: 500 });
   }
 
-  const ids = (rpcRows ?? []).map((r: AnyRecord) => r.id);
+  const ids = (rpcResult.data ?? []).map((r: AnyRecord) => r.id);
 
-  // Step 2: 총 카운트 (offset === 0일 때만)
   let totalCount: number | undefined;
-  if (offset === 0) {
-    const { data: countData, error: countError } = await supabaseAdmin
-      .rpc("count_order_items_v2", {
-        search_term: search,
-        brand_term:  brand,
-        date_from:   dateFrom,
-        date_to:     dateTo,
-        filters_json: filters,
-        sorts_json:   sorts,
-      });
-    if (!countError && countData != null) {
-      totalCount = Number(countData);
-    } else if (countError) {
-      console.error("[order-items] count error:", countError.message);
-    }
+  if (countResult.error) {
+    console.error("[order-items] count error:", countResult.error.message);
+  } else if (countResult.data != null) {
+    totalCount = Number(countResult.data);
   }
 
   if (ids.length === 0) {

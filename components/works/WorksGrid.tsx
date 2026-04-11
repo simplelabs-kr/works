@@ -566,7 +566,7 @@ export default function WorksGrid() {
   scrollLoadRef.current = () => {
     if (isScrollLoadingRef.current) return
     const tc = totalCountRef.current
-    if (tc === null || rowsRef.current.length >= tc) return
+    if (tc !== null && rowsRef.current.length >= tc) return
     isScrollLoadingRef.current = true
     isAppend.current = true
     setOffset(o => o + 100)
@@ -663,7 +663,7 @@ export default function WorksGrid() {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
-          setTotalCount(tc != null ? Number(tc) : mapped.length)
+          setTotalCount(tc != null ? Number(tc) : null)
         }
         dataLoaded.current = true
       })
