@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
@@ -133,12 +133,8 @@ type Row = {
   왁스_파트_전달: boolean
 }
 
-type SubmittedFilters = {
-  search: string
-  brand: string
-  dateFrom: string
-  dateTo: string
-}
+// Client-side search columns for quick filtering loaded rows
+const CLIENT_SEARCH_COLS: (keyof Row)[] = ['제품명_코드', '고객명', '디자이너_노트', '작업_위치', '기타_옵션', '각인_내용', '각인_폰트', '번들_명칭', '도금_색상']
 
 const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
   '사출_방식': [
@@ -543,11 +539,8 @@ export default function WorksGrid() {
   const [apiError, setApiError] = useState<string | null>(null)
   const [totalCount, setTotalCount] = useState<number | null>(null)
 
-  // Filter input state (not yet submitted)
-  const [inputSearch, setInputSearch] = useState('')
-  const [inputBrand, setInputBrand] = useState('')
-  const [inputDateFrom, setInputDateFrom] = useState('')
-  const [inputDateTo, setInputDateTo] = useState('')
+  // Client-side search (filters loaded rows, no DB call)
+  const [clientSearch, setClientSearch] = useState('')
 
   // Filter/Sort modal state
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
@@ -557,11 +550,11 @@ export default function WorksGrid() {
   const filterConditionsRef = useRef<FilterCondition[]>([])
   const sortConditionsRef = useRef<SortCondition[]>([])
 
-  // Submitted query state (triggers API)
-  const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
+  // Data load trigger (incremented by handleLoad)
   const [offset, setOffset] = useState(0)
   const [fetchTrigger, setFetchTrigger] = useState(0)
   const isAppend = useRef(false)
+  const dataLoaded = useRef(false) // true after first successful load
 
   // Sync refs during render (no effect needed — refs don't cause re-renders)
   rowsRef.current = rows
@@ -580,21 +573,11 @@ export default function WorksGrid() {
     setOffset(o => o + 100)
   }
 
-  const handleSearch = () => {
+  const handleLoad = () => {
     isAppend.current = false
     setOffset(0)
     setTotalCount(null)
-    setSubmittedFilters({
-      search: inputSearch.trim(),
-      brand: inputBrand.trim(),
-      dateFrom: inputDateFrom,
-      dateTo: inputDateTo,
-    })
     setFetchTrigger(n => n + 1)
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSearch()
   }
 
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
@@ -618,14 +601,7 @@ export default function WorksGrid() {
     return () => document.removeEventListener('mousedown', handler, true)
   }, [selectMenu])
 
-  const hasAnyFilter = !!submittedFilters && (
-    submittedFilters.search.length > 0 ||
-    submittedFilters.brand.length > 0 ||
-    submittedFilters.dateFrom.length > 0 ||
-    submittedFilters.dateTo.length > 0 ||
-    filterConditionsRef.current.length > 0 ||
-    sortConditionsRef.current.length > 0
-  )
+  const hasData = dataLoaded.current && rows.length > 0
 
   // Load holidays once on mount
   useEffect(() => {
@@ -650,18 +626,9 @@ export default function WorksGrid() {
     })
   }, [holidaySet]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch data on filter/sort/offset change
+  // Fetch data on filter/sort change (triggered by handleLoad via fetchTrigger)
   useEffect(() => {
-    if (!submittedFilters) { setRows([]); setApiError(null); return }
-
-    const anyFilter =
-      submittedFilters.search.length > 0 ||
-      submittedFilters.brand.length > 0 ||
-      submittedFilters.dateFrom.length > 0 ||
-      submittedFilters.dateTo.length > 0 ||
-      filterConditionsRef.current.length > 0 ||
-      sortConditionsRef.current.length > 0
-    if (!anyFilter) { setRows([]); setApiError(null); return }
+    if (fetchTrigger === 0) return // skip initial mount
 
     const shouldAppend = isAppend.current
     isAppend.current = false
@@ -675,17 +642,14 @@ export default function WorksGrid() {
     const apiFilters = filterConditionsRef.current.map(({ logic, column, operator, value }) => ({ logic, column, operator, value }))
     const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
 
-    console.log('[WorksGrid] fetch filters:', JSON.stringify(apiFilters))
-    console.log('[WorksGrid] fetch sorts:', JSON.stringify(apiSorts))
-
     fetch('/api/order-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        search: submittedFilters.search || null,
-        brand: submittedFilters.brand || null,
-        dateFrom: submittedFilters.dateFrom || null,
-        dateTo: submittedFilters.dateTo || null,
+        search: null,
+        brand: null,
+        dateFrom: null,
+        dateTo: null,
         offset,
         filters: apiFilters,
         sorts: apiSorts,
@@ -700,16 +664,16 @@ export default function WorksGrid() {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
-          // tc가 number면 사용, 없으면 현재 배치 크기를 fallback
           setTotalCount(tc != null ? Number(tc) : mapped.length)
         }
+        dataLoaded.current = true
       })
       .finally(() => {
         if (!cancelled) { setLoading(false); setLoadingMore(false); isScrollLoadingRef.current = false }
       })
 
     return () => { cancelled = true }
-  }, [submittedFilters, offset, fetchTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [offset, fetchTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
@@ -957,12 +921,24 @@ export default function WorksGrid() {
     }
   }, [])
 
+  // Client-side search: filter loaded rows by search term
+  const displayRows = useMemo(() => {
+    const term = clientSearch.trim().toLowerCase()
+    if (!term) return rows
+    return rows.filter(row =>
+      CLIENT_SEARCH_COLS.some(col => {
+        const v = row[col]
+        return v != null && String(v).toLowerCase().includes(term)
+      })
+    )
+  }, [rows, clientSearch])
+
   // Update grid data
   useEffect(() => {
     if (!hotRef.current) return
-    hotRef.current.loadData(rows)
-    if (rows.length > 0) hotRef.current.refreshDimensions()
-  }, [rows])
+    hotRef.current.loadData(displayRows)
+    if (displayRows.length > 0) hotRef.current.refreshDimensions()
+  }, [displayRows])
 
   // Realtime subscription — sync editable fields from other clients
   useEffect(() => {
@@ -1009,59 +985,27 @@ export default function WorksGrid() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Filter bar — shrink-0, px-5 only */}
-      <div className="flex-shrink-0 flex flex-wrap items-end gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">제품명</label>
+      {/* Top bar */}
+      <div className="flex-shrink-0 flex flex-wrap items-center gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
+        {/* Client-side search */}
+        <div className="relative">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
+            <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
           <input
             type="text"
-            placeholder="제품명 검색"
-            value={inputSearch}
-            onChange={e => setInputSearch(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            placeholder="로드된 결과 내 검색..."
+            value={clientSearch}
+            onChange={e => setClientSearch(e.target.value)}
+            className="w-56 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">브랜드</label>
-          <input
-            type="text"
-            placeholder="브랜드명"
-            value={inputBrand}
-            onChange={e => setInputBrand(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="w-36 h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-[#6B7280] uppercase tracking-[0.05em]">발주일</label>
-          <div className="flex items-center gap-1.5">
-            <input
-              type="date"
-              value={inputDateFrom}
-              onChange={e => setInputDateFrom(e.target.value)}
-              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
-            />
-            <span className="text-[#9CA3AF] text-sm">–</span>
-            <input
-              type="date"
-              value={inputDateTo}
-              onChange={e => setInputDateTo(e.target.value)}
-              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#111827] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
-            />
-          </div>
-        </div>
-        <button
-          onClick={handleSearch}
-          className="self-end h-[28px] rounded-[4px] bg-[#1C1C1C] px-[14px] text-[12px] font-medium text-white hover:bg-[#333] active:bg-[#444] transition-colors"
-        >
-          검색
-        </button>
 
         {/* Filter / Sort buttons */}
         <button
           onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
-          className="self-end h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           필터
@@ -1071,7 +1015,7 @@ export default function WorksGrid() {
         </button>
         <button
           onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
-          className="self-end h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
           정렬
@@ -1081,7 +1025,7 @@ export default function WorksGrid() {
         </button>
 
         {/* Freeze column control */}
-        <div className="flex items-center gap-1 self-end ml-auto">
+        <div className="flex items-center gap-1 ml-auto">
           <span className="text-[12px] text-[#6B7280]">고정: {fixedCols}열</span>
           <button
             onClick={() => setFixedCols(n => Math.max(0, n - 1))}
@@ -1094,9 +1038,12 @@ export default function WorksGrid() {
         </div>
 
         {/* Count + status */}
-        <div className="self-end flex items-center gap-3 text-[12px] text-[#6B7280]">
+        <div className="flex items-center gap-3 text-[12px] text-[#6B7280]">
           {totalCount !== null && !loading && (
-            <span>{totalCount.toLocaleString()}건 중 {rows.length.toLocaleString()}건 표시</span>
+            <span>
+              {totalCount.toLocaleString()}건 중 {displayRows.length.toLocaleString()}건 표시
+              {clientSearch.trim() && ` (검색: ${rows.length}건 중)`}
+            </span>
           )}
           {loading && <span>로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}
@@ -1104,14 +1051,14 @@ export default function WorksGrid() {
       </div>
 
       {/* Empty state */}
-      {!hasAnyFilter && (
+      {!hasData && !loading && (
         <div className="flex flex-1 items-center justify-center text-[13px] text-[#9CA3AF]">
-          필터를 입력하고 검색하면 결과가 표시됩니다
+          필터를 설정하고 적용하면 데이터가 로드됩니다
         </div>
       )}
 
       {/* Grid area — flex-1, fills remaining height */}
-      <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasAnyFilter ? ' hidden' : ''}`}>
+      <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
         {/* HOT container — fills all available space */}
         <div
           ref={hotContainerRef}
@@ -1167,7 +1114,7 @@ export default function WorksGrid() {
 
         {/* Summary bar */}
         <SummaryBar
-          rows={rows as unknown as Record<string, unknown>[]}
+          rows={displayRows as unknown as Record<string, unknown>[]}
           selectedRowIndices={selectedRowIndices}
           columns={(COLUMNS as unknown) as SummaryColDef[]}
           colWidths={colWidths}
@@ -1181,7 +1128,7 @@ export default function WorksGrid() {
           columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
           conditions={filterConditions}
           onChange={setFilterConditions}
-          onApply={handleSearch}
+          onApply={handleLoad}
           onClose={() => setShowFilterModal(false)}
         />
       )}
@@ -1192,7 +1139,7 @@ export default function WorksGrid() {
           columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string } => typeof c.data === 'string' && c.data !== '') as SortColDef[]}
           conditions={sortConditions}
           onChange={setSortConditions}
-          onApply={handleSearch}
+          onApply={handleLoad}
           onClose={() => setShowSortModal(false)}
         />
       )}
