@@ -122,8 +122,10 @@ export async function POST(request: NextRequest) {
         filters_json: filters,
         sorts_json:   sorts,
       });
-    if (!countError) {
+    if (!countError && countData != null) {
       totalCount = Number(countData);
+    } else if (countError) {
+      console.error("[order-items] count error:", countError.message);
     }
   }
 

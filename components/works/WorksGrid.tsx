@@ -700,7 +700,8 @@ export default function WorksGrid() {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
-          if (tc !== undefined) setTotalCount(Number(tc))
+          // tc가 number면 사용, 없으면 현재 배치 크기를 fallback
+          setTotalCount(tc != null ? Number(tc) : mapped.length)
         }
       })
       .finally(() => {
