@@ -8,6 +8,7 @@ export interface FilterColDef {
   data: string
   title: string
   fieldType?: string
+  outputType?: 'text' | 'number' | 'date'
 }
 
 export interface FilterCondition {
@@ -74,6 +75,7 @@ function getOpsForFieldType(fieldType: string): { value: string; label: string }
 }
 
 function resolveFieldType(col: FilterColDef): string {
+  if (col.fieldType === 'formula') return col.outputType || 'text'
   return col.fieldType || 'text'
 }
 
@@ -210,7 +212,10 @@ export default function FilterModal({
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
 
-  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '' && c.fieldType !== 'formula')
+  const filteredCols = columns.filter(c =>
+    typeof c.title === 'string' && c.title !== '' &&
+    (c.fieldType !== 'formula' || c.outputType != null)
+  )
 
   const addCondition = () => {
     const firstCol = filteredCols[0]
