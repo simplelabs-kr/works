@@ -60,6 +60,12 @@ body {
   background-color: #ffffff;
 }
 
+/* readOnly cells */
+.handsontable td.htDimmed {
+  background-color: #FAFAFA;
+  cursor: default;
+}
+
 /* row hover */
 .handsontable tbody tr:hover td {
   background-color: #F8FAFC;

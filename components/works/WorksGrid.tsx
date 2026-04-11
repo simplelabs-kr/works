@@ -188,11 +188,11 @@ const COLUMNS = [
       td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;padding-left:12px;'
     },
   },
-  { data: '제품명_코드',   title: '제품명[코드]',    width: 220, fieldType: 'lookup'   as FieldType },
-  { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
-  { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'lookup'   as FieldType },
-  { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'lookup'   as FieldType },
-  { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'lookup'  as FieldType },
+  { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 220, fieldType: 'text'     as FieldType },
+  { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
+  { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
+  { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'date'     as FieldType },
+  { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'date'    as FieldType },
   { data: '데드라인',   title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date',
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     datePickerConfig: {
@@ -226,32 +226,32 @@ const COLUMNS = [
     } as any,
   },
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType },
-  { data: '시세_g당',      title: '시세 (g당)', readOnly: true, width: 80, fieldType: 'lookup'  as FieldType },
-  { data: '소재비',        title: '소재비',  readOnly: true,  width: 90,  fieldType: 'lookup'   as FieldType },
-  { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
+  { data: '시세_g당',      title: '시세 (g당)', readOnly: true, width: 80, fieldType: 'number'  as FieldType },
+  { data: '소재비',        title: '소재비',  readOnly: true,  width: 90,  fieldType: 'number'   as FieldType },
+  { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
-  { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'lookup'   as FieldType },
-  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
+  { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
+  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
   { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
   { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 70, fieldType: 'formula'  as FieldType },
-  { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
-  { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'lookup'  as FieldType },
-  { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
-  { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
-  { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'lookup' as FieldType },
-  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'lookup'   as FieldType },
-  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
-  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'lookup'  as FieldType },
+  { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
+  { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'text'    as FieldType },
+  { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'text'     as FieldType },
+  { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
+  { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'number' as FieldType },
+  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
+  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
+  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'text'    as FieldType },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: true,  width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
-  { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'lookup' as FieldType },
-  { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
+  { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
   { data: '사출_방식',     title: '사출 방식', readOnly: true,  width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
-  { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
-  { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'lookup'   as FieldType },
+  { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'text'     as FieldType },
+  { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '포장',          title: '포장',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '순금_중량',     title: '순금 중량', readOnly: true, width: 80, fieldType: 'formula'  as FieldType },
@@ -261,7 +261,7 @@ const COLUMNS = [
 
 // ── Field type icons ─────────────────────────────────────────────────────────
 
-type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'lookup' | 'formula'
+type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula'
 
 function getFieldTypeIcon(type: FieldType): string {
   const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
@@ -272,7 +272,6 @@ function getFieldTypeIcon(type: FieldType): string {
     date:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
     checkbox: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
     select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
-    lookup:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M2 10 L10 2"/><polyline points="5,2 10,2 10,7"/></svg>`,
     formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
   }
   return icons[type] ?? ''

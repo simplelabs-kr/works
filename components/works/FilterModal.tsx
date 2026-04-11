@@ -74,9 +74,7 @@ function getOpsForFieldType(fieldType: string): { value: string; label: string }
 }
 
 function resolveFieldType(col: FilterColDef): string {
-  const ft = col.fieldType ?? ''
-  if (ft === 'lookup' || ft === 'formula') return 'text'
-  return ft || 'text'
+  return col.fieldType || 'text'
 }
 
 function needsValueInput(operator: string): boolean {
@@ -212,7 +210,7 @@ export default function FilterModal({
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
 
-  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '')
+  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '' && c.fieldType !== 'formula')
 
   const addCondition = () => {
     const firstCol = filteredCols[0]
