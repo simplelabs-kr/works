@@ -560,6 +560,7 @@ export default function WorksGrid() {
   // Submitted query state (triggers API)
   const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
   const [offset, setOffset] = useState(0)
+  const [fetchTrigger, setFetchTrigger] = useState(0)
   const isAppend = useRef(false)
 
   // Sync refs during render (no effect needed — refs don't cause re-renders)
@@ -589,6 +590,7 @@ export default function WorksGrid() {
       dateFrom: inputDateFrom,
       dateTo: inputDateTo,
     })
+    setFetchTrigger(n => n + 1)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -695,7 +697,7 @@ export default function WorksGrid() {
       })
 
     return () => { cancelled = true }
-  }, [submittedFilters, offset]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [submittedFilters, offset, fetchTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Resize HOT height to fill its container
   useEffect(() => {
