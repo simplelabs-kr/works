@@ -1095,7 +1095,7 @@ export default function WorksGrid() {
         {/* Count + status */}
         <div className="self-end flex items-center gap-3 text-[12px] text-[#6B7280]">
           {totalCount !== null && !loading && (
-            <span>{totalCount.toLocaleString()}건 중 {rows.length.toLocaleString()}건</span>
+            <span>{totalCount.toLocaleString()}건 중 {rows.length.toLocaleString()}건 표시</span>
           )}
           {loading && <span>로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}

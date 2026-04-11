@@ -46,12 +46,12 @@ export default function SortModal({
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
 
-  const filteredCols = columns.filter(c => typeof c.data === 'string' && c.data !== '')
+  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '')
 
   const addCondition = () => {
     const firstCol = filteredCols[0]
     if (!firstCol) return
-    onChange([...conditions, { id: uid(), column: firstCol.data, direction: 'asc' }])
+    onChange([...conditions, { id: uid(), column: firstCol.title, direction: 'asc' }])
   }
 
   const selectStyle: React.CSSProperties = {
@@ -89,7 +89,7 @@ export default function SortModal({
               onChange={e => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: e.target.value } : c))}
             >
               {filteredCols.map(c => (
-                <option key={c.data} value={c.data}>{c.title}</option>
+                <option key={c.title} value={c.title}>{c.title}</option>
               ))}
             </select>
 

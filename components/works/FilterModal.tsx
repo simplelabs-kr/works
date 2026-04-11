@@ -111,7 +111,7 @@ function ColPicker({ columns, value, onChange }: ColPickerProps) {
     return () => document.removeEventListener('mousedown', handler, true)
   }, [open])
 
-  const selected = columns.find(c => c.data === value)
+  const selected = columns.find(c => c.title === value)
   const filtered = search
     ? columns.filter(c => c.title.toLowerCase().includes(search.toLowerCase()))
     : columns
@@ -160,16 +160,16 @@ function ColPicker({ columns, value, onChange }: ColPickerProps) {
               <div style={{ padding: '8px 12px', fontSize: 13, color: '#9CA3AF' }}>결과 없음</div>
             ) : filtered.map(c => (
               <div
-                key={c.data}
-                onMouseDown={() => { onChange(c.data); setOpen(false); setSearch('') }}
+                key={c.title}
+                onMouseDown={() => { onChange(c.title); setOpen(false); setSearch('') }}
                 style={{
                   padding: '7px 12px', fontSize: 13,
-                  color: c.data === value ? '#2D7FF9' : '#111827',
-                  background: c.data === value ? '#EFF6FF' : 'white',
+                  color: c.title === value ? '#2D7FF9' : '#111827',
+                  background: c.title === value ? '#EFF6FF' : 'white',
                   cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}
-                onMouseEnter={e => { if (c.data !== value) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = c.data === value ? '#EFF6FF' : 'white' }}
+                onMouseEnter={e => { if (c.title !== value) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = c.title === value ? '#EFF6FF' : 'white' }}
               >
                 {c.title}
               </div>
@@ -212,7 +212,7 @@ export default function FilterModal({
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
 
-  const filteredCols = columns.filter(c => typeof c.data === 'string' && c.data !== '')
+  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '')
 
   const addCondition = () => {
     const firstCol = filteredCols[0]
@@ -222,7 +222,7 @@ export default function FilterModal({
     onChange([...conditions, {
       id: uid(),
       logic: 'AND',
-      column: firstCol.data,
+      column: firstCol.title,
       operator: ops[0]?.value ?? 'contains',
       value: null,
     }])
@@ -233,7 +233,7 @@ export default function FilterModal({
       if (c.id !== id) return c
       const next = { ...c, ...patch }
       if (patch.column && patch.column !== c.column) {
-        const col = filteredCols.find(fc => fc.data === patch.column)
+        const col = filteredCols.find(fc => fc.title === patch.column)
         if (col) {
           const ft = resolveFieldType(col)
           const ops = getOpsForFieldType(ft)
@@ -281,7 +281,7 @@ export default function FilterModal({
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
         {conditions.map((cond, i) => {
-          const col = filteredCols.find(c => c.data === cond.column) ?? filteredCols[0]
+          const col = filteredCols.find(c => c.title === cond.column) ?? filteredCols[0]
           const ft = col ? resolveFieldType(col) : 'text'
           const ops = getOpsForFieldType(ft)
           const showValue = needsValueInput(cond.operator)
