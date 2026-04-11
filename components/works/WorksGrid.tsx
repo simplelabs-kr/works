@@ -1038,11 +1038,14 @@ export default function WorksGrid() {
 
         {/* Count + status */}
         <div className="flex items-center gap-3 text-[12px] text-[#6B7280]">
-          {totalCount !== null && !loading && (
+          {!loading && totalCount !== null && (
             <span>
               {totalCount.toLocaleString()}건 중 {displayRows.length.toLocaleString()}건 표시
               {clientSearch.trim() && ` (검색: ${rows.length}건 중)`}
             </span>
+          )}
+          {!loading && totalCount === null && rows.length > 0 && (
+            <span>{displayRows.length.toLocaleString()}건 표시</span>
           )}
           {loading && <span>로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}
