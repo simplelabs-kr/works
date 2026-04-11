@@ -671,6 +671,13 @@ export default function WorksGrid() {
     else setLoading(true)
     setApiError(null)
 
+    // Strip client-only 'id' field before sending to API
+    const apiFilters = filterConditionsRef.current.map(({ logic, column, operator, value }) => ({ logic, column, operator, value }))
+    const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
+
+    console.log('[WorksGrid] fetch filters:', JSON.stringify(apiFilters))
+    console.log('[WorksGrid] fetch sorts:', JSON.stringify(apiSorts))
+
     fetch('/api/order-items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -680,8 +687,8 @@ export default function WorksGrid() {
         dateFrom: submittedFilters.dateFrom || null,
         dateTo: submittedFilters.dateTo || null,
         offset,
-        filters: filterConditionsRef.current,
-        sorts: sortConditionsRef.current,
+        filters: apiFilters,
+        sorts: apiSorts,
       }),
     })
       .then(res => res.json())

@@ -87,6 +87,9 @@ export async function POST(request: NextRequest) {
   const filters  = body.filters  ?? [];
   const sorts    = body.sorts    ?? [];
 
+  console.log("[order-items] filters_json:", JSON.stringify(filters));
+  console.log("[order-items] sorts_json:", JSON.stringify(sorts));
+
   // Step 1: RPC로 id 목록 수집
   const { data: rpcRows, error: rpcError } = await supabaseAdmin
     .rpc("search_order_items_v2", {
