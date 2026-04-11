@@ -77,27 +77,27 @@ const SELECT = `
   )
 `;
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const search   = searchParams.get("search")   || null;
-  const brand    = searchParams.get("brand")    || null;
-  const dateFrom = searchParams.get("dateFrom") || null;
-  const dateTo   = searchParams.get("dateTo")   || null;
-  const offset   = Number(searchParams.get("offset") ?? 0);
-  const sortCol  = searchParams.get("sortCol")  || "발주일";
-  const sortDir  = searchParams.get("sortDir")  || "desc";
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+  const search   = body.search   || null;
+  const brand    = body.brand    || null;
+  const dateFrom = body.dateFrom || null;
+  const dateTo   = body.dateTo   || null;
+  const offset   = Number(body.offset ?? 0);
+  const filters  = body.filters  ?? [];
+  const sorts    = body.sorts    ?? [];
 
   // Step 1: RPC로 id 목록 수집
   const { data: rpcRows, error: rpcError } = await supabaseAdmin
-    .rpc("search_order_items", {
+    .rpc("search_order_items_v2", {
       search_term:   search,
       brand_term:    brand,
       date_from:     dateFrom,
       date_to:       dateTo,
       result_offset: offset,
       result_limit:  100,
-      sort_col:      sortCol,
-      sort_dir:      sortDir,
+      filters_json:  filters,
+      sorts_json:    sorts,
     });
 
   if (rpcError) {
@@ -111,11 +111,13 @@ export async function GET(request: NextRequest) {
   let totalCount: number | undefined;
   if (offset === 0) {
     const { data: countData, error: countError } = await supabaseAdmin
-      .rpc("count_order_items", {
+      .rpc("count_order_items_v2", {
         search_term: search,
         brand_term:  brand,
         date_from:   dateFrom,
         date_to:     dateTo,
+        filters_json: filters,
+        sorts_json:   sorts,
       });
     if (!countError) {
       totalCount = Number(countData);

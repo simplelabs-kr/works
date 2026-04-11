@@ -6,6 +6,10 @@ import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
 import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
+import FilterModal from '@/components/works/FilterModal'
+import type { FilterCondition, FilterColDef } from '@/components/works/FilterModal'
+import SortModal from '@/components/works/SortModal'
+import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 
 type Orders = {
   brand_id: string | null
@@ -545,6 +549,14 @@ export default function WorksGrid() {
   const [inputDateFrom, setInputDateFrom] = useState('')
   const [inputDateTo, setInputDateTo] = useState('')
 
+  // Filter/Sort modal state
+  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
+  const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
+  const [showFilterModal, setShowFilterModal] = useState(false)
+  const [showSortModal, setShowSortModal] = useState(false)
+  const filterConditionsRef = useRef<FilterCondition[]>([])
+  const sortConditionsRef = useRef<SortCondition[]>([])
+
   // Submitted query state (triggers API)
   const [submittedFilters, setSubmittedFilters] = useState<SubmittedFilters | null>(null)
   const [offset, setOffset] = useState(0)
@@ -554,6 +566,8 @@ export default function WorksGrid() {
   rowsRef.current = rows
   totalCountRef.current = totalCount
   holidaySetRef.current = holidaySet
+  filterConditionsRef.current = filterConditions
+  sortConditionsRef.current = sortConditions
 
   // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
@@ -651,16 +665,19 @@ export default function WorksGrid() {
     else setLoading(true)
     setApiError(null)
 
-    const params = new URLSearchParams()
-    if (submittedFilters.search)   params.set('search', submittedFilters.search)
-    if (submittedFilters.brand)    params.set('brand', submittedFilters.brand)
-    if (submittedFilters.dateFrom) params.set('dateFrom', submittedFilters.dateFrom)
-    if (submittedFilters.dateTo)   params.set('dateTo', submittedFilters.dateTo)
-    params.set('offset', String(offset))
-    params.set('sortCol', '발주일')
-    params.set('sortDir', 'desc')
-
-    fetch(`/api/order-items?${params}`)
+    fetch('/api/order-items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search: submittedFilters.search || null,
+        brand: submittedFilters.brand || null,
+        dateFrom: submittedFilters.dateFrom || null,
+        dateTo: submittedFilters.dateTo || null,
+        offset,
+        filters: filterConditionsRef.current,
+        sorts: sortConditionsRef.current,
+      }),
+    })
       .then(res => res.json())
       .then(({ data, error, totalCount: tc }) => {
         if (cancelled) return
@@ -1027,6 +1044,28 @@ export default function WorksGrid() {
           검색
         </button>
 
+        {/* Filter / Sort buttons */}
+        <button
+          onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
+          className="self-end h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          필터
+          {filterConditions.length > 0 && (
+            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
+          )}
+        </button>
+        <button
+          onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
+          className="self-end h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          정렬
+          {sortConditions.length > 0 && (
+            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{sortConditions.length}</span>
+          )}
+        </button>
+
         {/* Freeze column control */}
         <div className="flex items-center gap-1 self-end ml-auto">
           <span className="text-[12px] text-[#6B7280]">고정: {fixedCols}열</span>
@@ -1121,6 +1160,28 @@ export default function WorksGrid() {
           innerRef={summaryInnerRef}
         />
       </div>
+
+      {/* Filter modal */}
+      {showFilterModal && (
+        <FilterModal
+          columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
+          conditions={filterConditions}
+          onChange={setFilterConditions}
+          onApply={handleSearch}
+          onClose={() => setShowFilterModal(false)}
+        />
+      )}
+
+      {/* Sort modal */}
+      {showSortModal && (
+        <SortModal
+          columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string } => typeof c.data === 'string' && c.data !== '') as SortColDef[]}
+          conditions={sortConditions}
+          onChange={setSortConditions}
+          onApply={handleSearch}
+          onClose={() => setShowSortModal(false)}
+        />
+      )}
 
       {/* select 컬럼 커스텀 드롭다운 */}
       {selectMenu && (
