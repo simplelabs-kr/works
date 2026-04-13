@@ -11,40 +11,7 @@ import type { FilterCondition, FilterColDef } from '@/components/works/FilterMod
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 
-type Orders = {
-  brand_id: string | null
-  product_id: string | null
-  수량: number | null
-  발주일: string | null
-  생산시작일: string | null
-  소재: string | null
-  metal_id: string | null
-  고객명: string | null
-  각인_내용: string | null
-  각인_폰트: string | null
-  기타_옵션: string | null
-  호수: string | null
-  확정_공임: number | null
-  공임_조정액: number | null
-  회차: number | null
-  도금_색상: string | null
-  체인_길이: string | null
-  체인_두께: string | null
-  brands: { name: string } | null
-  products: { 제품명: string; 제작_소요일: number | null } | null
-  metals: { name: string; purity: string | null } | null
-}
-
-type Purchase = {
-  이름: string | null
-  구분: string | null
-  발주: boolean | null
-  수령: boolean | null
-  재고_사용: boolean | null
-  material_id: string | null
-  materials: { 품목명: string } | null
-}
-
+// flat_order_details 테이블 구조 (비정규화된 단일 테이블)
 type Item = {
   id: string
   updated_at: string | null
@@ -59,33 +26,39 @@ type Item = {
   검수: boolean | null
   포장: boolean | null
   출고: boolean | null
-  가다번호: string | null
-  가다_위치: string | null
   작업_위치: string | null
   사출_방식: string | null
   주물_후_수량: number | null
   rp_출력_시작: boolean | null
   왁스_파트_전달: boolean | null
-  bundle_id: string | null
-  metal_price_id: string | null
   order_id: string | null
-  orders: Orders | null
-  metal_prices: { price_per_gram: number | null } | null
-  products: {
-    제품명: string
-    제작_소요일: number | null
-    기준_중량: number | null
-    기본_공임: number | null
-    검수_유의: string | null
-    product_molds: {
-      molds: {
-        가다번호: string | null
-        mold_positions: { 보관함_위치: string | null } | null
-      } | null
-    }[] | null
-  } | null
-  bundles: { 번들_고유번호: string | null } | null
-  purchases: Purchase[] | null
+  product_id: string | null
+  brand_id: string | null
+  metal_price_id: string | null
+  bundle_id: string | null
+  // orders 유래
+  소재: string | null
+  도금_색상: string | null
+  각인_여부: boolean | null
+  각인_내용: string | null
+  각인_폰트: string | null
+  기타_옵션: string | null
+  스톤_수동: string | null
+  호수: string | null
+  고객명: string | null
+  발주일: string | null
+  생산시작일: string | null
+  회차: number | null
+  확정_공임: number | null
+  공임_조정액: number | null
+  // products 유래
+  제품명: string | null
+  제작_소요일: number | null
+  기본_공임: number | null
+  // brands/metals 유래
+  brand_name: string | null
+  metal_name: string | null
+  metal_purity: number | null
 }
 
 type Row = {
@@ -420,10 +393,8 @@ function calcShipDate(item: Item, hs: Set<string>): string {
   if (item.데드라인) {
     return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
   }
-  const 생산시작일 = item.orders?.생산시작일
-  const 제작_소요일 = item.products?.제작_소요일
-  if (생산시작일 && 제작_소요일) {
-    return addWorkdays(new Date(생산시작일), Number(제작_소요일), hs).toISOString().slice(0, 10)
+  if (item.생산시작일 && item.제작_소요일) {
+    return addWorkdays(new Date(item.생산시작일), Number(item.제작_소요일), hs).toISOString().slice(0, 10)
   }
   return '-'
 }
@@ -434,66 +405,49 @@ function formatDate(val: string | null | undefined): string {
 }
 
 function mapItem(item: Item, hs: Set<string>): Row {
-  const o = item.orders
-  const 제품명 = item.products?.['제품명'] ?? ''
+  const 제품명 = item.제품명 ?? ''
   const 코드 = item.고유_번호?.length === 15
     ? item.고유_번호.slice(-4)
     : item.고유_번호?.slice(-6) ?? ''
-  const pricePerGram = item.metal_prices?.price_per_gram ?? null
-  const purity = Number(o?.metals?.purity ?? 0)
+  const purity = Number(item.metal_purity ?? 0)
   return {
     id: item.id,
     updated_at: item.updated_at ?? null,
     고유_번호: item.고유_번호 ?? '',
     제품명,
     제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
-    metals: { name: o?.metals?.name ?? '', purity: o?.metals?.purity ?? null },
-    발주일: formatDate(o?.발주일),
-    생산시작일: formatDate(o?.생산시작일),
-    제작_소요일: item.products?.제작_소요일 ?? null,
+    metals: { name: item.metal_name ?? '', purity: item.metal_purity != null ? String(item.metal_purity) : null },
+    발주일: formatDate(item.발주일),
+    생산시작일: formatDate(item.생산시작일),
+    제작_소요일: item.제작_소요일 ?? null,
     데드라인: formatDate(item.데드라인),
     출고예정일: calcShipDate(item, hs),
-    시세_g당: pricePerGram != null ? Math.floor(pricePerGram).toLocaleString() : '',
-    소재비: (pricePerGram != null && purity > 0)
-      ? Math.floor(pricePerGram * purity * 1.1).toLocaleString()
-      : '',
-    발주_수량: o?.수량 ?? null,
+    시세_g당: '',
+    소재비: '',
+    발주_수량: item.수량 ?? null,
     수량: item.수량 ?? null,
-    호수: o?.호수 ?? null,
-    고객명: o?.고객명 ?? '',
+    호수: item.호수 ?? null,
+    고객명: item.고객명 ?? '',
     디자이너_노트: item.디자이너_노트 ?? '',
     중량: item.중량 ?? null,
     검수: item.검수 ?? false,
-    허용_중량_범위: item.products?.기준_중량 != null
-      ? `${(item.products.기준_중량 * 0.9).toFixed(2)} ~ ${(item.products.기준_중량 * 1.1).toFixed(2)} g`
-      : '',
-    중량_검토: (() => {
-      const w = item.중량
-      const base = item.products?.기준_중량 ?? null
-      if (w == null || base == null) return ''
-      return (w >= base * 0.9 && w <= base * 1.1) ? '●' : '△'
-    })(),
-    기타_옵션: o?.기타_옵션 ?? '',
-    각인_내용: o?.각인_내용 ?? '',
-    각인_폰트: o?.각인_폰트 ?? '',
-    기본_공임: item.products?.기본_공임 ?? null,
-    공임_조정액: o?.공임_조정액 ?? null,
-    확정_공임: o?.확정_공임 ?? null,
-    번들_명칭: item.bundles?.번들_고유번호 ?? '',
-    원부자재: (item.purchases ?? []).map(p => p.materials?.품목명 || p.이름 || '').join('\n'),
-    발주_현황: (() => {
-      const purchases = item.purchases ?? []
-      if (purchases.length === 0) return ''
-      if (purchases.some(p => !p.발주)) return '발주 필요'
-      if (purchases.some(p => !p.수령)) return '수령 필요'
-      return '수령 완료'
-    })(),
+    허용_중량_범위: '',
+    중량_검토: '',
+    기타_옵션: item.기타_옵션 ?? '',
+    각인_내용: item.각인_내용 ?? '',
+    각인_폰트: item.각인_폰트 ?? '',
+    기본_공임: item.기본_공임 ?? null,
+    공임_조정액: item.공임_조정액 ?? null,
+    확정_공임: item.확정_공임 ?? null,
+    번들_명칭: '',
+    원부자재: '',
+    발주_현황: '',
     작업_위치: item.작업_위치 ?? '',
-    검수_유의: item.products?.검수_유의 ?? '',
-    도금_색상: o?.도금_색상 ?? '',
+    검수_유의: '',
+    도금_색상: item.도금_색상 ?? '',
     사출_방식: item.사출_방식 ?? '',
-    가다번호: item.products?.product_molds?.[0]?.molds?.가다번호 ?? null,
-    가다_위치: item.products?.product_molds?.[0]?.molds?.mold_positions?.보관함_위치 ?? null,
+    가다번호: null,
+    가다_위치: null,
     주물_후_수량: item.주물_후_수량 ?? null,
     포장: item.포장 ?? false,
     순금_중량: (item.중량 != null && purity > 0)
@@ -514,7 +468,7 @@ export default function WorksGrid() {
 
   // Refs for infinite scroll and stale-closure-safe access in HOT hooks
   const rowsRef = useRef<Row[]>([])
-  const totalCountRef = useRef<number | null>(null)
+  const hasMoreRef = useRef(true)
   const isScrollLoadingRef = useRef(false)
   const scrollLoadRef = useRef<(() => void) | null>(null)
   const holidaySetRef = useRef<Set<string>>(new Set())
@@ -536,7 +490,6 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
-  const [totalCount, setTotalCount] = useState<number | null>(null)
 
   // Client-side search (filters loaded rows, no DB call)
   const [clientSearch, setClientSearch] = useState('')
@@ -557,7 +510,6 @@ export default function WorksGrid() {
 
   // Sync refs during render (no effect needed — refs don't cause re-renders)
   rowsRef.current = rows
-  totalCountRef.current = totalCount
   holidaySetRef.current = holidaySet
   filterConditionsRef.current = filterConditions
   sortConditionsRef.current = sortConditions
@@ -565,8 +517,7 @@ export default function WorksGrid() {
   // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
     if (isScrollLoadingRef.current) return
-    const tc = totalCountRef.current
-    if (tc !== null && rowsRef.current.length >= tc) return
+    if (!hasMoreRef.current) return
     isScrollLoadingRef.current = true
     isAppend.current = true
     setOffset(o => o + 100)
@@ -575,7 +526,7 @@ export default function WorksGrid() {
   const handleLoad = () => {
     isAppend.current = false
     setOffset(0)
-    setTotalCount(null)
+    hasMoreRef.current = true
     setFetchTrigger(n => n + 1)
   }
 
@@ -645,25 +596,22 @@ export default function WorksGrid() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        search: null,
-        brand: null,
-        dateFrom: null,
-        dateTo: null,
         offset,
         filters: apiFilters,
         sorts: apiSorts,
       }),
     })
       .then(res => res.json())
-      .then(({ data, error, totalCount: tc }) => {
+      .then(({ data, error }) => {
         if (cancelled) return
         if (error) { setApiError(error); return }
-        const mapped = (data ?? []).map((item: Item) => mapItem(item, holidaySetRef.current))
+        const items = data ?? []
+        const mapped = items.map((item: Item) => mapItem(item, holidaySetRef.current))
+        if (items.length < 100) hasMoreRef.current = false
         if (shouldAppend) {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
-          setTotalCount(tc != null ? Number(tc) : null)
         }
         dataLoaded.current = true
       })
@@ -1038,16 +986,14 @@ export default function WorksGrid() {
 
         {/* Count + status */}
         <div className="flex items-center gap-3 text-[12px] text-[#6B7280]">
-          {!loading && totalCount !== null && (
+          {!loading && rows.length > 0 && (
             <span>
-              {totalCount.toLocaleString()}건 중 {displayRows.length.toLocaleString()}건 표시
-              {clientSearch.trim() && ` (검색: ${rows.length}건 중)`}
+              {displayRows.length.toLocaleString()}건 로드됨
+              {clientSearch.trim() && ` (${rows.length}건 중 검색)`}
             </span>
           )}
-          {!loading && totalCount === null && rows.length > 0 && (
-            <span>{displayRows.length.toLocaleString()}건 표시</span>
-          )}
           {loading && <span>로딩 중…</span>}
+          {loadingMore && <span>추가 로딩 중…</span>}
           {apiError && <span className="text-red-500">{apiError}</span>}
         </div>
       </div>
