@@ -258,13 +258,22 @@ body {
   height: 24px;
   object-fit: cover;
   border-radius: 3px;
+  border: 1px solid #CBD5E1;
   flex-shrink: 0;
+  cursor: default;
 }
 
 /* 선택 시 썸네일 확대 */
 .handsontable td.current .image-popout-wrapper img.image-thumb {
   width: 34px;
   height: 34px;
+}
+
+/* 선택 상태에서만 hover 효과 */
+.handsontable td.current .image-popout-wrapper img.image-thumb:hover {
+  filter: brightness(0.85);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  cursor: zoom-in;
 }
 
 /* scrollbar */
