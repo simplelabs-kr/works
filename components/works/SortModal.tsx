@@ -100,14 +100,16 @@ export default function SortModal({
               onChange={col => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: col } : c))}
             />
 
-            <select
-              style={{ ...selectStyle, width: 100 }}
-              value={cond.direction}
-              onChange={e => onChange(conditions.map(c => c.id === cond.id ? { ...c, direction: e.target.value as 'asc' | 'desc' } : c))}
+            <button
+              type="button"
+              onClick={() => onChange(conditions.map(c => c.id === cond.id ? { ...c, direction: c.direction === 'asc' ? 'desc' : 'asc' } : c))}
+              style={{
+                ...selectStyle, width: 100, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', gap: 4, userSelect: 'none',
+              }}
             >
-              <option value="asc">오름차순</option>
-              <option value="desc">내림차순</option>
-            </select>
+              {cond.direction === 'asc' ? '오름차순 ↑' : '내림차순 ↓'}
+            </button>
 
             <button
               onClick={() => onChange(conditions.filter(c => c.id !== cond.id))}
