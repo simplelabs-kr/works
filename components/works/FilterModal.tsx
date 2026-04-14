@@ -17,7 +17,7 @@ export interface FilterCondition {
   logic: 'AND' | 'OR'
   column: string
   operator: string
-  value: string | null
+  value: string | string[] | null
 }
 
 // ── Operator definitions ───────────────────────────────────────────────────────
@@ -33,6 +33,8 @@ function getOpsForFieldType(fieldType: string): { value: string; label: string }
       return [
         { value: 'is', label: '같음' },
         { value: 'is_not', label: '다름' },
+        { value: 'is_any_of', label: '다음 중 포함' },
+        { value: 'is_none_of', label: '다음 중 포함안함' },
         { value: 'is_empty', label: '비어있음' },
         { value: 'is_not_empty', label: '비어있지 않음' },
       ]
@@ -63,7 +65,6 @@ function getOpsForFieldType(fieldType: string): { value: string; label: string }
         { value: 'is_not_empty', label: '비어있지 않음' },
       ]
     default:
-      // text, longtext, lookup, formula, readOnly text
       return [
         { value: 'contains', label: '포함' },
         { value: 'not_contains', label: '포함 안 함' },
@@ -88,11 +89,157 @@ function needsValueInput(operator: string): boolean {
   ].includes(operator)
 }
 
+function isMultiOp(operator: string): boolean {
+  return operator === 'is_any_of' || operator === 'is_none_of'
+}
+
+// ── SelectValuePicker (single select dropdown) ──────────────────────────────
+
+function SelectValuePicker({ options, value, onChange }: {
+  options: string[]
+  value: string
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [open])
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flex: 1, minWidth: 120 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', height: 36, border: '1px solid #D1D5DB', borderRadius: 6,
+          padding: '0 10px', fontSize: 13, background: 'white', color: value ? '#111827' : '#9CA3AF',
+          cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value || '선택...'}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+          <path d="M2 4l4 4 4-4" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2100,
+          background: 'white', border: '1px solid #E2E8F0', borderRadius: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: '100%', maxHeight: 200, overflowY: 'auto',
+        }}>
+          {options.map(opt => (
+            <div
+              key={opt}
+              onMouseDown={() => { onChange(opt); setOpen(false) }}
+              style={{
+                padding: '7px 12px', fontSize: 13, cursor: 'pointer',
+                color: opt === value ? '#2D7FF9' : '#111827',
+                background: opt === value ? '#EFF6FF' : 'white',
+              }}
+              onMouseEnter={e => { if (opt !== value) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = opt === value ? '#EFF6FF' : 'white' }}
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── MultiSelectPicker (checkbox list) ───────────────────────────────────────
+
+function MultiSelectPicker({ options, value, onChange }: {
+  options: string[]
+  value: string[]
+  onChange: (v: string[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [open])
+
+  const toggle = (opt: string) => {
+    onChange(value.includes(opt) ? value.filter(v => v !== opt) : [...value, opt])
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flex: 1, minWidth: 120 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', height: 36, border: '1px solid #D1D5DB', borderRadius: 6,
+          padding: '0 10px', fontSize: 13, background: 'white',
+          color: value.length > 0 ? '#111827' : '#9CA3AF',
+          cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {value.length > 0 ? `${value.length}개 선택됨` : '선택...'}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+          <path d="M2 4l4 4 4-4" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2100,
+          background: 'white', border: '1px solid #E2E8F0', borderRadius: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: '100%', maxHeight: 220, overflowY: 'auto',
+        }}>
+          {options.map(opt => (
+            <label
+              key={opt}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => toggle(opt)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+                fontSize: 13, cursor: 'pointer', userSelect: 'none',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLLabelElement).style.background = '#F8FAFC' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLLabelElement).style.background = 'white' }}
+            >
+              <input
+                type="checkbox"
+                checked={value.includes(opt)}
+                readOnly
+                style={{ accentColor: '#2D7FF9', width: 14, height: 14, cursor: 'pointer' }}
+              />
+              {opt}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Component ──────────────────────────────────────────────────────────────────
 
 interface FilterModalProps {
   columns: FilterColDef[]
   conditions: FilterCondition[]
+  selectOptions?: Record<string, string[]>
   onChange: (conditions: FilterCondition[]) => void
   onApply: () => void
   onClose: () => void
@@ -105,6 +252,7 @@ function uid() {
 export default function FilterModal({
   columns,
   conditions,
+  selectOptions = {},
   onChange,
   onApply,
   onClose,
@@ -160,8 +308,14 @@ export default function FilterModal({
           next.value = null
         }
       }
-      if (patch.operator && !needsValueInput(patch.operator)) {
-        next.value = null
+      if (patch.operator) {
+        if (!needsValueInput(patch.operator)) {
+          next.value = null
+        } else if (isMultiOp(patch.operator) && !Array.isArray(next.value)) {
+          next.value = []
+        } else if (!isMultiOp(patch.operator) && Array.isArray(next.value)) {
+          next.value = null
+        }
       }
       return next
     }))
@@ -169,6 +323,13 @@ export default function FilterModal({
 
   const removeCondition = (id: string) => {
     onChange(conditions.filter(c => c.id !== id))
+  }
+
+  // Find select options for a column by matching column title → COLUMNS data key → selectOptions
+  const getSelectOpts = (colTitle: string): string[] => {
+    const col = filteredCols.find(c => c.title === colTitle)
+    if (!col) return []
+    return selectOptions[col.data] ?? []
   }
 
   const selectStyle: React.CSSProperties = {
@@ -205,6 +366,9 @@ export default function FilterModal({
           const ops = getOpsForFieldType(ft)
           const showValue = needsValueInput(cond.operator)
           const isDate = ft === 'date'
+          const isSelect = ft === 'select'
+          const isMulti = isMultiOp(cond.operator)
+          const opts = isSelect ? getSelectOpts(cond.column) : []
 
           return (
             <div key={cond.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 36 }}>
@@ -241,11 +405,25 @@ export default function FilterModal({
               </select>
 
               {/* Value */}
-              {showValue && (
+              {showValue && isSelect && isMulti && opts.length > 0 && (
+                <MultiSelectPicker
+                  options={opts}
+                  value={Array.isArray(cond.value) ? cond.value : []}
+                  onChange={v => updateCondition(cond.id, { value: v })}
+                />
+              )}
+              {showValue && isSelect && !isMulti && opts.length > 0 && (
+                <SelectValuePicker
+                  options={opts}
+                  value={typeof cond.value === 'string' ? cond.value : ''}
+                  onChange={v => updateCondition(cond.id, { value: v })}
+                />
+              )}
+              {showValue && !isSelect && (
                 <input
                   style={inputStyle}
                   type={isDate ? 'date' : 'text'}
-                  value={cond.value ?? ''}
+                  value={typeof cond.value === 'string' ? cond.value : ''}
                   onChange={e => updateCondition(cond.id, { value: e.target.value })}
                   placeholder="값 입력..."
                 />

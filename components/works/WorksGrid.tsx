@@ -137,6 +137,11 @@ const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
   ],
 }
 
+// Select column option values for FilterModal
+const FILTER_SELECT_OPTIONS: Record<string, string[]> = Object.fromEntries(
+  Object.entries(SELECT_COLUMN_OPTIONS).map(([k, v]) => [k, v.map(o => o.value)])
+)
+
 // 편집 가능 컬럼 → order_items 필드명 매핑
 const EDITABLE_FIELD_MAP: Record<string, string> = {
   '중량': '중량',
@@ -1031,6 +1036,7 @@ export default function WorksGrid() {
             <FilterModal
               columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
               conditions={filterConditions}
+              selectOptions={FILTER_SELECT_OPTIONS}
               onChange={setFilterConditions}
               onApply={handleLoad}
               onClose={() => setShowFilterModal(false)}
