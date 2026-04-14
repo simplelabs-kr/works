@@ -497,6 +497,7 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [copyToast, setCopyToast] = useState(false)
   const [filterCount, setFilterCount] = useState<number | null>(null)
   const [searchCount, setSearchCount] = useState<number | null>(null)
 
@@ -913,6 +914,18 @@ export default function WorksGrid() {
       setSelectedRowIndices(indices)
     })
     hotRef.current.addHook('afterDeselect', () => setSelectedRowIndices(null))
+    // Copy: overwrite clipboard with plain TSV + show toast
+    hotRef.current.addHook('afterCopy', (data: (string | number | boolean | null)[][]) => {
+      const tsv = data
+        .map(row => row.map(cell => {
+          const val = cell == null ? '' : String(cell)
+          return val.includes('\t') || val.includes('\n') ? `"${val}"` : val
+        }).join('\t'))
+        .join('\n')
+      navigator.clipboard.writeText(tsv).catch(() => {})
+      setCopyToast(true)
+      setTimeout(() => setCopyToast(false), 2000)
+    })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
       const hot = hotRef.current
@@ -1154,6 +1167,18 @@ export default function WorksGrid() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Copy toast */}
+      {copyToast && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: '#1F2937', color: '#fff', fontSize: 13,
+          padding: '8px 16px', borderRadius: 6,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        }}>
+          복사되었습니다
         </div>
       )}
     </div>
