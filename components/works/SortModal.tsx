@@ -158,7 +158,7 @@ export default function SortModal({
     <div
       ref={modalRef}
       style={{
-        position: 'fixed', top: 60, left: 12, zIndex: 1000,
+        position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 1000,
         background: 'white', border: '1px solid #E2E8F0', borderRadius: 10,
         boxShadow: '0 8px 28px rgba(0,0,0,0.13)', padding: '18px 20px',
         minWidth: 420, maxWidth: '90vw',

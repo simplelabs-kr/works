@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
@@ -106,8 +106,8 @@ type Row = {
   왁스_파트_전달: boolean
 }
 
-// Client-side search columns for quick filtering loaded rows
-const CLIENT_SEARCH_COLS: (keyof Row)[] = ['제품명_코드', '고객명', '디자이너_노트', '작업_위치', '기타_옵션', '각인_내용', '각인_폰트', '번들_명칭', '도금_색상']
+// Debounce delay for server-side search
+const SEARCH_DEBOUNCE_MS = 500
 
 const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
   '사출_방식': [
@@ -489,9 +489,13 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
+  const [totalCount, setTotalCount] = useState<number | null>(null)
 
-  // Client-side search (filters loaded rows, no DB call)
-  const [clientSearch, setClientSearch] = useState('')
+  // Server-side search with debounce
+  const [searchInput, setSearchInput] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchTermRef = useRef('')
 
   // Filter/Sort modal state
   const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
@@ -512,6 +516,7 @@ export default function WorksGrid() {
   holidaySetRef.current = holidaySet
   filterConditionsRef.current = filterConditions
   sortConditionsRef.current = sortConditions
+  searchTermRef.current = searchTerm
 
   // Stable scroll-load callback (read by HOT afterScrollVertically hook)
   scrollLoadRef.current = () => {
@@ -526,8 +531,28 @@ export default function WorksGrid() {
     isAppend.current = false
     setOffset(0)
     hasMoreRef.current = true
+    setTotalCount(null)
     setFetchTrigger(n => n + 1)
   }
+
+  // Debounced search input → triggers server reload
+  const handleSearchInput = useCallback((value: string) => {
+    setSearchInput(value)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      setSearchTerm(value.trim())
+    }, SEARCH_DEBOUNCE_MS)
+  }, [])
+
+  // searchTerm change → reload data from server
+  useEffect(() => {
+    if (fetchTrigger === 0 && !searchTerm) return // skip if never loaded and no search
+    isAppend.current = false
+    setOffset(0)
+    hasMoreRef.current = true
+    setTotalCount(null)
+    setFetchTrigger(n => n + 1)
+  }, [searchTerm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
     const rowData = rowsRef.current[rowIdx]
@@ -598,10 +623,11 @@ export default function WorksGrid() {
         offset,
         filters: apiFilters,
         sorts: apiSorts,
+        search_term: searchTermRef.current || null,
       }),
     })
       .then(res => res.json())
-      .then(({ data, error }) => {
+      .then(({ data, error, totalCount: tc }) => {
         if (cancelled) return
         if (error) { setApiError(error); return }
         const items = data ?? []
@@ -611,6 +637,7 @@ export default function WorksGrid() {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
+          if (tc != null) setTotalCount(Number(tc))
         }
         dataLoaded.current = true
       })
@@ -869,24 +896,12 @@ export default function WorksGrid() {
     }
   }, [])
 
-  // Client-side search: filter loaded rows by search term
-  const displayRows = useMemo(() => {
-    const term = clientSearch.trim().toLowerCase()
-    if (!term) return rows
-    return rows.filter(row =>
-      CLIENT_SEARCH_COLS.some(col => {
-        const v = row[col]
-        return v != null && String(v).toLowerCase().includes(term)
-      })
-    )
-  }, [rows, clientSearch])
-
   // Update grid data
   useEffect(() => {
     if (!hotRef.current) return
-    hotRef.current.loadData(displayRows)
-    if (displayRows.length > 0) hotRef.current.refreshDimensions()
-  }, [displayRows])
+    hotRef.current.loadData(rows)
+    if (rows.length > 0) hotRef.current.refreshDimensions()
+  }, [rows])
 
   // Realtime subscription — sync editable fields from other clients
   useEffect(() => {
@@ -927,55 +942,76 @@ export default function WorksGrid() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top bar */}
-      <div className="flex-shrink-0 flex items-center gap-3 border-b border-[#E2E8F0] bg-white px-5 py-2">
-        {/* Filter button */}
-        <button
-          onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
-          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1 flex-shrink-0"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          필터
-          {filterConditions.length > 0 && (
-            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
+      {/* Top bar — right-aligned */}
+      <div className="flex-shrink-0 flex items-center justify-end gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
+        {/* Filter button + modal wrapper */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
+            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            필터
+            {filterConditions.length > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
+            )}
+          </button>
+          {showFilterModal && (
+            <FilterModal
+              columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
+              conditions={filterConditions}
+              onChange={setFilterConditions}
+              onApply={handleLoad}
+              onClose={() => setShowFilterModal(false)}
+            />
           )}
-        </button>
+        </div>
 
-        {/* Client-side search — grows to fill */}
-        <div className="relative flex-1 min-w-[120px]">
+        {/* Server-side search */}
+        <div className="relative flex-shrink-0">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
             <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
             <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
           </svg>
           <input
             type="text"
-            placeholder="로드된 결과 내 검색..."
-            value={clientSearch}
-            onChange={e => setClientSearch(e.target.value)}
-            className="w-full h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            placeholder="검색..."
+            value={searchInput}
+            onChange={e => handleSearchInput(e.target.value)}
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
 
         {/* Count */}
-        {!loading && rows.length > 0 && (
+        {totalCount !== null && (
           <span className="text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0">
-            {displayRows.length.toLocaleString()}건 로드됨
-            {clientSearch.trim() && ` (${rows.length}건 중)`}
+            {totalCount.toLocaleString()}건
           </span>
         )}
         {apiError && <span className="text-[12px] text-red-500 flex-shrink-0">{apiError}</span>}
 
-        {/* Sort button — right side */}
-        <button
-          onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
-          className="ml-auto h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1 flex-shrink-0"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
-          정렬
-          {sortConditions.length > 0 && (
-            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{sortConditions.length}</span>
+        {/* Sort button + modal wrapper */}
+        <div className="relative flex-shrink-0">
+          <button
+            onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
+            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            정렬
+            {sortConditions.length > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{sortConditions.length}</span>
+            )}
+          </button>
+          {showSortModal && (
+            <SortModal
+              columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string } => typeof c.data === 'string' && c.data !== '') as SortColDef[]}
+              conditions={sortConditions}
+              onChange={setSortConditions}
+              onApply={handleLoad}
+              onClose={() => setShowSortModal(false)}
+            />
           )}
-        </button>
+        </div>
       </div>
 
       {/* Empty state */}
@@ -1049,35 +1085,13 @@ export default function WorksGrid() {
 
         {/* Summary bar */}
         <SummaryBar
-          rows={displayRows as unknown as Record<string, unknown>[]}
+          rows={rows as unknown as Record<string, unknown>[]}
           selectedRowIndices={selectedRowIndices}
           columns={(COLUMNS as unknown) as SummaryColDef[]}
           colWidths={colWidths}
           innerRef={summaryInnerRef}
         />
       </div>
-
-      {/* Filter modal */}
-      {showFilterModal && (
-        <FilterModal
-          columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
-          conditions={filterConditions}
-          onChange={setFilterConditions}
-          onApply={handleLoad}
-          onClose={() => setShowFilterModal(false)}
-        />
-      )}
-
-      {/* Sort modal */}
-      {showSortModal && (
-        <SortModal
-          columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string } => typeof c.data === 'string' && c.data !== '') as SortColDef[]}
-          conditions={sortConditions}
-          onChange={setSortConditions}
-          onApply={handleLoad}
-          onClose={() => setShowSortModal(false)}
-        />
-      )}
 
       {/* select 컬럼 커스텀 드롭다운 */}
       {selectMenu && (
