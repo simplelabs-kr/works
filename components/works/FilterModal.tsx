@@ -48,6 +48,11 @@ export function countAllConditions(state: RootFilterState): number {
 
 function getOpsForFieldType(fieldType: string): { value: string; label: string }[] {
   switch (fieldType) {
+    case 'image':
+      return [
+        { value: 'is_empty', label: '비어있음' },
+        { value: 'is_not_empty', label: '비어있지 않음' },
+      ]
     case 'checkbox':
       return [
         { value: 'is_checked', label: '체크됨' },
