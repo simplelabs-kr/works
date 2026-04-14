@@ -633,6 +633,7 @@ export default function WorksGrid() {
 
     const apiFilters = filterStateRef.current
     const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
+    console.log('[WorksGrid] filters:', JSON.stringify(apiFilters))
 
     fetch('/api/order-items', {
       method: 'POST',
