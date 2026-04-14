@@ -778,6 +778,20 @@ export default function WorksGrid() {
       div.appendChild(icon)
       div.appendChild(textSpan)
     })
+    // Checkbox paste fix: convert string "true"/"false" to boolean
+    hotRef.current.addHook('beforeChange', (changes: (Handsontable.CellChange | null)[]) => {
+      for (const change of changes) {
+        if (!change) continue
+        const [, prop, , newVal] = change
+        if (typeof newVal !== 'string') continue
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const colDef = (COLUMNS as any[]).find(c => c.data === prop)
+        if (colDef?.fieldType !== 'checkbox') continue
+        const v = newVal.trim().toLowerCase()
+        if (['true', '1', 'yes'].includes(v)) change[3] = true
+        else if (['false', '0', 'no'].includes(v)) change[3] = false
+      }
+    })
     // Cell edit → PATCH API
     hotRef.current.addHook('afterChange', (changes, source) => {
       if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
