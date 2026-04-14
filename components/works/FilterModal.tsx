@@ -270,10 +270,10 @@ export default function FilterModal({
     <div
       ref={modalRef}
       style={{
-        position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 1000,
+        position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 1000,
         background: 'white', border: '1px solid #E2E8F0', borderRadius: 10,
         boxShadow: '0 8px 28px rgba(0,0,0,0.13)', padding: '18px 20px',
-        minWidth: 520, maxWidth: '90vw',
+        minWidth: 480, maxWidth: 'calc(100vw - 16px)',
       }}
     >
       <div style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', marginBottom: 16 }}>필터</div>
