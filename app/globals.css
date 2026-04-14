@@ -233,7 +233,12 @@ body {
   z-index: -1;
 }
 
-/* 첫 번째 row: 위로 확장하면 헤더에 가려지므로 아래로만 확장 */
+/* 첫 번째 row: 아래로만 확장 → 이미지를 상단 정렬 */
+.handsontable td.current.image-first-row {
+  align-items: flex-start !important;
+  padding-top: 2px !important;
+}
+
 .handsontable td.current.image-first-row:has(img.image-thumb)::after {
   top: 0;
   bottom: -18px;
