@@ -109,18 +109,6 @@ type Row = {
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
 
-// Operator labels for filter badges
-const OPERATOR_LABELS: Record<string, string> = {
-  contains: '포함', not_contains: '포함안함', is: '같음', is_not: '다름',
-  is_empty: '비어있음', is_not_empty: '비어있지않음',
-  eq: '=', neq: '≠', gt: '>', gte: '≥', lt: '<', lte: '≤',
-  is_checked: '체크됨', is_unchecked: '체크안됨',
-  is_today: '오늘', is_yesterday: '어제',
-  is_this_week: '이번주', is_last_week: '지난주',
-  is_this_month: '이번달', is_last_month: '지난달',
-  is_before: '이전', is_after: '이후',
-  is_on_or_before: '이전또는같음', is_on_or_after: '이후또는같음',
-}
 
 const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
   '사출_방식': [
@@ -1087,34 +1075,6 @@ export default function WorksGrid() {
             />
           )}
         </div>
-
-        {/* Active filter badges */}
-        {filterConditions.length > 0 && (
-          <div className="flex items-center gap-1.5 flex-shrink-0 overflow-x-auto max-w-[50vw]">
-            {filterConditions.map(fc => (
-              <span
-                key={fc.id}
-                className="inline-flex items-center gap-1 h-[28px] px-2.5 rounded-[4px] bg-[#EFF6FF] text-[#2563EB] text-[11px] border border-[#BFDBFE] whitespace-nowrap flex-shrink-0"
-              >
-                {fc.column} {OPERATOR_LABELS[fc.operator] ?? fc.operator}{fc.value != null && fc.value !== '' ? ` ${fc.value}` : ''}
-                <button
-                  className="ml-0.5 text-[#93C5FD] hover:text-[#2563EB] text-[14px] leading-none"
-                  onClick={() => {
-                    const next = filterConditions.filter(c => c.id !== fc.id)
-                    setFilterConditions(next)
-                    handleLoad()
-                  }}
-                >×</button>
-              </span>
-            ))}
-            <button
-              className="text-[11px] text-[#6B7280] hover:text-[#374151] whitespace-nowrap flex-shrink-0"
-              onClick={() => { setFilterConditions([]); handleLoad() }}
-            >
-              초기화
-            </button>
-          </div>
-        )}
 
         {/* Spacer */}
         <div className="flex-1" />

@@ -100,16 +100,28 @@ export default function SortModal({
               onChange={col => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: col } : c))}
             />
 
-            <button
-              type="button"
-              onClick={() => onChange(conditions.map(c => c.id === cond.id ? { ...c, direction: c.direction === 'asc' ? 'desc' : 'asc' } : c))}
-              style={{
-                ...selectStyle, width: 100, display: 'flex', alignItems: 'center',
-                justifyContent: 'center', gap: 4, userSelect: 'none',
-              }}
-            >
-              {cond.direction === 'asc' ? '오름차순 ↑' : '내림차순 ↓'}
-            </button>
+            <div style={{
+              display: 'inline-flex', background: '#F3F4F6', borderRadius: 6,
+              padding: 2, height: 36, alignItems: 'center', flexShrink: 0,
+            }}>
+              {(['asc', 'desc'] as const).map(dir => (
+                <button
+                  key={dir}
+                  type="button"
+                  onClick={() => onChange(conditions.map(c => c.id === cond.id ? { ...c, direction: dir } : c))}
+                  style={{
+                    height: 30, padding: '0 10px', borderRadius: 4, fontSize: 12,
+                    border: cond.direction === dir ? '1px solid #D1D5DB' : '1px solid transparent',
+                    background: cond.direction === dir ? '#fff' : 'transparent',
+                    boxShadow: cond.direction === dir ? '0 1px 2px rgba(0,0,0,0.06)' : 'none',
+                    color: cond.direction === dir ? '#111827' : '#9CA3AF',
+                    cursor: 'pointer', whiteSpace: 'nowrap', userSelect: 'none',
+                  }}
+                >
+                  {dir === 'asc' ? '오름차순 ↑' : '내림차순 ↓'}
+                </button>
+              ))}
+            </div>
 
             <button
               onClick={() => onChange(conditions.filter(c => c.id !== cond.id))}
