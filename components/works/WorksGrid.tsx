@@ -136,16 +136,19 @@ const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
   ],
 }
 
-// 편집 가능 컬럼 → Supabase 컬럼명 매핑
-const COLUMN_MAP: Record<string, string> = {
+// 편집 가능 컬럼 → order_items 필드명 매핑
+const EDITABLE_FIELD_MAP: Record<string, string> = {
   '중량': '중량',
   '데드라인': '데드라인',
   '검수': '검수',
   '포장': '포장',
+  '출고': '출고',
   'rp_출력_시작': 'rp_출력_시작',
   '왁스_파트_전달': '왁스_파트_전달',
   '주물_후_수량': '주물_후_수량',
   '디자이너_노트': '디자이너_노트',
+  '작업_위치': '작업_위치',
+  '사출_방식': '사출_방식',
 }
 
 const COLUMNS = [
@@ -219,10 +222,10 @@ const COLUMNS = [
   { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'text'    as FieldType },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, outputType: 'text' as const, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',     title: '작업 위치', readOnly: true,  width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
+  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
-  { data: '사출_방식',     title: '사출 방식', readOnly: true,  width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
+  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
   { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'text'     as FieldType },
   { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
@@ -252,12 +255,16 @@ function getFieldTypeIcon(type: FieldType): string {
 
 // ── Common select badge renderer ──────────────────────────────────────────────
 
-function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string) {
+function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, editable = false) {
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
-  td.style.position = 'relative'  // chevron ::after 기준점
-  td.dataset.selectCol = 'true'
+  td.style.position = 'relative'
+  if (editable) {
+    td.dataset.selectCol = 'true'
+  } else {
+    delete td.dataset.selectCol
+  }
   if (!value) return
   const badge = document.createElement('span')
   badge.textContent = value
@@ -272,6 +279,7 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
+  td.style.backgroundColor = '#F3F4F6'
   if (!value) return
   const dotColor: Record<string, string> = {
     '발주 필요': '#EF4444',
@@ -337,13 +345,13 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
   const bg = SELECT_COLUMN_OPTIONS['사출_방식']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg)
+  renderSelectBadge(td, value, bg, true)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
   const bg = SELECT_COLUMN_OPTIONS['작업_위치']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg)
+  renderSelectBadge(td, value, bg, true)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -564,7 +572,7 @@ export default function WorksGrid() {
     void fetch(`/api/order-items/${rowData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ column, value, expected_updated_at: rowData.updated_at }),
+      body: JSON.stringify({ field: column, value }),
     })
     setSelectMenu(null)
   }
@@ -772,21 +780,27 @@ export default function WorksGrid() {
     })
     // Cell edit → PATCH API
     hotRef.current.addHook('afterChange', (changes, source) => {
-      if (source === 'loadData' || !changes) return
+      if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
-        const rowData = rowsRef.current[row as number]
+        const rowIdx = row as number
+        const rowData = rowsRef.current[rowIdx]
         if (!rowData?.id) continue
-        const supabaseColumn = COLUMN_MAP[prop as string]
-        if (!supabaseColumn) continue
-        void fetch(`/api/order-items/${rowData.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ column: supabaseColumn, value: newVal, expected_updated_at: rowData.updated_at }),
-        })
+        const field = EDITABLE_FIELD_MAP[prop as string]
+        if (!field) continue
+        void (async () => {
+          const res = await fetch(`/api/order-items/${rowData.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field, value: newVal }),
+          })
+          if (!res.ok) {
+            console.error('업데이트 실패:', await res.json())
+            hotRef.current?.setDataAtCell(rowIdx, hotRef.current.propToCol(prop as string), oldVal, 'rollback')
+          }
+        })()
         // 데드라인 변경 시 출고예정일 즉시 재계산
-        if (supabaseColumn === '데드라인') {
-          const rowIdx = row as number
+        if (field === '데드라인') {
           const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
           setRows(prev => prev.map((r, i) => {
             if (i !== rowIdx) return r
@@ -842,7 +856,8 @@ export default function WorksGrid() {
     let selectAlreadySelected = false
     hotRef.current.addHook('beforeOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if ((COLUMNS as any[])[coords.col]?.fieldType !== 'select') {
+      const cd = (COLUMNS as any[])[coords.col]
+      if (cd?.fieldType !== 'select' || cd?.readOnly) {
         selectAlreadySelected = false
         return
       }
@@ -856,7 +871,7 @@ export default function WorksGrid() {
       if (coords.row < 0) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (COLUMNS as any[])[coords.col]
-      if (colDef?.fieldType !== 'select') return
+      if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
       const column = colDef.data as string
       const options = SELECT_COLUMN_OPTIONS[column] ?? []
