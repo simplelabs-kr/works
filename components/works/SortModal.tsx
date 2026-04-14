@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import ColPicker from './ColPicker'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -13,100 +14,6 @@ export interface SortCondition {
   id: string
   column: string
   direction: 'asc' | 'desc'
-}
-
-// ── ColPicker: custom dropdown with inline search ─────────────────────────────
-
-interface ColPickerProps {
-  columns: SortColDef[]
-  value: string
-  onChange: (key: string) => void
-}
-
-function ColPicker({ columns, value, onChange }: ColPickerProps) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState('')
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setTimeout(() => inputRef.current?.focus(), 0)
-    const handler = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler, true)
-    return () => document.removeEventListener('mousedown', handler, true)
-  }, [open])
-
-  const selected = columns.find(c => c.title === value)
-  const filtered = search
-    ? columns.filter(c => c.title.toLowerCase().includes(search.toLowerCase()))
-    : columns
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', flex: 1, minWidth: 120 }}>
-      <button
-        type="button"
-        onClick={() => { setOpen(o => !o); setSearch('') }}
-        style={{
-          width: '100%', height: 36, border: '1px solid #D1D5DB', borderRadius: 6,
-          padding: '0 10px', fontSize: 13, background: 'white', color: '#111827',
-          cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', gap: 4,
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {selected?.title ?? value}
-        </span>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-          <path d="M2 4l4 4 4-4" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2000,
-          background: 'white', border: '1px solid #E2E8F0', borderRadius: 6,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: 220, overflow: 'hidden',
-        }}>
-          <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid #F1F5F9' }}>
-            <input
-              ref={inputRef}
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="컬럼 검색..."
-              style={{
-                width: '100%', height: 30, border: '1px solid #E2E8F0', borderRadius: 4,
-                padding: '0 8px', fontSize: 13, outline: 'none', color: '#111827', boxSizing: 'border-box',
-              }}
-            />
-          </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '8px 12px', fontSize: 13, color: '#9CA3AF' }}>결과 없음</div>
-            ) : filtered.map(c => (
-              <div
-                key={c.title}
-                onMouseDown={() => { onChange(c.title); setOpen(false); setSearch('') }}
-                style={{
-                  padding: '7px 12px', fontSize: 13,
-                  color: c.title === value ? '#2D7FF9' : '#111827',
-                  background: c.title === value ? '#EFF6FF' : 'white',
-                  cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                }}
-                onMouseEnter={e => { if (c.title !== value) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = c.title === value ? '#EFF6FF' : 'white' }}
-              >
-                {c.title}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -139,6 +46,15 @@ export default function SortModal({
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { onApply(); onClose() }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onApply, onClose])
 
   const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '')
 
@@ -180,6 +96,7 @@ export default function SortModal({
             <ColPicker
               columns={filteredCols}
               value={cond.column}
+              width={200}
               onChange={col => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: col } : c))}
             />
 
