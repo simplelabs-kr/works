@@ -175,8 +175,14 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, _row: number, _col: 
   imgs.forEach((item, i) => {
     const img = document.createElement('img')
     img.src = item.url
+    img.className = 'image-thumb'
     img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;cursor:zoom-in;'
-    img.onclick = (e) => { e.stopPropagation(); onImageGallery?.(imgs, i) }
+    img.onclick = (e) => {
+      if (td.classList.contains('current')) {
+        e.stopPropagation()
+        onImageGallery?.(imgs, i)
+      }
+    }
     td.appendChild(img)
   })
 }
