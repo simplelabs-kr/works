@@ -37,13 +37,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: dataResult.error.message }, { status: 500 });
   }
 
-  let filterCount: number | undefined;
-  let searchCount: number | undefined;
+  let filterCount: number | null = null;
+  let searchCount: number | null = null;
 
-  if (!filterCountResult.error && filterCountResult.data != null) {
+  if (filterCountResult.error) {
+    console.error("[order-items] filterCount error:", filterCountResult.error.message);
+  } else if (filterCountResult.data != null) {
     filterCount = Number(filterCountResult.data);
   }
-  if (!searchCountResult.error && searchCountResult.data != null) {
+
+  if (searchCountResult.error) {
+    console.error("[order-items] searchCount error:", searchCountResult.error.message);
+  } else if (searchCountResult.data != null) {
     searchCount = Number(searchCountResult.data);
   }
 

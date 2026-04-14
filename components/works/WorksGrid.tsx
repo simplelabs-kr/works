@@ -947,23 +947,9 @@ export default function WorksGrid() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top bar */}
+      {/* Top bar: (좌) 필터 / 검색 / 정렬  (우) count */}
       <div className="flex-shrink-0 flex items-center gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
-        {/* Count — left side */}
-        <div className="flex items-center gap-1 text-[12px] text-[#6B7280] whitespace-nowrap">
-          {filterCount !== null && searchCount === null && (
-            <span>{filterCount.toLocaleString()}건</span>
-          )}
-          {filterCount !== null && searchCount !== null && (
-            <span>{filterCount.toLocaleString()}건 중 {searchCount.toLocaleString()}건 검색됨</span>
-          )}
-          {apiError && <span className="text-red-500">{apiError}</span>}
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Filter button + modal wrapper */}
+        {/* Filter button + modal */}
         <div className="relative flex-shrink-0">
           <button
             onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
@@ -986,7 +972,22 @@ export default function WorksGrid() {
           )}
         </div>
 
-        {/* Sort button + modal wrapper */}
+        {/* Server-side search */}
+        <div className="relative flex-shrink-0">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
+            <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="검색..."
+            value={searchInput}
+            onChange={e => handleSearchInput(e.target.value)}
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+          />
+        </div>
+
+        {/* Sort button + modal */}
         <div className="relative flex-shrink-0">
           <button
             onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
@@ -1009,19 +1010,18 @@ export default function WorksGrid() {
           )}
         </div>
 
-        {/* Server-side search */}
-        <div className="relative flex-shrink-0">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
-            <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="검색..."
-            value={searchInput}
-            onChange={e => handleSearchInput(e.target.value)}
-            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
-          />
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Count — right side */}
+        <div className="flex items-center text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0">
+          {filterCount !== null && searchCount === null && (
+            <span>{filterCount.toLocaleString()}건</span>
+          )}
+          {filterCount !== null && searchCount !== null && (
+            <span>{filterCount.toLocaleString()}건 중 {searchCount.toLocaleString()}건 검색됨</span>
+          )}
+          {apiError && <span className="text-red-500 ml-2">{apiError}</span>}
         </div>
       </div>
 
