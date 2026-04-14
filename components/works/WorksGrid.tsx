@@ -169,26 +169,30 @@ let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = n
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   td.innerHTML = ''
-  td.style.cssText = 'display:flex;gap:4px;align-items:center;overflow:hidden;padding:2px 4px;height:32px;'
-  if (row === 0) td.classList.add('image-first-row')
-  else td.classList.remove('image-first-row')
+  td.style.padding = '0'
+
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
   if (imgs.length === 0) return
+
+  const wrapper = document.createElement('div')
+  wrapper.className = 'image-popout-wrapper'
+  if (row === 0) wrapper.classList.add('is-first-row')
+
   imgs.forEach((item, i) => {
     const img = document.createElement('img')
-    const thumbUrl = item.url.includes('supabase.co/storage')
+    img.className = 'image-thumb'
+    img.src = item.url.includes('supabase.co/storage')
       ? item.url + '?width=48&quality=70'
       : item.url
-    img.src = thumbUrl
-    img.className = 'image-thumb'
-    img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;cursor:zoom-in;'
     img.onclick = (e) => {
       if (!td.classList.contains('current')) return
       e.stopPropagation()
       onImageGallery?.(imgs, i)
     }
-    td.appendChild(img)
+    wrapper.appendChild(img)
   })
+
+  td.appendChild(wrapper)
 }
 
 const COLUMNS = [
