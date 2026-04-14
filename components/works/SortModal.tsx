@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -13,6 +13,100 @@ export interface SortCondition {
   id: string
   column: string
   direction: 'asc' | 'desc'
+}
+
+// ── ColPicker: custom dropdown with inline search ─────────────────────────────
+
+interface ColPickerProps {
+  columns: SortColDef[]
+  value: string
+  onChange: (key: string) => void
+}
+
+function ColPicker({ columns, value, onChange }: ColPickerProps) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setTimeout(() => inputRef.current?.focus(), 0)
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler, true)
+    return () => document.removeEventListener('mousedown', handler, true)
+  }, [open])
+
+  const selected = columns.find(c => c.title === value)
+  const filtered = search
+    ? columns.filter(c => c.title.toLowerCase().includes(search.toLowerCase()))
+    : columns
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', flex: 1, minWidth: 120 }}>
+      <button
+        type="button"
+        onClick={() => { setOpen(o => !o); setSearch('') }}
+        style={{
+          width: '100%', height: 36, border: '1px solid #D1D5DB', borderRadius: 6,
+          padding: '0 10px', fontSize: 13, background: 'white', color: '#111827',
+          cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center',
+          justifyContent: 'space-between', gap: 4,
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selected?.title ?? value}
+        </span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+          <path d="M2 4l4 4 4-4" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 2000,
+          background: 'white', border: '1px solid #E2E8F0', borderRadius: 6,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', width: 220, overflow: 'hidden',
+        }}>
+          <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid #F1F5F9' }}>
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="컬럼 검색..."
+              style={{
+                width: '100%', height: 30, border: '1px solid #E2E8F0', borderRadius: 4,
+                padding: '0 8px', fontSize: 13, outline: 'none', color: '#111827', boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            {filtered.length === 0 ? (
+              <div style={{ padding: '8px 12px', fontSize: 13, color: '#9CA3AF' }}>결과 없음</div>
+            ) : filtered.map(c => (
+              <div
+                key={c.title}
+                onMouseDown={() => { onChange(c.title); setOpen(false); setSearch('') }}
+                style={{
+                  padding: '7px 12px', fontSize: 13,
+                  color: c.title === value ? '#2D7FF9' : '#111827',
+                  background: c.title === value ? '#EFF6FF' : 'white',
+                  cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                }}
+                onMouseEnter={e => { if (c.title !== value) (e.currentTarget as HTMLDivElement).style.background = '#F8FAFC' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = c.title === value ? '#EFF6FF' : 'white' }}
+              >
+                {c.title}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -67,7 +161,7 @@ export default function SortModal({
         position: 'fixed', top: 60, left: 12, zIndex: 1000,
         background: 'white', border: '1px solid #E2E8F0', borderRadius: 10,
         boxShadow: '0 8px 28px rgba(0,0,0,0.13)', padding: '18px 20px',
-        minWidth: 380, maxWidth: '90vw',
+        minWidth: 420, maxWidth: '90vw',
       }}
     >
       <div style={{ fontSize: 15, fontWeight: 600, color: '#0F172A', marginBottom: 16 }}>정렬</div>
@@ -83,15 +177,11 @@ export default function SortModal({
               {i === 0 ? '기준' : '다음'}
             </span>
 
-            <select
-              style={{ ...selectStyle, flex: 1 }}
+            <ColPicker
+              columns={filteredCols}
               value={cond.column}
-              onChange={e => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: e.target.value } : c))}
-            >
-              {filteredCols.map(c => (
-                <option key={c.title} value={c.title}>{c.title}</option>
-              ))}
-            </select>
+              onChange={col => onChange(conditions.map(c => c.id === cond.id ? { ...c, column: col } : c))}
+            />
 
             <select
               style={{ ...selectStyle, width: 100 }}

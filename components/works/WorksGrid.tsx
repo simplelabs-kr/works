@@ -483,7 +483,6 @@ export default function WorksGrid() {
   const syncingCustomScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
-  const [fixedCols, setFixedCols] = useState(1)
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
@@ -654,6 +653,7 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
+      manualColumnFreeze: true,
       columnHeaderHeight: 33,
       rowHeights: 33,
       fixedColumnsStart: 1,
@@ -661,6 +661,7 @@ export default function WorksGrid() {
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
+      contextMenu: ['freeze_column', 'unfreeze_column'],
     })
 
     // Fix horizontal scroll misalignment:
@@ -924,18 +925,24 @@ export default function WorksGrid() {
     return () => { void supabase.removeChannel(channel) }
   }, [])
 
-  useEffect(() => {
-    if (hotRef.current) {
-      hotRef.current.updateSettings({ fixedColumnsStart: fixedCols })
-    }
-  }, [fixedCols])
-
   return (
     <div className="flex flex-col h-full">
       {/* Top bar */}
-      <div className="flex-shrink-0 flex flex-wrap items-center gap-3 border-b border-[#E2E8F0] bg-white px-5 py-3">
-        {/* Client-side search */}
-        <div className="relative">
+      <div className="flex-shrink-0 flex items-center gap-3 border-b border-[#E2E8F0] bg-white px-5 py-2">
+        {/* Filter button */}
+        <button
+          onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
+          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1 flex-shrink-0"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          필터
+          {filterConditions.length > 0 && (
+            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
+          )}
+        </button>
+
+        {/* Client-side search — grows to fill */}
+        <div className="relative flex-1 min-w-[120px]">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
             <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
             <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
@@ -945,24 +952,23 @@ export default function WorksGrid() {
             placeholder="로드된 결과 내 검색..."
             value={clientSearch}
             onChange={e => setClientSearch(e.target.value)}
-            className="w-56 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            className="w-full h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
 
-        {/* Filter / Sort buttons */}
-        <button
-          onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
-          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          필터
-          {filterConditions.length > 0 && (
-            <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
-          )}
-        </button>
+        {/* Count */}
+        {!loading && rows.length > 0 && (
+          <span className="text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0">
+            {displayRows.length.toLocaleString()}건 로드됨
+            {clientSearch.trim() && ` (${rows.length}건 중)`}
+          </span>
+        )}
+        {apiError && <span className="text-[12px] text-red-500 flex-shrink-0">{apiError}</span>}
+
+        {/* Sort button — right side */}
         <button
           onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
-          className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          className="ml-auto h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1 flex-shrink-0"
         >
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
           정렬
@@ -970,32 +976,6 @@ export default function WorksGrid() {
             <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{sortConditions.length}</span>
           )}
         </button>
-
-        {/* Freeze column control */}
-        <div className="flex items-center gap-1 ml-auto">
-          <span className="text-[12px] text-[#6B7280]">고정: {fixedCols}열</span>
-          <button
-            onClick={() => setFixedCols(n => Math.max(0, n - 1))}
-            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
-          >−</button>
-          <button
-            onClick={() => setFixedCols(n => Math.min(COLUMNS.length, n + 1))}
-            className="w-[22px] h-[22px] flex items-center justify-center rounded border border-[#E2E8F0] text-[#6B7280] hover:bg-[#F1F5F9] text-[14px] leading-none"
-          >+</button>
-        </div>
-
-        {/* Count + status */}
-        <div className="flex items-center gap-3 text-[12px] text-[#6B7280]">
-          {!loading && rows.length > 0 && (
-            <span>
-              {displayRows.length.toLocaleString()}건 로드됨
-              {clientSearch.trim() && ` (${rows.length}건 중 검색)`}
-            </span>
-          )}
-          {loading && <span>로딩 중…</span>}
-          {loadingMore && <span>추가 로딩 중…</span>}
-          {apiError && <span className="text-red-500">{apiError}</span>}
-        </div>
       </div>
 
       {/* Empty state */}
@@ -1005,12 +985,19 @@ export default function WorksGrid() {
         </div>
       )}
 
+      {/* Loading overlay — center of screen */}
+      {loading && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none">
+          <span className="text-[14px] text-[#6B7280] font-medium">로딩 중…</span>
+        </div>
+      )}
+
       {/* Grid area — flex-1, fills remaining height */}
       <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
         {/* HOT container — fills all available space */}
         <div
           ref={hotContainerRef}
-          className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-50 pointer-events-none' : ''}`}
+          className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-30 pointer-events-none' : ''}`}
         >
           <div ref={containerRef} />
         </div>
