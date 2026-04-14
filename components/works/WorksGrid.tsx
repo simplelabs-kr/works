@@ -632,6 +632,7 @@ export default function WorksGrid() {
       .then(res => res.json())
       .then(({ data, error, filterCount: fc, searchCount: sc }) => {
         if (cancelled) return
+        console.log('API 응답:', { fc, sc })
         if (error) { setApiError(error); return }
         const items = data ?? []
         const mapped = items.map((item: Item) => mapItem(item, holidaySetRef.current))

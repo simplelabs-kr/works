@@ -10,25 +10,24 @@ export async function POST(request: NextRequest) {
   const sorts       = body.sorts       ?? [];
   const searchTerm  = body.search_term || null;
 
-  const baseParams = { filters_json: filters, sorts_json: sorts };
-
   const noopResult = Promise.resolve({ data: null, error: null } as { data: null; error: null });
 
   const [dataResult, filterCountResult, searchCountResult] = await Promise.all([
-    // 1) data
+    // 1) data — uses all params including sorts_json
     supabaseAdmin.rpc("search_flat_order_details", {
-      ...baseParams,
+      filters_json:  filters,
+      sorts_json:    sorts,
       search_term:   searchTerm,
       result_offset: offset,
       result_limit:  100,
     }),
-    // 2) filterCount (filters only, no search_term) — offset===0 only
+    // 2) filterCount (filters only, no search) — count RPC has no sorts_json param
     offset === 0
-      ? supabaseAdmin.rpc("count_flat_order_details", { ...baseParams, search_term: null })
+      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: null })
       : noopResult,
-    // 3) searchCount (filters + search_term) — offset===0 and search active
+    // 3) searchCount (filters + search) — offset===0 and search active
     offset === 0 && searchTerm
-      ? supabaseAdmin.rpc("count_flat_order_details", { ...baseParams, search_term: searchTerm })
+      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: searchTerm })
       : noopResult,
   ]);
 
