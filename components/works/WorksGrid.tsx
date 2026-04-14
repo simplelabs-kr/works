@@ -176,7 +176,10 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
   if (imgs.length === 0) return
   imgs.forEach((item, i) => {
     const img = document.createElement('img')
-    img.src = item.url
+    const thumbUrl = item.url.includes('supabase.co/storage')
+      ? item.url + '?width=48&quality=70'
+      : item.url
+    img.src = thumbUrl
     img.className = 'image-thumb'
     img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;cursor:zoom-in;'
     img.onclick = (e) => {
