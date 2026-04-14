@@ -497,7 +497,7 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
-  const [copyToast, setCopyToast] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const [filterCount, setFilterCount] = useState<number | null>(null)
   const [searchCount, setSearchCount] = useState<number | null>(null)
 
@@ -793,7 +793,7 @@ export default function WorksGrid() {
         else if (['false', '0', 'no'].includes(v)) change[3] = false
       }
     })
-    // Cell edit → PATCH API
+    // Cell edit → PATCH API + local state sync
     hotRef.current.addHook('afterChange', (changes, source) => {
       if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
       for (const [row, prop, oldVal, newVal] of changes) {
@@ -803,18 +803,8 @@ export default function WorksGrid() {
         if (!rowData?.id) continue
         const field = EDITABLE_FIELD_MAP[prop as string]
         if (!field) continue
-        void (async () => {
-          const res = await fetch(`/api/order-items/${rowData.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ field, value: newVal }),
-          })
-          if (!res.ok) {
-            console.error('업데이트 실패:', await res.json())
-            hotRef.current?.setDataAtCell(rowIdx, hotRef.current.propToCol(prop as string), oldVal, 'rollback')
-          }
-        })()
-        // 데드라인 변경 시 출고예정일 즉시 재계산
+
+        // Optimistic local state update
         if (field === '데드라인') {
           const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
           setRows(prev => prev.map((r, i) => {
@@ -822,7 +812,40 @@ export default function WorksGrid() {
             const updated = { ...r, 데드라인: newDeadline }
             return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
           }))
+        } else {
+          setRows(prev => prev.map((r, i) =>
+            i === rowIdx ? { ...r, [prop as string]: newVal } : r
+          ))
         }
+
+        // PATCH → rollback on failure
+        void (async () => {
+          const res = await fetch(`/api/order-items/${rowData.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field, value: newVal }),
+          })
+          if (!res.ok) {
+            // Rollback HOT cell
+            hotRef.current?.setDataAtCell(rowIdx, hotRef.current.propToCol(prop as string), oldVal, 'rollback')
+            // Rollback rows state
+            if (field === '데드라인') {
+              const oldDeadline = oldVal ? String(oldVal).slice(0, 10) : ''
+              setRows(prev => prev.map((r, i) => {
+                if (i !== rowIdx) return r
+                const reverted = { ...r, 데드라인: oldDeadline }
+                return { ...reverted, 출고예정일: calcShipDateFromRow(reverted, holidaySetRef.current) }
+              }))
+            } else {
+              setRows(prev => prev.map((r, i) =>
+                i === rowIdx ? { ...r, [prop as string]: oldVal } : r
+              ))
+            }
+            // Error toast
+            setToast({ message: '수정에 실패했습니다', type: 'error' })
+            setTimeout(() => setToast(null), 2000)
+          }
+        })()
       }
     })
     // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈, 사출_방식 → 드롭다운 전체 표시
@@ -923,8 +946,8 @@ export default function WorksGrid() {
         }).join('\t'))
         .join('\n')
       navigator.clipboard.writeText(tsv).catch(() => {})
-      setCopyToast(true)
-      setTimeout(() => setCopyToast(false), 2000)
+      setToast({ message: '복사되었습니다', type: 'success' })
+      setTimeout(() => setToast(null), 2000)
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -1170,15 +1193,16 @@ export default function WorksGrid() {
         </div>
       )}
 
-      {/* Copy toast */}
-      {copyToast && (
+      {/* Toast */}
+      {toast && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
-          background: '#1F2937', color: '#fff', fontSize: 13,
+          background: toast.type === 'error' ? '#EF4444' : '#1F2937',
+          color: '#fff', fontSize: 13,
           padding: '8px 16px', borderRadius: 6,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         }}>
-          복사되었습니다
+          {toast.message}
         </div>
       )}
     </div>
