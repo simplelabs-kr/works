@@ -222,8 +222,8 @@ body {
 .handsontable td.current:has(img.image-thumb)::after {
   content: '';
   position: absolute;
-  top: -8px;
-  bottom: -8px;
+  top: -9px;
+  bottom: -9px;
   left: 0;
   right: 0;
   background: white;
@@ -233,12 +233,18 @@ body {
   z-index: -1;
 }
 
+/* 첫 번째 row: 위로 확장하면 헤더에 가려지므로 아래로만 확장 */
+.handsontable td.current.image-first-row:has(img.image-thumb)::after {
+  top: 0;
+  bottom: -18px;
+}
+
 /* 이미지 썸네일도 함께 커지도록 */
 .handsontable td.current img.image-thumb {
   position: relative;
   z-index: 1;
-  width: 36px !important;
-  height: 36px !important;
+  width: 40px !important;
+  height: 40px !important;
   transition: all 0.15s ease-in-out;
 }
 

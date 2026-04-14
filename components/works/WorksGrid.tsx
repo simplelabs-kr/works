@@ -167,9 +167,11 @@ const EDITABLE_FIELD_MAP: Record<string, string> = {
 let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function imageRenderer(_hot: any, td: HTMLTableCellElement, _row: number, _col: number, _prop: any, value: any) {
+function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   td.innerHTML = ''
   td.style.cssText = 'display:flex;gap:4px;align-items:center;overflow:hidden;padding:2px 4px;height:32px;'
+  if (row === 0) td.classList.add('image-first-row')
+  else td.classList.remove('image-first-row')
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
   if (imgs.length === 0) return
   imgs.forEach((item, i) => {
@@ -178,10 +180,9 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, _row: number, _col: 
     img.className = 'image-thumb'
     img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;cursor:zoom-in;'
     img.onclick = (e) => {
-      if (td.classList.contains('current')) {
-        e.stopPropagation()
-        onImageGallery?.(imgs, i)
-      }
+      if (!td.classList.contains('current')) return
+      e.stopPropagation()
+      onImageGallery?.(imgs, i)
     }
     td.appendChild(img)
   })
