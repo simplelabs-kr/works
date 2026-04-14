@@ -61,7 +61,7 @@ export default function SortModal({
   const addCondition = () => {
     const firstCol = filteredCols[0]
     if (!firstCol) return
-    onChange([...conditions, { id: uid(), column: firstCol.title, direction: 'asc' }])
+    onChange([...conditions, { id: uid(), column: firstCol.title, direction: 'desc' }])
   }
 
   const selectStyle: React.CSSProperties = {
@@ -104,7 +104,7 @@ export default function SortModal({
               display: 'inline-flex', background: '#F3F4F6', borderRadius: 6,
               padding: 2, height: 36, alignItems: 'center', flexShrink: 0,
             }}>
-              {(['asc', 'desc'] as const).map(dir => (
+              {(['desc', 'asc'] as const).map(dir => (
                 <button
                   key={dir}
                   type="button"
