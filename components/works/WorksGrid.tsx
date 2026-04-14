@@ -11,6 +11,9 @@ import type { RootFilterState, FilterColDef } from '@/components/works/FilterMod
 import { countAllConditions } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
+import ImageModal from '@/components/works/ImageModal'
+
+type ImageItem = { url: string; name: string }
 
 // flat_order_details 테이블 구조 (비정규화된 단일 테이블)
 type Item = {
@@ -60,6 +63,7 @@ type Item = {
   brand_name: string | null
   metal_name: string | null
   metal_purity: number | null
+  images: ImageItem[]
 }
 
 type Row = {
@@ -105,6 +109,7 @@ type Row = {
   순금_중량: string
   rp_출력_시작: boolean
   왁스_파트_전달: boolean
+  images: ImageItem[]
 }
 
 // Debounce delay for server-side search
@@ -158,6 +163,24 @@ const EDITABLE_FIELD_MAP: Record<string, string> = {
   '사출_방식': '사출_방식',
 }
 
+// ── Image gallery callback (set by WorksGrid component) ──────────────────────
+let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function imageRenderer(_hot: any, td: HTMLTableCellElement, _row: number, _col: number, _prop: any, value: any) {
+  td.innerHTML = ''
+  td.style.cssText = 'display:flex;gap:4px;align-items:center;overflow:hidden;padding:2px 4px;height:32px;'
+  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (imgs.length === 0) return
+  imgs.forEach((item, i) => {
+    const img = document.createElement('img')
+    img.src = item.url
+    img.style.cssText = 'width:24px;height:24px;object-fit:cover;border-radius:4px;flex-shrink:0;cursor:zoom-in;'
+    img.onclick = (e) => { e.stopPropagation(); onImageGallery?.(imgs, i) }
+    td.appendChild(img)
+  })
+}
+
 const COLUMNS = [
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -171,6 +194,7 @@ const COLUMNS = [
       td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;padding-left:12px;'
     },
   },
+  { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 220, fieldType: 'text'     as FieldType },
   { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
   { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
@@ -244,7 +268,7 @@ const COLUMNS = [
 
 // ── Field type icons ─────────────────────────────────────────────────────────
 
-type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula'
+type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula' | 'image'
 
 function getFieldTypeIcon(type: FieldType): string {
   const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
@@ -256,6 +280,7 @@ function getFieldTypeIcon(type: FieldType): string {
     checkbox: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
     select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
     formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
+    image:    `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><circle cx="4" cy="4.5" r="1"/><polyline points="1,9.5 4,6.5 6,8.5 8,6 11,9.5"/></svg>`,
   }
   return icons[type] ?? ''
 }
@@ -470,6 +495,7 @@ function mapItem(item: Item, hs: Set<string>): Row {
       : '',
     rp_출력_시작: item.rp_출력_시작 ?? false,
     왁스_파트_전달: item.왁스_파트_전달 ?? false,
+    images: item.images ?? [],
   }
 }
 
@@ -498,6 +524,9 @@ export default function WorksGrid() {
   const syncingCustomScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
+  const [galleryImages, setGalleryImages] = useState<ImageItem[] | null>(null)
+  const [galleryStartIdx, setGalleryStartIdx] = useState(0)
+  onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
@@ -698,12 +727,13 @@ export default function WorksGrid() {
       stretchH: 'none',
       height: hotContainerRef.current?.clientHeight || 600,
       wordWrap: false,
+      autoRowSize: false,
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
       manualColumnFreeze: true,
       columnHeaderHeight: 33,
-      rowHeights: 33,
+      rowHeights: 32,
       fixedColumnsStart: 1,
       outsideClickDeselects: false,
       enterBeginsEditing: true,
@@ -1212,6 +1242,15 @@ export default function WorksGrid() {
         }}>
           {toast.message}
         </div>
+      )}
+
+      {/* Image Lightbox */}
+      {galleryImages && (
+        <ImageModal
+          images={galleryImages}
+          startIndex={galleryStartIdx}
+          onClose={() => setGalleryImages(null)}
+        />
       )}
     </div>
   )
