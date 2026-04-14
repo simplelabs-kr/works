@@ -10,21 +10,26 @@ export async function POST(request: NextRequest) {
   const sorts       = body.sorts       ?? [];
   const searchTerm  = body.search_term || null;
 
-  const rpcParams = {
-    filters_json:  filters,
-    sorts_json:    sorts,
-    search_term:   searchTerm,
-  };
+  const baseParams = { filters_json: filters, sorts_json: sorts };
 
-  const [dataResult, countResult] = await Promise.all([
+  const noopResult = Promise.resolve({ data: null, error: null } as { data: null; error: null });
+
+  const [dataResult, filterCountResult, searchCountResult] = await Promise.all([
+    // 1) data
     supabaseAdmin.rpc("search_flat_order_details", {
-      ...rpcParams,
+      ...baseParams,
+      search_term:   searchTerm,
       result_offset: offset,
       result_limit:  100,
     }),
+    // 2) filterCount (filters only, no search_term) — offset===0 only
     offset === 0
-      ? supabaseAdmin.rpc("count_flat_order_details", rpcParams)
-      : Promise.resolve({ data: null, error: null }),
+      ? supabaseAdmin.rpc("count_flat_order_details", { ...baseParams, search_term: null })
+      : noopResult,
+    // 3) searchCount (filters + search_term) — offset===0 and search active
+    offset === 0 && searchTerm
+      ? supabaseAdmin.rpc("count_flat_order_details", { ...baseParams, search_term: searchTerm })
+      : noopResult,
   ]);
 
   if (dataResult.error) {
@@ -32,12 +37,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: dataResult.error.message }, { status: 500 });
   }
 
-  let totalCount: number | undefined;
-  if (countResult.error) {
-    console.error("[order-items] count error:", countResult.error.message);
-  } else if (countResult.data != null) {
-    totalCount = Number(countResult.data);
+  let filterCount: number | undefined;
+  let searchCount: number | undefined;
+
+  if (!filterCountResult.error && filterCountResult.data != null) {
+    filterCount = Number(filterCountResult.data);
+  }
+  if (!searchCountResult.error && searchCountResult.data != null) {
+    searchCount = Number(searchCountResult.data);
   }
 
-  return NextResponse.json({ data: dataResult.data ?? [], totalCount });
+  return NextResponse.json({
+    data: dataResult.data ?? [],
+    filterCount,
+    searchCount,
+  });
 }

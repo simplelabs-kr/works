@@ -489,7 +489,8 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
-  const [totalCount, setTotalCount] = useState<number | null>(null)
+  const [filterCount, setFilterCount] = useState<number | null>(null)
+  const [searchCount, setSearchCount] = useState<number | null>(null)
 
   // Server-side search with debounce
   const [searchInput, setSearchInput] = useState('')
@@ -531,7 +532,8 @@ export default function WorksGrid() {
     isAppend.current = false
     setOffset(0)
     hasMoreRef.current = true
-    setTotalCount(null)
+    setFilterCount(null)
+    setSearchCount(null)
     setFetchTrigger(n => n + 1)
   }
 
@@ -550,7 +552,8 @@ export default function WorksGrid() {
     isAppend.current = false
     setOffset(0)
     hasMoreRef.current = true
-    setTotalCount(null)
+    setFilterCount(null)
+    setSearchCount(null)
     setFetchTrigger(n => n + 1)
   }, [searchTerm]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -627,7 +630,7 @@ export default function WorksGrid() {
       }),
     })
       .then(res => res.json())
-      .then(({ data, error, totalCount: tc }) => {
+      .then(({ data, error, filterCount: fc, searchCount: sc }) => {
         if (cancelled) return
         if (error) { setApiError(error); return }
         const items = data ?? []
@@ -637,7 +640,9 @@ export default function WorksGrid() {
           setRows(prev => [...prev, ...mapped])
         } else {
           setRows(mapped)
-          if (tc != null) setTotalCount(Number(tc))
+          if (fc != null) setFilterCount(Number(fc))
+          if (sc != null) setSearchCount(Number(sc))
+          else setSearchCount(null)
         }
         dataLoaded.current = true
       })
@@ -942,8 +947,22 @@ export default function WorksGrid() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top bar — right-aligned */}
-      <div className="flex-shrink-0 flex items-center justify-end gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
+      {/* Top bar */}
+      <div className="flex-shrink-0 flex items-center gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
+        {/* Count — left side */}
+        <div className="flex items-center gap-1 text-[12px] text-[#6B7280] whitespace-nowrap">
+          {filterCount !== null && searchCount === null && (
+            <span>{filterCount.toLocaleString()}건</span>
+          )}
+          {filterCount !== null && searchCount !== null && (
+            <span>{filterCount.toLocaleString()}건 중 {searchCount.toLocaleString()}건 검색됨</span>
+          )}
+          {apiError && <span className="text-red-500">{apiError}</span>}
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
         {/* Filter button + modal wrapper */}
         <div className="relative flex-shrink-0">
           <button
@@ -967,29 +986,6 @@ export default function WorksGrid() {
           )}
         </div>
 
-        {/* Server-side search */}
-        <div className="relative flex-shrink-0">
-          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
-            <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
-          </svg>
-          <input
-            type="text"
-            placeholder="검색..."
-            value={searchInput}
-            onChange={e => handleSearchInput(e.target.value)}
-            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
-          />
-        </div>
-
-        {/* Count */}
-        {totalCount !== null && (
-          <span className="text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0">
-            {totalCount.toLocaleString()}건
-          </span>
-        )}
-        {apiError && <span className="text-[12px] text-red-500 flex-shrink-0">{apiError}</span>}
-
         {/* Sort button + modal wrapper */}
         <div className="relative flex-shrink-0">
           <button
@@ -1011,6 +1007,21 @@ export default function WorksGrid() {
               onClose={() => setShowSortModal(false)}
             />
           )}
+        </div>
+
+        {/* Server-side search */}
+        <div className="relative flex-shrink-0">
+          <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="6" cy="6" r="4.5" stroke="#9CA3AF" strokeWidth="1.2"/>
+            <path d="M9.5 9.5L12.5 12.5" stroke="#9CA3AF" strokeWidth="1.2" strokeLinecap="round"/>
+          </svg>
+          <input
+            type="text"
+            placeholder="검색..."
+            value={searchInput}
+            onChange={e => handleSearchInput(e.target.value)}
+            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+          />
         </div>
       </div>
 
