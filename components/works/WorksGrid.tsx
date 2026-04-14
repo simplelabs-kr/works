@@ -279,7 +279,7 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
-  td.style.backgroundColor = '#F3F4F6'
+  td.style.backgroundColor = '#FAFAFA'
   if (!value) return
   const dotColor: Record<string, string> = {
     '발주 필요': '#EF4444',
