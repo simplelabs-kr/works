@@ -1059,7 +1059,7 @@ export default function WorksGrid() {
             onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
             className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
           >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 4h10M4 7h6M6 10h2" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2v10M2.5 4.5l2-2.5 2 2.5M9.5 12V2M7.5 9.5l2 2.5 2-2.5" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             정렬
             {sortConditions.length > 0 && (
               <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{sortConditions.length}</span>
