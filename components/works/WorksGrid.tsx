@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase/client'
 import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
-import type { FilterCondition, FilterColDef } from '@/components/works/FilterModal'
+import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
+import { countAllConditions } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 
@@ -514,11 +515,11 @@ export default function WorksGrid() {
   const searchTermRef = useRef('')
 
   // Filter/Sort modal state
-  const [filterConditions, setFilterConditions] = useState<FilterCondition[]>([])
+  const [filterState, setFilterState] = useState<RootFilterState>({ logic: 'AND', conditions: [] })
   const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSortModal, setShowSortModal] = useState(false)
-  const filterConditionsRef = useRef<FilterCondition[]>([])
+  const filterStateRef = useRef<RootFilterState>({ logic: 'AND', conditions: [] })
   const sortConditionsRef = useRef<SortCondition[]>([])
 
   // Data load trigger (incremented by handleLoad)
@@ -530,7 +531,7 @@ export default function WorksGrid() {
   // Sync refs during render (no effect needed — refs don't cause re-renders)
   rowsRef.current = rows
   holidaySetRef.current = holidaySet
-  filterConditionsRef.current = filterConditions
+  filterStateRef.current = filterState
   sortConditionsRef.current = sortConditions
   searchTermRef.current = searchTerm
 
@@ -630,8 +631,7 @@ export default function WorksGrid() {
     else setLoading(true)
     setApiError(null)
 
-    // Strip client-only 'id' field before sending to API
-    const apiFilters = filterConditionsRef.current.map(({ logic, column, operator, value }) => ({ logic, column, operator, value }))
+    const apiFilters = filterStateRef.current
     const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
 
     fetch('/api/order-items', {
@@ -1028,16 +1028,16 @@ export default function WorksGrid() {
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             필터
-            {filterConditions.length > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{filterConditions.length}</span>
+            {filterState.conditions.length > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{countAllConditions(filterState)}</span>
             )}
           </button>
           {showFilterModal && (
             <FilterModal
               columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
-              conditions={filterConditions}
+              filterState={filterState}
               selectOptions={FILTER_SELECT_OPTIONS}
-              onChange={setFilterConditions}
+              onChange={setFilterState}
               onApply={handleLoad}
               onClose={() => setShowFilterModal(false)}
             />
