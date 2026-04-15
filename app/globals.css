@@ -63,14 +63,16 @@ body {
   font-size: 13px !important;
   color: #0f172a !important;
   padding: 0 8px !important;
-  height: 33px !important;
-  line-height: 33px !important;
+  height: 32px !important;
+  max-height: 32px !important;
+  line-height: 32px !important;
   border-right: 1px solid #eceef2 !important;
   border-bottom: 1px solid #eceef2 !important;
   vertical-align: middle !important;
   text-align: left !important;
   background-color: var(--works-cell);
   transition: background-color 0.1s ease;
+  overflow: hidden;
 }
 
 .handsontable td.htDimmed {
@@ -91,7 +93,8 @@ body {
 }
 
 .handsontable tr {
-  height: 33px !important;
+  height: 32px !important;
+  max-height: 32px !important;
 }
 
 /* dropdown 옵션 텍스트 크기 */
@@ -237,26 +240,23 @@ body {
   background-color: #ffffff !important;
 }
 
-/* wrapper 기본 상태 */
+/* wrapper 기본 상태 — absolute로 td 높이에 영향 없음 */
 .image-popout-wrapper {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 4px;
   box-sizing: border-box;
   overflow: hidden;
+  flex-wrap: nowrap;
 }
 
 /* wrapper 선택 상태: 팝아웃 카드 */
 .handsontable td.current .image-popout-wrapper {
-  position: absolute;
-  left: 0;
-  right: 0;
   top: -8px;
   bottom: -8px;
-  height: auto;
   background: #ffffff;
   border: 2px solid #2D7FF9;
   border-radius: 4px;
@@ -309,23 +309,20 @@ body {
 }
 
 .attachment-popout-wrapper {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 0 4px;
   box-sizing: border-box;
   overflow: hidden;
+  flex-wrap: nowrap;
 }
 
 .handsontable td.current .attachment-popout-wrapper {
-  position: absolute;
-  left: 0;
-  right: 0;
   top: -8px;
   bottom: -8px;
-  height: auto;
   background: #ffffff;
   border: 2px solid #2D7FF9;
   border-radius: 4px;
@@ -351,13 +348,13 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  width: 100%;
-  height: 100%;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
   padding: 0 4px;
   cursor: pointer;
   border: 1px dashed #D1D5DB;
   border-radius: 3px;
-  margin: 4px 2px;
   justify-content: center;
 }
 .attachment-empty:hover {
