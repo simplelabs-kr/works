@@ -167,8 +167,9 @@ const EDITABLE_FIELD_MAP: Record<string, string> = {
   'reference_files': 'reference_files',
 }
 
-// ── Attachment upload helper ──────────────────────────────────────────────────
+// ── Attachment upload/delete helpers ──────────────────────────────────────────
 let onAttachmentUpload: ((rowIdx: number, files: FileList) => void) | null = null
+let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
@@ -182,10 +183,16 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
   if (row === 0) wrapper.classList.add('is-first-row')
 
   if (items.length === 0) {
-    // Empty state: dashed box with clip icon
     const empty = document.createElement('div')
     empty.className = 'attachment-empty'
-    empty.innerHTML = '<span style="font-size:13px;">📎</span><span style="font-size:11px;color:#9CA3AF;">파일 추가</span>'
+    const clipIcon = document.createElement('span')
+    clipIcon.style.fontSize = '13px'
+    clipIcon.textContent = '\u{1F4CE}'
+    const label = document.createElement('span')
+    label.style.cssText = 'font-size:11px;color:#9CA3AF;'
+    label.textContent = '파일 추가'
+    empty.appendChild(clipIcon)
+    empty.appendChild(label)
     empty.onclick = (e) => {
       e.stopPropagation()
       const input = document.createElement('input')
@@ -196,7 +203,7 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
     }
     wrapper.appendChild(empty)
   } else {
-    items.forEach((item) => {
+    items.forEach((item, i) => {
       const chip = document.createElement('a')
       chip.className = 'attachment-chip'
       chip.href = item.url
@@ -204,10 +211,22 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
       chip.rel = 'noopener noreferrer'
       chip.title = item.name
       chip.onclick = (e) => e.stopPropagation()
-      chip.innerHTML = `<span style="font-size:11px;">📎</span><span class="attachment-name">${item.name}</span>`
+      const clipSpan = document.createElement('span')
+      clipSpan.style.fontSize = '11px'
+      clipSpan.textContent = '\u{1F4CE}'
+      chip.appendChild(clipSpan)
+      const nameEl = document.createElement('span')
+      nameEl.className = 'attachment-name'
+      nameEl.textContent = item.name
+      chip.appendChild(nameEl)
+      // Delete button
+      const delBtn = document.createElement('span')
+      delBtn.className = 'attachment-del'
+      delBtn.textContent = '\u00D7'
+      delBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onAttachmentDelete?.(row, i) }
+      chip.appendChild(delBtn)
       wrapper.appendChild(chip)
     })
-    // Add button (only visible on selection via CSS)
     const addBtn = document.createElement('div')
     addBtn.className = 'attachment-add-btn'
     addBtn.textContent = '+'
@@ -222,7 +241,6 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
     wrapper.appendChild(addBtn)
   }
 
-  // Drag & drop
   td.ondragover = (e) => { e.preventDefault(); wrapper.classList.add('drag-over') }
   td.ondragleave = () => { wrapper.classList.remove('drag-over') }
   td.ondrop = (e) => {
@@ -623,25 +641,56 @@ export default function WorksGrid() {
     if (!rowData?.id) return
     const existing = rowData.reference_files ?? []
     const uploaded: AttachmentItem[] = []
+    const failed: string[] = []
     for (const file of Array.from(files)) {
       const form = new FormData()
       form.append('file', file)
       form.append('order_item_id', rowData.id)
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: form })
-        if (!res.ok) continue
+        if (!res.ok) { failed.push(file.name); continue }
         const item = await res.json()
         uploaded.push({ url: item.url, name: item.name })
-      } catch { /* skip failed */ }
+      } catch { failed.push(file.name) }
+    }
+    if (failed.length > 0) {
+      setToast({ message: `${failed.length}개 파일 업로드 실패: ${failed.join(', ')}`, type: 'error' })
+      setTimeout(() => setToast(null), 3000)
     }
     if (uploaded.length === 0) return
     const newFiles = [...existing, ...uploaded]
+    const previousRows = rowsRef.current
     setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
-    await fetch(`/api/order-items/${rowData.id}`, {
+    const res = await fetch(`/api/order-items/${rowData.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ field: 'reference_files', value: newFiles }),
     })
+    if (!res.ok) {
+      setRows(previousRows)
+      setToast({ message: '파일 저장에 실패했습니다', type: 'error' })
+      setTimeout(() => setToast(null), 2000)
+    }
+  }
+
+  // Attachment delete handler
+  onAttachmentDelete = async (rowIdx, fileIdx) => {
+    const rowData = rowsRef.current[rowIdx]
+    if (!rowData?.id) return
+    const existing = rowData.reference_files ?? []
+    const newFiles = existing.filter((_, i) => i !== fileIdx)
+    const previousRows = rowsRef.current
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+    const res = await fetch(`/api/order-items/${rowData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field: 'reference_files', value: newFiles }),
+    })
+    if (!res.ok) {
+      setRows(previousRows)
+      setToast({ message: '파일 삭제에 실패했습니다', type: 'error' })
+      setTimeout(() => setToast(null), 2000)
+    }
   }
 
   const [rows, setRows] = useState<Row[]>([])
@@ -958,6 +1007,7 @@ export default function WorksGrid() {
         const rowIdx = row as number
         const rowData = rowsRef.current[rowIdx]
         if (!rowData?.id) continue
+        if (prop === 'reference_files') continue
         const field = EDITABLE_FIELD_MAP[prop as string]
         if (!field) continue
 
@@ -1158,6 +1208,8 @@ export default function WorksGrid() {
               주물_후_수량: (n.주물_후_수량 as number | null) ?? row.주물_후_수량,
               디자이너_노트: (n.디자이너_노트 as string) ?? row.디자이너_노트,
               사출_방식: (n.사출_방식 as string) ?? row.사출_방식,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              reference_files: (n.reference_files as any) ?? row.reference_files,
               updated_at: (n.updated_at as string) ?? row.updated_at,
             }
           }))

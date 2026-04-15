@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
 
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
-  const filePath = `${orderItemId}/${file.name}`
+  const safeFileName = `${Date.now()}-${encodeURIComponent(file.name)}`
+  const filePath = `${orderItemId}/${safeFileName}`
 
   const { error } = await supabaseAdmin.storage
     .from('reference-files')

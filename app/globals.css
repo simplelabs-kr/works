@@ -392,6 +392,23 @@ body {
   white-space: nowrap;
 }
 
+/* delete button on chip */
+.attachment-del {
+  display: none;
+  margin-left: 2px;
+  color: #9CA3AF;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.attachment-del:hover {
+  color: #EF4444;
+}
+.handsontable td.current .attachment-del {
+  display: inline;
+}
+
 /* add button (visible only when selected) */
 .attachment-add-btn {
   display: none;
