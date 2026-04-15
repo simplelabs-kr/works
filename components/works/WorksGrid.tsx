@@ -648,7 +648,11 @@ export default function WorksGrid() {
       form.append('order_item_id', rowData.id)
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: form })
-        if (!res.ok) { failed.push(file.name); continue }
+        if (!res.ok) {
+          if (res.status === 413) failed.push(`${file.name} (최대 4.5MB)`)
+          else failed.push(file.name)
+          continue
+        }
         const item = await res.json()
         uploaded.push({ url: item.url, name: item.name })
       } catch { failed.push(file.name) }

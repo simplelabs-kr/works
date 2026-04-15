@@ -3,9 +3,10 @@ import { supabaseAdmin } from '@/lib/supabase/server'
 
 export const maxDuration = 30
 
+const MAX_FILE_SIZE = 4.5 * 1024 * 1024 // 4.5MB (Vercel payload limit)
+
 export async function POST(req: NextRequest) {
   try {
-    // Env check
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.error('[upload] SUPABASE_SERVICE_ROLE_KEY is not set')
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
@@ -19,22 +20,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'file and order_item_id required' }, { status: 400 })
     }
 
-    const bytes = await file.arrayBuffer()
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: '파일 크기는 4.5MB를 초과할 수 없습니다 (Vercel 제한)' },
+        { status: 413 },
+      )
+    }
+
     const safeFileName = `${Date.now()}-${encodeURIComponent(file.name)}`
     const filePath = `${orderItemId}/${safeFileName}`
 
-    // Resolve MIME — browser may send empty string for some file types
-    const contentType = file.type || getMimeType(file.name) || 'application/octet-stream'
-
     const { error } = await supabaseAdmin.storage
       .from('reference-files')
-      .upload(filePath, new Uint8Array(bytes), {
-        contentType,
+      .upload(filePath, file, {
+        contentType: file.type || 'application/octet-stream',
         upsert: true,
       })
 
     if (error) {
-      console.error('[upload] Supabase storage error:', error.message, { filePath, contentType, size: bytes.byteLength })
+      console.error('[upload] Supabase storage error:', error.message, { filePath, contentType: file.type, size: file.size })
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
@@ -51,27 +55,4 @@ export async function POST(req: NextRequest) {
     console.error('[upload] Unhandled error:', message)
     return NextResponse.json({ error: message }, { status: 500 })
   }
-}
-
-/** Fallback MIME lookup for common file types when browser sends empty type */
-function getMimeType(filename: string): string | null {
-  const ext = filename.split('.').pop()?.toLowerCase()
-  const map: Record<string, string> = {
-    pdf: 'application/pdf',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    xls: 'application/vnd.ms-excel',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    csv: 'text/csv',
-    txt: 'text/plain',
-    png: 'image/png',
-    jpg: 'image/jpeg',
-    jpeg: 'image/jpeg',
-    gif: 'image/gif',
-    webp: 'image/webp',
-    svg: 'image/svg+xml',
-    zip: 'application/zip',
-  }
-  return ext ? map[ext] ?? null : null
 }
