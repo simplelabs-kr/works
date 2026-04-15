@@ -295,6 +295,126 @@ body {
   cursor: zoom-in;
 }
 
+/* ── Attachment pop-out (same pattern as image) ────────────────── */
+.handsontable td:has(.attachment-popout-wrapper) {
+  position: relative;
+  padding: 0 !important;
+}
+.handsontable td.current:has(.attachment-popout-wrapper) {
+  overflow: visible !important;
+  z-index: 50;
+}
+.handsontable td.current:has(.attachment-popout-wrapper) .attachment-popout-wrapper {
+  background-color: #ffffff !important;
+}
+
+.attachment-popout-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.handsontable td.current .attachment-popout-wrapper {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  bottom: -8px;
+  height: auto;
+  background: #ffffff;
+  border: 2px solid #2D7FF9;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow: hidden;
+  z-index: 10;
+}
+
+.handsontable td.current .attachment-popout-wrapper.is-first-row {
+  top: 0;
+  bottom: -16px;
+}
+
+/* drag over highlight */
+.attachment-popout-wrapper.drag-over {
+  outline: 2px dashed #2D7FF9;
+  outline-offset: -2px;
+  background: #EFF6FF !important;
+}
+
+/* empty state */
+.attachment-empty {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px;
+  cursor: pointer;
+  border: 1px dashed #D1D5DB;
+  border-radius: 3px;
+  margin: 4px 2px;
+  justify-content: center;
+}
+.attachment-empty:hover {
+  border-color: #9CA3AF;
+  background: #F9FAFB;
+}
+
+/* file chip */
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 6px;
+  border: 1px solid #E2E8F0;
+  border-radius: 3px;
+  background: #F8FAFC;
+  text-decoration: none;
+  color: #374151;
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 120px;
+  cursor: pointer;
+}
+.attachment-chip:hover {
+  background: #EFF6FF;
+  border-color: #93C5FD;
+}
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* add button (visible only when selected) */
+.attachment-add-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px dashed #D1D5DB;
+  border-radius: 3px;
+  color: #9CA3AF;
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.attachment-add-btn:hover {
+  border-color: #2D7FF9;
+  color: #2D7FF9;
+  background: #EFF6FF;
+}
+.handsontable td.current .attachment-add-btn {
+  display: inline-flex;
+}
+
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;

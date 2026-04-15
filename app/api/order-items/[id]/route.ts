@@ -17,6 +17,7 @@ const EDITABLE_FIELDS = new Set([
   '주물_후_수량',
   '죽은_수량',
   '디자이너_노트',
+  'reference_files',
 ])
 
 export async function PATCH(

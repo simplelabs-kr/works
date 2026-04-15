@@ -14,6 +14,7 @@ import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 import ImageModal from '@/components/works/ImageModal'
 
 type ImageItem = { url: string; name: string }
+type AttachmentItem = { url: string; name: string }
 
 // flat_order_details 테이블 구조 (비정규화된 단일 테이블)
 type Item = {
@@ -64,6 +65,7 @@ type Item = {
   metal_name: string | null
   metal_purity: number | null
   images: ImageItem[]
+  reference_files: AttachmentItem[]
 }
 
 type Row = {
@@ -110,6 +112,7 @@ type Row = {
   rp_출력_시작: boolean
   왁스_파트_전달: boolean
   images: ImageItem[]
+  reference_files: AttachmentItem[]
 }
 
 // Debounce delay for server-side search
@@ -161,6 +164,74 @@ const EDITABLE_FIELD_MAP: Record<string, string> = {
   '디자이너_노트': '디자이너_노트',
   '작업_위치': '작업_위치',
   '사출_방식': '사출_방식',
+  'reference_files': 'reference_files',
+}
+
+// ── Attachment upload helper ──────────────────────────────────────────────────
+let onAttachmentUpload: ((rowIdx: number, files: FileList) => void) | null = null
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+  td.innerHTML = ''
+  td.style.padding = '0'
+
+  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  const wrapper = document.createElement('div')
+  wrapper.className = 'attachment-popout-wrapper'
+  if (row === 0) wrapper.classList.add('is-first-row')
+
+  if (items.length === 0) {
+    // Empty state: dashed box with clip icon
+    const empty = document.createElement('div')
+    empty.className = 'attachment-empty'
+    empty.innerHTML = '<span style="font-size:13px;">📎</span><span style="font-size:11px;color:#9CA3AF;">파일 추가</span>'
+    empty.onclick = (e) => {
+      e.stopPropagation()
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.multiple = true
+      input.onchange = () => { if (input.files?.length) onAttachmentUpload?.(row, input.files) }
+      input.click()
+    }
+    wrapper.appendChild(empty)
+  } else {
+    items.forEach((item) => {
+      const chip = document.createElement('a')
+      chip.className = 'attachment-chip'
+      chip.href = item.url
+      chip.target = '_blank'
+      chip.rel = 'noopener noreferrer'
+      chip.title = item.name
+      chip.onclick = (e) => e.stopPropagation()
+      chip.innerHTML = `<span style="font-size:11px;">📎</span><span class="attachment-name">${item.name}</span>`
+      wrapper.appendChild(chip)
+    })
+    // Add button (only visible on selection via CSS)
+    const addBtn = document.createElement('div')
+    addBtn.className = 'attachment-add-btn'
+    addBtn.textContent = '+'
+    addBtn.onclick = (e) => {
+      e.stopPropagation()
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.multiple = true
+      input.onchange = () => { if (input.files?.length) onAttachmentUpload?.(row, input.files) }
+      input.click()
+    }
+    wrapper.appendChild(addBtn)
+  }
+
+  // Drag & drop
+  td.ondragover = (e) => { e.preventDefault(); wrapper.classList.add('drag-over') }
+  td.ondragleave = () => { wrapper.classList.remove('drag-over') }
+  td.ondrop = (e) => {
+    e.preventDefault()
+    wrapper.classList.remove('drag-over')
+    if (e.dataTransfer?.files?.length) onAttachmentUpload?.(row, e.dataTransfer.files)
+  }
+
+  td.appendChild(wrapper)
 }
 
 // ── Image gallery callback (set by WorksGrid component) ──────────────────────
@@ -210,6 +281,7 @@ const COLUMNS = [
     },
   },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
+  { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 220, fieldType: 'text'     as FieldType },
   { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
   { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
@@ -283,7 +355,7 @@ const COLUMNS = [
 
 // ── Field type icons ─────────────────────────────────────────────────────────
 
-type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula' | 'image'
+type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula' | 'image' | 'attachment'
 
 function getFieldTypeIcon(type: FieldType): string {
   const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
@@ -296,6 +368,7 @@ function getFieldTypeIcon(type: FieldType): string {
     select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
     formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
     image:    `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><circle cx="4" cy="4.5" r="1"/><polyline points="1,9.5 4,6.5 6,8.5 8,6 11,9.5"/></svg>`,
+    attachment: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M6.5 2L3.5 5a2.12 2.12 0 0 0 3 3l4-4a1.41 1.41 0 0 0-2-2L4.5 6a.71.71 0 0 0 1 1L8.5 4"/></svg>`,
   }
   return icons[type] ?? ''
 }
@@ -511,6 +584,7 @@ function mapItem(item: Item, hs: Set<string>): Row {
     rp_출력_시작: item.rp_출력_시작 ?? false,
     왁스_파트_전달: item.왁스_파트_전달 ?? false,
     images: item.images ?? [],
+    reference_files: item.reference_files ?? [],
   }
 }
 
@@ -542,6 +616,33 @@ export default function WorksGrid() {
   const [galleryImages, setGalleryImages] = useState<ImageItem[] | null>(null)
   const [galleryStartIdx, setGalleryStartIdx] = useState(0)
   onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
+
+  // Attachment upload handler
+  onAttachmentUpload = async (rowIdx, files) => {
+    const rowData = rowsRef.current[rowIdx]
+    if (!rowData?.id) return
+    const existing = rowData.reference_files ?? []
+    const uploaded: AttachmentItem[] = []
+    for (const file of Array.from(files)) {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('order_item_id', rowData.id)
+      try {
+        const res = await fetch('/api/upload', { method: 'POST', body: form })
+        if (!res.ok) continue
+        const item = await res.json()
+        uploaded.push({ url: item.url, name: item.name })
+      } catch { /* skip failed */ }
+    }
+    if (uploaded.length === 0) return
+    const newFiles = [...existing, ...uploaded]
+    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+    await fetch(`/api/order-items/${rowData.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field: 'reference_files', value: newFiles }),
+    })
+  }
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
