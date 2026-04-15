@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
 export const maxDuration = 30
 
 const MAX_FILE_SIZE = 4.5 * 1024 * 1024 // 4.5MB (Vercel payload limit)
 
+export async function GET() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
+}
+
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error('[upload] SUPABASE_SERVICE_ROLE_KEY is not set')
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error('[upload] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
     }
+
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+    )
 
     const formData = await req.formData()
     const file = formData.get('file') as File | null
@@ -30,11 +39,11 @@ export async function POST(req: NextRequest) {
     const safeFileName = `${Date.now()}-${encodeURIComponent(file.name)}`
     const filePath = `${orderItemId}/${safeFileName}`
 
-    const { error } = await supabaseAdmin.storage
+    const { error } = await supabase.storage
       .from('reference-files')
       .upload(filePath, file, {
         contentType: file.type || 'application/octet-stream',
-        upsert: true,
+        upsert: false,
       })
 
     if (error) {
@@ -42,7 +51,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const { data: urlData } = supabaseAdmin.storage
+    const { data: urlData } = supabase.storage
       .from('reference-files')
       .getPublicUrl(filePath)
 

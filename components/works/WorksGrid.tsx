@@ -290,12 +290,12 @@ const COLUMNS = [
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: (_row: any) => '',
     title: '',
-    width: 40,
+    width: 50,
     readOnly: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
       td.textContent = String(row + 1)
-      td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;padding-left:12px;'
+      td.style.cssText = 'color:#94A3B8;font-size:11px;text-align:center;vertical-align:middle;background:#F8FAFC;border-right:1px solid #E2E8F0;'
     },
   },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
@@ -649,8 +649,20 @@ export default function WorksGrid() {
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: form })
         if (!res.ok) {
+          // #region agent log
+          const raw = await res.text()
+          let errBody = raw.slice(0, 500)
+          try {
+            const j = JSON.parse(raw) as { error?: string }
+            if (j.error) errBody = j.error.slice(0, 500)
+          } catch { /* keep raw */ }
+          fetch('http://127.0.0.1:7939/ingest/002c7475-2e2c-40b8-8f0f-3a6ab2ed0703',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ffe531'},body:JSON.stringify({sessionId:'ffe531',hypothesisId:'H-client',location:'WorksGrid.tsx:onAttachmentUpload',message:'upload fetch not ok',data:{status:res.status,name:file.name,type:file.type||'(empty)',size:file.size,errBody},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
           if (res.status === 413) failed.push(`${file.name} (최대 4.5MB)`)
-          else failed.push(file.name)
+          else {
+            const hint = errBody.length > 80 ? `${errBody.slice(0, 80)}…` : errBody
+            failed.push(hint ? `${file.name} (${res.status}: ${hint})` : `${file.name} (HTTP ${res.status})`)
+          }
           continue
         }
         const item = await res.json()
