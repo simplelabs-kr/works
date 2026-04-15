@@ -62,7 +62,7 @@ body {
 
 /* readOnly cells */
 .handsontable td.htDimmed {
-  background-color: #FAFAFA;
+  background-color: #F8FAFC !important;
   cursor: default;
 }
 
@@ -216,6 +216,9 @@ body {
 .handsontable td.current:has(.image-popout-wrapper) {
   overflow: visible !important;
   z-index: 50;
+}
+.handsontable td.current:has(.image-popout-wrapper) .image-popout-wrapper {
+  background-color: #ffffff !important;
 }
 
 /* wrapper 기본 상태 */
