@@ -169,6 +169,7 @@ let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = n
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   td.innerHTML = ''
+  td.classList.add('htDimmed')
   td.style.padding = '0'
 
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
