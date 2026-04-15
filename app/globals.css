@@ -16,25 +16,37 @@ body {
 }
 
 /* ── Handsontable overrides ───────────────────────────────────── */
+:root,
+.handsontable {
+  --works-header-bg: #fafbfc;
+  --works-header-hover: #f1f3f6;
+  --works-cell: #ffffff;
+  --works-readonly: #f6f7f9;
+  --works-row-hover: #f1f2f4;
+  --works-row-focus: #ecf2f9;
+  --works-range: #e2ebf6;
+  --works-focus-ring: #2d7ff9;
+}
+
 .handsontable thead th {
-  background: #F8FAFC !important;
+  background: var(--works-header-bg) !important;
   color: #374151 !important;
   font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: 0.01em !important;
-  border-right: 1px solid #E2E8F0 !important;
-  border-bottom: 2px solid #E2E8F0 !important;
+  border-right: 1px solid #e8eaef !important;
+  border-bottom: 1px solid #e2e5eb !important;
   padding: 0 8px !important;
   height: 33px !important;
   line-height: normal !important;
   text-align: left !important;
   vertical-align: middle !important;
   user-select: none !important;
-  transition: background 0.1s ease !important;
+  transition: background 0.12s ease !important;
 }
 
 .handsontable thead th:hover {
-  background: #F1F5F9 !important;
+  background: var(--works-header-hover) !important;
   cursor: pointer;
 }
 
@@ -49,33 +61,34 @@ body {
 
 .handsontable td {
   font-size: 13px !important;
-  color: #0F172A !important;
+  color: #0f172a !important;
   padding: 0 8px !important;
   height: 33px !important;
   line-height: 33px !important;
-  border-right: 1px solid #E2E8F0 !important;
-  border-bottom: 1px solid #E2E8F0 !important;
+  border-right: 1px solid #eceef2 !important;
+  border-bottom: 1px solid #eceef2 !important;
   vertical-align: middle !important;
   text-align: left !important;
-  background-color: #ffffff;
+  background-color: var(--works-cell);
+  transition: background-color 0.1s ease;
 }
 
-/* readOnly cells */
 .handsontable td.htDimmed {
-  background-color: #F8FAFC !important;
+  background-color: var(--works-readonly) !important;
   cursor: default;
 }
 
-/* row hover */
 .handsontable tbody tr:hover td {
-  background-color: #F8FAFC !important;
+  background-color: var(--works-row-hover) !important;
 }
 
-/* 셀 선택 시 해당 row 하이라이트 */
 .handsontable tbody tr:has(td.current) td {
-  background-color: #F1F5F9 !important;
+  background-color: var(--works-row-focus) !important;
 }
 
+.handsontable tbody tr:has(td.current):hover td {
+  background-color: var(--works-row-focus) !important;
+}
 
 .handsontable tr {
   height: 33px !important;
@@ -90,31 +103,34 @@ body {
 
 /* row header */
 .handsontable th.htRowHeader {
-  background: #F8FAFC !important;
-  color: #94A3B8 !important;
+  background: var(--works-header-bg) !important;
+  color: #94a3b8 !important;
   font-size: 11px !important;
-  border-color: #E2E8F0 !important;
+  border-color: #e8eaef !important;
 }
 
 /* corner header */
 .handsontable .cornerHeader {
-  background: #F8FAFC !important;
+  background: var(--works-header-bg) !important;
 }
 
 /* drag select 영역 */
 .handsontable td.area {
-  background-color: #EBF3FF !important;
+  background-color: var(--works-range) !important;
 }
 
-/* hover 시 area 색 유지 */
 .handsontable tbody tr:hover td.area {
-  background-color: #EBF3FF !important;
+  background-color: var(--works-range) !important;
+}
+
+.handsontable tbody tr:has(td.current) td.area {
+  background-color: var(--works-range) !important;
 }
 
 /* 선택된 단일 셀 */
 .handsontable td.current {
-  outline: 2px solid #2D7FF9 !important;
-  outline-offset: -2px !important;
+  outline: 1.5px solid var(--works-focus-ring) !important;
+  outline-offset: -1.5px !important;
 }
 
 /* select 셀: 선택 시 chevron 표시 */
@@ -139,7 +155,7 @@ body {
 .handsontable .htCheckboxRendererInput {
   width: 14px;
   height: 14px;
-  accent-color: #2D7FF9;
+  accent-color: var(--works-focus-ring);
   cursor: pointer;
 }
 
@@ -147,15 +163,15 @@ body {
 .handsontable .handsontableInput {
   font-size: 13px !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif !important;
-  color: #0F172A !important;
+  color: #0f172a !important;
   background: #ffffff !important;
-  caret-color: #2D7FF9 !important;
+  caret-color: var(--works-focus-ring) !important;
 }
 
-/* 편집 중 셀 - 파란 테두리로 강조 */
+/* 편집 중 셀 */
 .handsontable td.current.htEditorOpen {
-  outline: 2px solid #2D7FF9 !important;
-  outline-offset: -2px !important;
+  outline: 1.5px solid var(--works-focus-ring) !important;
+  outline-offset: -1.5px !important;
   background: #fff !important;
 }
 
@@ -170,9 +186,9 @@ body {
 .handsontable .htDateInput input {
   font-size: 13px !important;
   font-family: inherit !important;
-  color: #0F172A !important;
+  color: #0f172a !important;
   background: #ffffff !important;
-  caret-color: #2D7FF9 !important;
+  caret-color: var(--works-focus-ring) !important;
 }
 
 /* Pikaday 캘린더 스타일 */
@@ -189,7 +205,7 @@ body {
 }
 .pika-button:hover,
 .pika-button:focus {
-  background: #EBF3FF !important;
+  background: var(--works-range) !important;
   color: #111827 !important;
   border-radius: 4px !important;
 }
