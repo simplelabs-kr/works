@@ -750,7 +750,11 @@ export default function WorksGrid() {
       columnHeaderHeight: 33,
       rowHeights: 32,
       fixedColumnsStart: 1,
-      outsideClickDeselects: false,
+      outsideClickDeselects: (target: HTMLElement) => {
+        if (selectMenuRef.current?.contains(target)) return false
+        if (customScrollbarRef.current?.contains(target)) return false
+        return true
+      },
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
