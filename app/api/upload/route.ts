@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const safeFileName = `${Date.now()}-${encodeURIComponent(file.name)}`
+    const fileExt = file.name.split('.').pop()?.toLowerCase() || 'bin'
+    const safeFileName = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${fileExt}`
     const filePath = `${orderItemId}/${safeFileName}`
 
     const { error } = await supabase.storage

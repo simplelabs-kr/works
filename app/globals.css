@@ -314,13 +314,15 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  margin: 0;
   padding: 0 4px;
+  max-height: 28px;
   box-sizing: border-box;
   overflow: hidden;
   flex-wrap: nowrap;
 }
-
 .handsontable td.current .attachment-popout-wrapper {
+  max-height: none;
   top: -8px;
   bottom: -8px;
   background: #ffffff;
@@ -351,11 +353,15 @@ body {
   flex: 1;
   min-width: 0;
   height: 24px;
+  max-height: 28px;
+  margin: 0;
   padding: 0 4px;
   cursor: pointer;
   border: 1px dashed #D1D5DB;
   border-radius: 3px;
   justify-content: center;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .attachment-empty:hover {
   border-color: #9CA3AF;
@@ -367,6 +373,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  margin: 0;
   padding: 1px 6px;
   border: 1px solid #E2E8F0;
   border-radius: 3px;
@@ -377,7 +384,10 @@ body {
   white-space: nowrap;
   flex-shrink: 0;
   max-width: 120px;
+  max-height: 28px;
   cursor: pointer;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .attachment-chip:hover {
   background: #EFF6FF;
