@@ -350,8 +350,8 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1;
-  min-width: 0;
+  width: fit-content;
+  flex-shrink: 0;
   height: 24px;
   max-height: 28px;
   margin: 0;
