@@ -460,10 +460,26 @@ tr.row-hovered .row-header-wrapper .row-num {
   display: none;
 }
 tr.row-hovered .row-header-wrapper .row-checkbox {
-  display: inline-flex;
+  display: block;
 }
 tr.row-hovered .row-header-wrapper .row-expand-btn {
-  display: inline-flex !important;
+  display: flex !important;
+}
+
+/* Checked state (persists after hover): hide row number, show checkbox only */
+tr.row-checked .row-header-wrapper .row-num {
+  display: none;
+}
+tr.row-checked .row-header-wrapper .row-checkbox {
+  display: block;
+}
+tr.row-checked .row-header-wrapper .row-expand-btn {
+  display: none !important;
+}
+
+/* Checked + hovered: show both checkbox and expand button */
+tr.row-checked.row-hovered .row-header-wrapper .row-expand-btn {
+  display: flex !important;
 }
 
 /* Selected state (not hovered): hide row number, show checkbox only */
@@ -471,7 +487,7 @@ tr.row-selected .row-header-wrapper .row-num {
   display: none;
 }
 tr.row-selected .row-header-wrapper .row-checkbox {
-  display: inline-flex;
+  display: block;
 }
 /* Expand button stays hidden when selected but not hovered */
 tr.row-selected .row-header-wrapper .row-expand-btn {
@@ -480,7 +496,7 @@ tr.row-selected .row-header-wrapper .row-expand-btn {
 
 /* Selected + hovered: show both checkbox and expand button */
 tr.row-selected.row-hovered .row-header-wrapper .row-expand-btn {
-  display: inline-flex !important;
+  display: flex !important;
 }
 
 /* Expand button hover effect */

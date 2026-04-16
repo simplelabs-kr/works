@@ -286,7 +286,7 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
 }
 
 // Row header global callbacks (set by WorksGrid component)
-let onRowCheckboxToggle: ((rowId: string) => void) | null = null
+let onRowCheckboxToggle: ((rowId: string, rowIdx: number) => void) | null = null
 let onRowExpand: ((rowId: string) => void) | null = null
 let getSelectedRowIds: (() => Set<string>) | null = null
 
@@ -296,38 +296,38 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number, _co
   td.style.backgroundColor = '#F8FAFC'
   td.style.borderRight = '1px solid #E2E8F0'
   td.style.padding = '0'
-  td.style.textAlign = 'center'
+  td.style.textAlign = 'left'
   td.style.verticalAlign = 'middle'
   td.style.position = 'relative'
   td.style.overflow = 'visible'
 
   const wrapper = document.createElement('div')
   wrapper.className = 'row-header-wrapper'
-  wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0 6px;position:relative;'
+  wrapper.style.cssText = 'position:relative;width:100%;height:100%;display:flex;align-items:center;'
 
-  // 1. Row number
+  // 1. Row number - fixed left position
   const rowNum = document.createElement('span')
   rowNum.className = 'row-num'
   rowNum.textContent = String(row + 1)
-  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;'
+  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;margin-left:6px;'
   wrapper.appendChild(rowNum)
 
-  // 2. Checkbox
+  // 2. Checkbox - absolute position, same x as row-num
   const checkbox = document.createElement('input')
   checkbox.type = 'checkbox'
   checkbox.className = 'row-checkbox'
-  checkbox.style.cssText = 'width:14px;height:14px;cursor:pointer;margin:0;'
+  checkbox.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);width:14px;height:14px;cursor:pointer;margin:0;'
   checkbox.onclick = (e) => {
     e.stopPropagation()
     const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
-    if (rowData?.id) onRowCheckboxToggle?.(rowData.id)
+    if (rowData?.id) onRowCheckboxToggle?.(rowData.id, row)
   }
   wrapper.appendChild(checkbox)
 
-  // 3. Expand button
+  // 3. Expand button - absolute position, right side
   const expandBtn = document.createElement('div')
   expandBtn.className = 'row-expand-btn'
-  expandBtn.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:white;border:1px solid #d1d5db;border-radius:3px;transition:border-color 0.15s;'
+  expandBtn.style.cssText = 'position:absolute;right:3px;top:50%;transform:translateY(-50%);cursor:pointer;display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:white;border:1px solid #d1d5db;border-radius:3px;transition:border-color 0.15s;'
   expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
     <path d="M2 2L5 5M2 2H4.5M2 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M10 2L7 5M10 2H7.5M10 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
@@ -962,11 +962,22 @@ export default function WorksGrid() {
   }, [])
 
   // Set up row header callbacks
-  onRowCheckboxToggle = (rowId: string) => {
+  onRowCheckboxToggle = (rowId: string, rowIdx: number) => {
+    const tbody = hotRef.current?.rootElement?.querySelector('tbody')
+    const tr = tbody?.children[rowIdx] as HTMLElement | undefined
+
     setSelectedRowIds(prev => {
       const next = new Set(prev)
-      if (next.has(rowId)) next.delete(rowId)
-      else next.add(rowId)
+      const isAdding = !next.has(rowId)
+
+      if (isAdding) {
+        next.add(rowId)
+        if (tr) tr.classList.add('row-checked')
+      } else {
+        next.delete(rowId)
+        if (tr) tr.classList.remove('row-checked')
+      }
+
       return next
     })
     // Force re-render checkbox in the row
@@ -1248,10 +1259,11 @@ export default function WorksGrid() {
       setSelectedRowIndices(null)
       // Clear row selection state
       setSelectedRowIds(new Set())
-      // Remove all .row-selected classes
+      // Remove all .row-selected and .row-checked classes
       const tbody = hotRef.current?.rootElement?.querySelector('tbody')
       if (tbody) {
         tbody.querySelectorAll('tr.row-selected').forEach(tr => tr.classList.remove('row-selected'))
+        tbody.querySelectorAll('tr.row-checked').forEach(tr => tr.classList.remove('row-checked'))
       }
     })
     // Row hover state
@@ -1267,7 +1279,11 @@ export default function WorksGrid() {
       const tbody = hotRef.current?.rootElement?.querySelector('tbody')
       if (!tbody) return
       const tr = tbody.children[coords.row] as HTMLElement | undefined
-      if (tr) tr.classList.remove('row-hovered')
+      if (tr) {
+        tr.classList.remove('row-hovered')
+        // Keep .row-checked if this row is checked
+        // (onRowCheckboxToggle already manages .row-checked class)
+      }
     })
     // Row selection state
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
