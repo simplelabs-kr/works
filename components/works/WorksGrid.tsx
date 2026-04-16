@@ -778,7 +778,7 @@ export default function WorksGrid() {
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; undoAction?: () => void } | null>(null)
   const [filterCount, setFilterCount] = useState<number | null>(null)
   const [searchCount, setSearchCount] = useState<number | null>(null)
 
@@ -1335,9 +1335,65 @@ export default function WorksGrid() {
   }, [])
 
   // Handle row deletion
-  const handleDeleteSelected = () => {
-    console.log('Delete rows:', Array.from(selectedRowIds))
-    // TODO: Implement actual deletion
+  const handleDeleteSelected = async () => {
+    const ids = Array.from(selectedRowIds)
+    if (ids.length === 0) return
+
+    try {
+      const res = await fetch('/api/order-items/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+
+      if (!res.ok) {
+        setToast({ message: '삭제에 실패했습니다', type: 'error' })
+        setTimeout(() => setToast(null), 3000)
+        return
+      }
+
+      // Remove deleted rows from UI
+      setRows(prev => prev.filter(r => !ids.includes(r.id)))
+
+      // Clear selection
+      checkedRowsRef.current.clear()
+      setSelectedRowIds(new Set())
+      lastCheckedRowRef.current = null
+
+      // Show toast with undo action
+      setToast({
+        message: `${ids.length}개 삭제됨`,
+        type: 'success',
+        undoAction: async () => {
+          try {
+            const restoreRes = await fetch('/api/order-items/restore', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids }),
+            })
+
+            if (!restoreRes.ok) {
+              setToast({ message: '복구에 실패했습니다', type: 'error' })
+              setTimeout(() => setToast(null), 3000)
+              return
+            }
+
+            // Reload data to restore rows
+            setOffset(0)
+            setFetchTrigger(prev => prev + 1)
+            setToast({ message: `${ids.length}개 복구됨`, type: 'success' })
+            setTimeout(() => setToast(null), 2000)
+          } catch {
+            setToast({ message: '복구에 실패했습니다', type: 'error' })
+            setTimeout(() => setToast(null), 3000)
+          }
+        },
+      })
+      setTimeout(() => setToast(null), 5000)
+    } catch {
+      setToast({ message: '삭제에 실패했습니다', type: 'error' })
+      setTimeout(() => setToast(null), 3000)
+    }
   }
 
   const handleClearSelection = () => {
@@ -1539,8 +1595,31 @@ export default function WorksGrid() {
           color: '#fff', fontSize: 13,
           padding: '8px 16px', borderRadius: 6,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
         }}>
-          {toast.message}
+          <span>{toast.message}</span>
+          {toast.undoAction && (
+            <button
+              onClick={() => {
+                setToast(null)
+                toast.undoAction?.()
+              }}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.3)',
+                color: '#fff',
+                padding: '4px 12px',
+                borderRadius: 4,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              실행취소
+            </button>
+          )}
         </div>
       )}
 
