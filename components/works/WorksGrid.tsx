@@ -921,7 +921,7 @@ export default function WorksGrid() {
       manualColumnFreeze: true,
       columnHeaderHeight: 33,
       rowHeights: 32,
-      fixedColumnsStart: 1,
+      fixedColumnsStart: 0,
       outsideClickDeselects: (target: HTMLElement) => {
         if (selectMenuRef.current?.contains(target)) return false
         if (customScrollbarRef.current?.contains(target)) return false
