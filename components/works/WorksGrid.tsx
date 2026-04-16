@@ -325,17 +325,22 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   if (checkbox && rowId) {
     checkbox.addEventListener('change', (e) => {
       e.stopPropagation()
+      if (!rowId) return
+
+      const wrapper = td.querySelector('.row-header-wrapper')
+
       if (checkbox.checked) {
         checkedRowsRefGlobal?.current.add(rowId)
+        wrapper?.classList.add('is-checked')
       } else {
         checkedRowsRefGlobal?.current.delete(rowId)
+        wrapper?.classList.remove('is-checked')
       }
-      // Sync selectedRowIds state
+
+      // Sync selectedRowIds state (no render trigger)
       if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
         setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
       }
-      // Force Handsontable re-render to reflect all row check states
-      hotRefGlobal?.current?.render()
     })
   }
 
@@ -1230,6 +1235,12 @@ export default function WorksGrid() {
     })
     hotRef.current.addHook('afterDeselect', () => {
       setSelectedRowIndices(null)
+      // Remove is-checked class from all wrappers
+      const allWrappers = hotRef.current?.rootElement?.querySelectorAll('.row-header-wrapper.is-checked')
+      allWrappers?.forEach(wrapper => wrapper.classList.remove('is-checked'))
+      // Uncheck all checkboxes
+      const allCheckboxes = hotRef.current?.rootElement?.querySelectorAll('.row-checkbox:checked') as NodeListOf<HTMLInputElement>
+      allCheckboxes?.forEach(cb => { cb.checked = false })
       // Clear row checkbox state
       checkedRowsRef.current.clear()
       setSelectedRowIds(new Set())
@@ -1238,8 +1249,6 @@ export default function WorksGrid() {
       if (tbody) {
         tbody.querySelectorAll('tr.row-selected').forEach(tr => tr.classList.remove('row-selected'))
       }
-      // Force re-render to reflect unchecked state
-      hotRef.current?.render()
     })
     // Row hover state
     hotRef.current.addHook('afterOnCellMouseOver', (_e: MouseEvent, coords: { row: number; col: number }) => {
@@ -1574,9 +1583,15 @@ export default function WorksGrid() {
           <span style={{ fontWeight: 500 }}>{selectedRowIds.size}개 선택됨</span>
           <button
             onClick={() => {
+              // Remove is-checked class from all wrappers
+              const allWrappers = hotRef.current?.rootElement?.querySelectorAll('.row-header-wrapper.is-checked')
+              allWrappers?.forEach(wrapper => wrapper.classList.remove('is-checked'))
+              // Uncheck all checkboxes
+              const allCheckboxes = hotRef.current?.rootElement?.querySelectorAll('.row-checkbox:checked') as NodeListOf<HTMLInputElement>
+              allCheckboxes?.forEach(cb => { cb.checked = false })
+              // Clear state
               checkedRowsRef.current.clear()
               setSelectedRowIds(new Set())
-              if (hotRef.current) hotRef.current.render()
             }}
             style={{
               background: 'transparent',
