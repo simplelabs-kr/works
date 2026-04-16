@@ -295,8 +295,6 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   td.style.backgroundColor = '#F8FAFC'
   td.style.borderRight = '1px solid #E2E8F0'
   td.style.padding = '0'
-  td.style.height = '32px'
-  td.style.maxHeight = '32px'
   td.style.overflow = 'hidden'
   td.style.verticalAlign = 'middle'
 
@@ -307,7 +305,7 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
 
   td.innerHTML = `
-    <div class="row-header-wrapper${isChecked ? ' is-checked' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;height:31px;max-height:31px;box-sizing:border-box;overflow:hidden;padding:0 4px;">
+    <div class="row-header-wrapper${isChecked ? ' is-checked' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;box-sizing:border-box;overflow:hidden;padding:0 4px;">
       <div class="left-content">
         <span class="row-num">${row + 1}</span>
         <input type="checkbox" class="row-checkbox" ${isChecked ? 'checked' : ''} />
@@ -1046,20 +1044,6 @@ export default function WorksGrid() {
     hotRef.current.addHook('modifyRowHeight', (_height: number | undefined, _row: number) => {
       return 32
     })
-    // Enforce row height constraints on all cells after render
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hotRef.current.addHook('afterRenderer', (_td: HTMLTableCellElement, row: number) => {
-      // Get the TR element and enforce height
-      const hot = hotRef.current
-      if (!hot) return
-      const td = hot.getCell(row, 0)
-      if (!td) return
-      const tr = td.parentElement
-      if (tr) {
-        tr.style.height = '32px'
-        tr.style.maxHeight = '32px'
-      }
-    })
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
@@ -1283,7 +1267,13 @@ export default function WorksGrid() {
       if (coords.row < 0) return
       const td = hotRef.current?.getCell(coords.row, coords.col)
       const tr = td?.parentElement
-      if (tr) tr.classList.remove('is-hovered')
+      if (!tr) return
+      setTimeout(() => {
+        // Only remove if mouse has left the entire row
+        if (!tr.matches(':hover')) {
+          tr.classList.remove('is-hovered')
+        }
+      }, 0)
     })
     // Row selection state
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
