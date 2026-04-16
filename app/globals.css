@@ -137,18 +137,11 @@ body {
 }
 
 /* select 셀: 선택 시 chevron 표시 */
-.handsontable td[data-select-col].current::after {
-  content: '';
-  position: absolute;
-  right: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 24px;
-  height: 24px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpolyline points='2,4 6,8 10,4' stroke='%236B7280' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  pointer-events: none;
+.handsontable td[data-select-col] .select-chevron {
+  display: none;
+}
+.handsontable td[data-select-col].current .select-chevron {
+  display: flex;
 }
 
 /* checkbox */

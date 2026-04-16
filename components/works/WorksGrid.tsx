@@ -462,19 +462,33 @@ function getFieldTypeIcon(type: FieldType): string {
 function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, editable = false) {
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
-  td.style.padding = '0 8px'
+  td.style.padding = '0'
+  // NEVER set position: relative on td — it breaks Handsontable height calculation
   if (editable) {
     td.dataset.selectCol = 'true'
-    td.style.position = 'relative'  // Only apply when editable
   } else {
     delete td.dataset.selectCol
-    td.style.position = ''  // Reset position
   }
   if (!value) return
+
+  // Use inner wrapper for positioning instead of td
+  const wrapper = document.createElement('div')
+  wrapper.style.cssText = 'position:relative;width:100%;height:100%;display:flex;align-items:center;padding:0 8px;box-sizing:border-box;'
+
   const badge = document.createElement('span')
   badge.textContent = value
   badge.style.cssText = `display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:2px 8px;border-radius:9999px;font-size:13px;font-weight:500;line-height:normal;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
-  td.appendChild(badge)
+  wrapper.appendChild(badge)
+
+  if (editable) {
+    const chevron = document.createElement('span')
+    chevron.className = 'select-chevron'
+    chevron.style.cssText = 'position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;display:flex;align-items:center;justify-content:center;pointer-events:none;'
+    chevron.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><polyline points="2,4 6,8 10,4" stroke="#6B7280" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    wrapper.appendChild(chevron)
+  }
+
+  td.appendChild(wrapper)
 }
 
 // ── Purchase status renderer ──────────────────────────────────────────────────
