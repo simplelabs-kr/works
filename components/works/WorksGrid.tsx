@@ -1082,6 +1082,42 @@ export default function WorksGrid() {
     // Cell edit → PATCH API + local state sync
     hotRef.current.addHook('afterChange', (changes, source) => {
       if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
+
+      // Handle Undo/Redo: sync DB with reverted value
+      if ((source as string) === 'UndoRedo.undo' || (source as string) === 'UndoRedo.redo') {
+        for (const [row, prop, , newVal] of changes) {
+          const rowIdx = row as number
+          const rowData = rowsRef.current[rowIdx]
+          if (!rowData?.id) continue
+          if (prop === 'reference_files') continue
+          const field = EDITABLE_FIELD_MAP[prop as string]
+          if (!field) continue
+
+          // Optimistic local state update
+          if (field === '데드라인') {
+            const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
+            setRows(prev => prev.map((r, i) => {
+              if (i !== rowIdx) return r
+              const updated = { ...r, 데드라인: newDeadline }
+              return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
+            }))
+          } else {
+            setRows(prev => prev.map((r, i) =>
+              i === rowIdx ? { ...r, [prop as string]: newVal } : r
+            ))
+          }
+
+          // PATCH DB with reverted value (newVal is the undone/redone value)
+          void fetch(`/api/order-items/${rowData.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ field, value: newVal }),
+          })
+        }
+        return
+      }
+
+      // Normal edit flow
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
         const rowIdx = row as number
