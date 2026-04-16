@@ -25,3 +25,15 @@
 ## 5. AI Anti-Patterns (절대 금지 사항)
 - Materialized View 사용 금지 (OLTP 환경 과부하 방지)
 - 대용량 데이터 이관 시 네트워크를 경유한 Python/REST API 스크립트 지양 (DB 내부 PL/pgSQL 또는 Direct Connection 우선 사용)
+
+## 6. 역할 분담 원칙
+
+### Supabase DB 작업
+- RPC 함수 생성/수정, 트리거 함수 수정, 스키마 변경(컬럼 추가/삭제), 마이그레이션
+- **claude.ai(상륜님과 대화 중인 Claude)가 전담**
+- Claude Code는 DB 작업 절대 직접 수행 금지
+- DB 수정이 필요한 경우 "이 작업은 DB 변경이 필요합니다. claude.ai에서 처리해주세요"라고 안내만 할 것
+
+### 코드 작업
+- Next.js 코드, API 라우트, 컴포넌트, CSS 등
+- **Claude Code가 전담**
