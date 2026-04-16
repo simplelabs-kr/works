@@ -137,9 +137,6 @@ body {
 }
 
 /* select 셀: 선택 시 chevron 표시 */
-.handsontable td[data-select-col] {
-  position: relative;
-}
 .handsontable td[data-select-col].current::after {
   content: '';
   position: absolute;

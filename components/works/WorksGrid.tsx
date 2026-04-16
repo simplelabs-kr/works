@@ -463,11 +463,12 @@ function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
-  td.style.position = 'relative'
   if (editable) {
     td.dataset.selectCol = 'true'
+    td.style.position = 'relative'  // Only apply when editable
   } else {
     delete td.dataset.selectCol
+    td.style.position = ''  // Reset position
   }
   if (!value) return
   const badge = document.createElement('span')
