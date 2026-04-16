@@ -324,39 +324,18 @@ const COLUMNS = [
         e.stopPropagation()
         if (!rowId) return
 
-        const isShift = (e as MouseEvent).shiftKey
-        const currentRow = row
-
-        if (isShift && lastCheckedRowRefGlobal?.current !== null) {
-          // 범위 선택
-          if (!lastCheckedRowRefGlobal) return
-          const start = Math.min(lastCheckedRowRefGlobal.current, currentRow)
-          const end = Math.max(lastCheckedRowRefGlobal.current, currentRow)
-          const hot = hotRefGlobal?.current
-          if (!hot) return
-
-          const data = hot.getSourceData() as Row[]
-          for (let i = start; i <= end; i++) {
-            const id = data[i]?.id
-            if (!id) continue
-            checkedRowsRefGlobal?.current.add(id)
-            // 해당 행의 체크박스 DOM도 직접 업데이트
-            const td = hot.getCell(i, 0)
-            const cb = td?.querySelector('.row-select-checkbox') as HTMLInputElement
-            if (cb) cb.checked = true
-          }
+        // 단일 선택/해제만 처리 (shift+클릭은 beforeOnCellMouseDown에서 처리)
+        if (checkbox.checked) {
+          checkedRowsRefGlobal?.current.add(rowId)
         } else {
-          // 단일 선택/해제
-          if (checkbox.checked) {
-            checkedRowsRefGlobal?.current.add(rowId)
-          } else {
-            checkedRowsRefGlobal?.current.delete(rowId)
-          }
+          checkedRowsRefGlobal?.current.delete(rowId)
+          // 체크 해제 시 즉시 DOM 업데이트
+          checkbox.checked = false
         }
 
-        // shift 범위 선택 후에도 lastChecked 업데이트
+        // lastChecked 업데이트
         if (lastCheckedRowRefGlobal) {
-          lastCheckedRowRefGlobal.current = currentRow
+          lastCheckedRowRefGlobal.current = row
         }
 
         // selectedRowIds state 동기화
@@ -1200,7 +1179,42 @@ export default function WorksGrid() {
     // select 컬럼: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
     // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
     let selectAlreadySelected = false
-    hotRef.current.addHook('beforeOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
+    hotRef.current.addHook('beforeOnCellMouseDown', (e: MouseEvent, coords: { row: number; col: number }) => {
+      // Shift+클릭 범위 선택 (No. 컬럼만)
+      if (coords.col === 0 && e.shiftKey && lastCheckedRowRefGlobal?.current !== null) {
+        if (!lastCheckedRowRefGlobal || !hotRefGlobal?.current) return
+
+        const currentRow = coords.row
+        const start = Math.min(lastCheckedRowRefGlobal.current, currentRow)
+        const end = Math.max(lastCheckedRowRefGlobal.current, currentRow)
+        const data = hotRefGlobal.current.getSourceData() as Row[]
+
+        // 범위 내 모든 행의 id를 checkedRowsRef에 추가
+        for (let i = start; i <= end; i++) {
+          const id = data[i]?.id
+          if (!id) continue
+          checkedRowsRefGlobal?.current.add(id)
+
+          // viewport에 보이는 셀만 즉시 DOM 업데이트
+          const td = hotRefGlobal.current.getCell(i, 0)
+          if (td) {
+            const cb = td.querySelector('.row-select-checkbox') as HTMLInputElement
+            if (cb) cb.checked = true
+          }
+        }
+
+        // lastChecked 업데이트
+        lastCheckedRowRefGlobal.current = currentRow
+
+        // selectedRowIds state 동기화
+        if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
+          setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
+        }
+
+        return
+      }
+
+      // 기존 select 컬럼 로직
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const cd = (COLUMNS as any[])[coords.col]
       if (cd?.fieldType !== 'select' || cd?.readOnly) {
