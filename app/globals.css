@@ -162,6 +162,11 @@ body {
   cursor: pointer;
 }
 
+/* row select checkbox */
+.row-select-checkbox {
+  accent-color: var(--works-focus-ring);
+}
+
 /* 편집 input - 위치/크기는 HOT 내부 계산에 맡김 */
 .handsontable .handsontableInput {
   font-size: 13px !important;

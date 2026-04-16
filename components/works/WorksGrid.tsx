@@ -254,6 +254,8 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
 
 // ── Image gallery callback (set by WorksGrid component) ──────────────────────
 let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
+let checkedRowsRefGlobal: React.MutableRefObject<Set<string>> | null = null
+let onCheckboxChange: ((row: number, checked: boolean) => void) | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
@@ -294,14 +296,40 @@ const COLUMNS = [
     readOnly: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
-      td.textContent = String(row + 1)
+      // Get row data to determine checked state
+      const data = (_hot as any).getSourceData?.() ?? []
+      const rowData = data[row] as Row | undefined
+      const rowId = rowData?.id
+      const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
+
+      td.innerHTML = ''
       td.style.backgroundColor = '#F8FAFC'
-      td.style.color = '#94A3B8'
-      td.style.fontSize = '11px'
-      td.style.textAlign = 'center'
-      td.style.verticalAlign = 'middle'
-      td.style.lineHeight = '32px'
       td.style.borderRight = '1px solid #E2E8F0'
+      td.style.padding = '0'
+      td.style.height = '32px'
+      td.style.maxHeight = '32px'
+      td.style.overflow = 'hidden'
+
+      const wrapper = document.createElement('div')
+      wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;'
+
+      const checkbox = document.createElement('input')
+      checkbox.type = 'checkbox'
+      checkbox.className = 'row-select-checkbox'
+      checkbox.checked = !!isChecked
+      checkbox.style.cssText = 'width:13px;height:13px;margin:0;padding:0;cursor:pointer;flex-shrink:0;'
+      checkbox.onclick = (e) => {
+        e.stopPropagation()
+        onCheckboxChange?.(row, checkbox.checked)
+      }
+
+      const num = document.createElement('span')
+      num.textContent = String(row + 1)
+      num.style.cssText = 'font-size:11px;color:#94A3B8;flex-shrink:0;'
+
+      wrapper.appendChild(checkbox)
+      wrapper.appendChild(num)
+      td.appendChild(wrapper)
     },
   },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
@@ -626,6 +654,7 @@ export default function WorksGrid() {
   const isScrollLoadingRef = useRef(false)
   const scrollLoadRef = useRef<(() => void) | null>(null)
   const holidaySetRef = useRef<Set<string>>(new Set())
+  const checkedRowsRef = useRef<Set<string>>(new Set())
 
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
@@ -637,9 +666,25 @@ export default function WorksGrid() {
   const syncingCustomScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [galleryImages, setGalleryImages] = useState<ImageItem[] | null>(null)
   const [galleryStartIdx, setGalleryStartIdx] = useState(0)
   onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
+
+  // Checkbox handler
+  checkedRowsRefGlobal = checkedRowsRef
+  onCheckboxChange = (row, checked) => {
+    const rowData = rowsRef.current[row]
+    if (!rowData?.id) return
+
+    if (checked) {
+      checkedRowsRef.current.add(rowData.id)
+    } else {
+      checkedRowsRef.current.delete(rowData.id)
+    }
+
+    setSelectedRowIds(new Set(checkedRowsRef.current))
+  }
 
   // Attachment upload handler
   onAttachmentUpload = async (rowIdx, files) => {
@@ -1241,6 +1286,18 @@ export default function WorksGrid() {
     return () => { void supabase.removeChannel(channel) }
   }, [])
 
+  // Handle row deletion
+  const handleDeleteSelected = () => {
+    console.log('Delete rows:', Array.from(selectedRowIds))
+    // TODO: Implement actual deletion
+  }
+
+  const handleClearSelection = () => {
+    checkedRowsRef.current.clear()
+    setSelectedRowIds(new Set())
+    hotRef.current?.render()
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Top bar: (좌) 필터 / 검색 / 정렬  (우) count */}
@@ -1435,6 +1492,56 @@ export default function WorksGrid() {
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
         }}>
           {toast.message}
+        </div>
+      )}
+
+      {/* Delete mini bar */}
+      {selectedRowIds.size > 0 && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          background: '#1F2937',
+          color: '#fff',
+          fontSize: 13,
+          padding: '8px 16px',
+          borderRadius: 6,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+        }}>
+          <span>{selectedRowIds.size}개 선택됨</span>
+          <button
+            onClick={handleClearSelection}
+            style={{
+              background: 'transparent',
+              border: '1px solid #4B5563',
+              color: '#fff',
+              padding: '4px 12px',
+              borderRadius: 4,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            선택 해제
+          </button>
+          <button
+            onClick={handleDeleteSelected}
+            style={{
+              background: '#EF4444',
+              border: 'none',
+              color: '#fff',
+              padding: '4px 12px',
+              borderRadius: 4,
+              fontSize: 12,
+              cursor: 'pointer',
+            }}
+          >
+            삭제
+          </button>
         </div>
       )}
 
