@@ -303,20 +303,20 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number, _co
 
   const wrapper = document.createElement('div')
   wrapper.className = 'row-header-wrapper'
-  wrapper.style.cssText = 'position:relative;width:100%;height:100%;display:flex;align-items:center;'
+  wrapper.style.cssText = 'position:relative;width:100%;height:100%;display:flex;align-items:center;padding-left:6px;'
 
-  // 1. Row number - fixed left position
+  // 1. Row number - normal flow
   const rowNum = document.createElement('span')
   rowNum.className = 'row-num'
   rowNum.textContent = String(row + 1)
-  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;margin-left:6px;'
+  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;'
   wrapper.appendChild(rowNum)
 
-  // 2. Checkbox - absolute position, same x as row-num
+  // 2. Checkbox - absolute position, aligned with row-num (left: 6px matches padding-left)
   const checkbox = document.createElement('input')
   checkbox.type = 'checkbox'
   checkbox.className = 'row-checkbox'
-  checkbox.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);width:14px;height:14px;cursor:pointer;margin:0;'
+  checkbox.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);width:14px;height:14px;cursor:pointer;margin:0;padding:0;'
   checkbox.onclick = (e) => {
     e.stopPropagation()
     const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
@@ -1280,9 +1280,9 @@ export default function WorksGrid() {
       if (!tbody) return
       const tr = tbody.children[coords.row] as HTMLElement | undefined
       if (tr) {
+        // Always remove row-hovered
         tr.classList.remove('row-hovered')
-        // Keep .row-checked if this row is checked
-        // (onRowCheckboxToggle already manages .row-checked class)
+        // .row-checked class persists independently (managed by checkbox click)
       }
     })
     // Row selection state
