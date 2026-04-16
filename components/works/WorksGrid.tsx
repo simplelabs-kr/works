@@ -329,6 +329,7 @@ const COLUMNS = [
 
         if (isShift && lastCheckedRowRefGlobal?.current !== null) {
           // 범위 선택
+          if (!lastCheckedRowRefGlobal) return
           const start = Math.min(lastCheckedRowRefGlobal.current, currentRow)
           const end = Math.max(lastCheckedRowRefGlobal.current, currentRow)
           const hot = hotRefGlobal?.current
