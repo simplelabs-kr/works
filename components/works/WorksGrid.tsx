@@ -327,15 +327,18 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number, _co
   // 3. Expand button
   const expandBtn = document.createElement('div')
   expandBtn.className = 'row-expand-btn'
-  expandBtn.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;transition:background 0.15s;'
-  expandBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 10L10 1M10 1H4M10 1V7" stroke="#666" stroke-width="1.5" stroke-linecap="round"/></svg>`
+  expandBtn.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:white;border:1px solid #d1d5db;border-radius:3px;transition:border-color 0.15s;'
+  expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+    <path d="M2 2L5 5M2 2H4.5M2 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 2L7 5M10 2H7.5M10 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M2 10L5 7M2 10H4.5M2 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M10 10L7 7M10 10H7.5M10 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`
   expandBtn.onclick = (e) => {
     e.stopPropagation()
     const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
     if (rowData?.id) onRowExpand?.(rowData.id)
   }
-  expandBtn.onmouseenter = () => { expandBtn.style.background = 'rgba(0,0,0,0.05)' }
-  expandBtn.onmouseleave = () => { expandBtn.style.background = '' }
   wrapper.appendChild(expandBtn)
 
   td.appendChild(wrapper)

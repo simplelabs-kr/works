@@ -450,13 +450,20 @@ body {
   display: none;
 }
 
+/* Expand button is ALWAYS hidden by default */
+.row-expand-btn {
+  display: none !important;
+}
+
 /* Hovered state: hide row number, show checkbox and expand button */
 tr.row-hovered .row-header-wrapper .row-num {
   display: none;
 }
-tr.row-hovered .row-header-wrapper .row-checkbox,
-tr.row-hovered .row-header-wrapper .row-expand-btn {
+tr.row-hovered .row-header-wrapper .row-checkbox {
   display: inline-flex;
+}
+tr.row-hovered .row-header-wrapper .row-expand-btn {
+  display: inline-flex !important;
 }
 
 /* Selected state (not hovered): hide row number, show checkbox only */
@@ -466,18 +473,19 @@ tr.row-selected .row-header-wrapper .row-num {
 tr.row-selected .row-header-wrapper .row-checkbox {
   display: inline-flex;
 }
+/* Expand button stays hidden when selected but not hovered */
 tr.row-selected .row-header-wrapper .row-expand-btn {
-  display: none;
+  display: none !important;
 }
 
 /* Selected + hovered: show both checkbox and expand button */
 tr.row-selected.row-hovered .row-header-wrapper .row-expand-btn {
-  display: inline-flex;
+  display: inline-flex !important;
 }
 
 /* Expand button hover effect */
 .row-expand-btn:hover {
-  background: rgba(0,0,0,0.05) !important;
+  border-color: #9ca3af !important;
 }
 
 /* scrollbar */
