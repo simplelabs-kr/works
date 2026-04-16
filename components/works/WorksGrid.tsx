@@ -1590,7 +1590,7 @@ export default function WorksGrid() {
       {/* Toast */}
       {toast && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
           background: toast.type === 'error' ? '#EF4444' : '#1F2937',
           color: '#fff', fontSize: 13,
           padding: '8px 16px', borderRadius: 6,
