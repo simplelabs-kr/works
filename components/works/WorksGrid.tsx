@@ -174,12 +174,19 @@ let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = nul
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   td.innerHTML = ''
+  // Force td constraints to prevent height inflation
   td.style.padding = '0'
+  td.style.position = 'relative'
+  td.style.height = '32px'
+  td.style.maxHeight = '32px'
+  td.style.overflow = 'hidden'
 
   const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
 
   const wrapper = document.createElement('div')
   wrapper.className = 'attachment-popout-wrapper'
+  // Force wrapper positioning to prevent td expansion
+  wrapper.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:4px;padding:0 4px;box-sizing:border-box;'
   if (row === 0) wrapper.classList.add('is-first-row')
 
   if (items.length === 0) {
@@ -259,13 +266,20 @@ let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = n
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   td.innerHTML = ''
   td.classList.add('htDimmed')
+  // Force td constraints to prevent height inflation
   td.style.padding = '0'
+  td.style.position = 'relative'
+  td.style.height = '32px'
+  td.style.maxHeight = '32px'
+  td.style.overflow = 'hidden'
 
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
   if (imgs.length === 0) return
 
   const wrapper = document.createElement('div')
   wrapper.className = 'image-popout-wrapper'
+  // Force wrapper positioning to prevent td expansion
+  wrapper.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:4px;padding:0 4px;box-sizing:border-box;'
   if (row === 0) wrapper.classList.add('is-first-row')
 
   imgs.forEach((item, i) => {
