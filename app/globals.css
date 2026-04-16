@@ -229,21 +229,19 @@ body {
 
 /* td: 위아래 팝아웃 허용 */
 .handsontable td:has(.image-popout-wrapper) {
-  position: relative;
   padding: 0 !important;
 }
 .handsontable td.current:has(.image-popout-wrapper) {
+  position: relative !important;
   overflow: visible !important;
   z-index: 50;
 }
-.handsontable td.current:has(.image-popout-wrapper) .image-popout-wrapper {
-  background-color: #ffffff !important;
-}
 
-/* wrapper 기본 상태 — absolute로 td 높이에 영향 없음 */
+/* wrapper 기본 상태 — relative로 td 높이 유지 */
 .image-popout-wrapper {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -255,8 +253,11 @@ body {
 
 /* wrapper 선택 상태: 팝아웃 카드 */
 .handsontable td.current .image-popout-wrapper {
+  position: absolute;
   top: -8px;
   bottom: -8px;
+  left: 0;
+  right: 0;
   background: #ffffff;
   border: 2px solid #2D7FF9;
   border-radius: 4px;
@@ -297,34 +298,33 @@ body {
 
 /* ── Attachment pop-out (same pattern as image) ────────────────── */
 .handsontable td:has(.attachment-popout-wrapper) {
-  position: relative;
   padding: 0 !important;
 }
 .handsontable td.current:has(.attachment-popout-wrapper) {
+  position: relative !important;
   overflow: visible !important;
   z-index: 50;
 }
-.handsontable td.current:has(.attachment-popout-wrapper) .attachment-popout-wrapper {
-  background-color: #ffffff !important;
-}
 
 .attachment-popout-wrapper {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin: 0;
   padding: 0 4px;
-  max-height: 28px;
   box-sizing: border-box;
   overflow: hidden;
   flex-wrap: nowrap;
 }
 .handsontable td.current .attachment-popout-wrapper {
-  max-height: none;
+  position: absolute;
   top: -8px;
   bottom: -8px;
+  left: 0;
+  right: 0;
+  max-height: none;
   background: #ffffff;
   border: 2px solid #2D7FF9;
   border-radius: 4px;
