@@ -285,72 +285,68 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
   td.appendChild(wrapper)
 }
 
-// Row header global callbacks (set by WorksGrid component)
-let onRowCheckboxToggle: ((rowId: string, rowIdx: number) => void) | null = null
-let onRowExpand: ((rowId: string) => void) | null = null
-let getSelectedRowIds: (() => Set<string>) | null = null
+// Row header global refs (set by WorksGrid component)
+let checkedRowsRefGlobal: React.MutableRefObject<Set<string>> | null = null
+let setSelectedRowIdsGlobal: ((value: Set<string>) => void) | null = null
+let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, _value: any) {
-  td.innerHTML = ''
+function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   td.style.backgroundColor = '#F8FAFC'
   td.style.borderRight = '1px solid #E2E8F0'
   td.style.padding = '0'
-  td.style.textAlign = 'left'
   td.style.verticalAlign = 'middle'
-  td.style.position = 'relative'
-  td.style.overflow = 'visible'
 
-  const wrapper = document.createElement('div')
-  wrapper.className = 'row-header-wrapper'
-  wrapper.style.cssText = 'position:relative;width:100%;height:100%;display:flex;align-items:center;padding-left:6px;'
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = (_hot as any).getSourceData?.() ?? []
+  const rowData = data[row] as Row | undefined
+  const rowId = rowData?.id
+  const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
 
-  // 1. Row number - normal flow
-  const rowNum = document.createElement('span')
-  rowNum.className = 'row-num'
-  rowNum.textContent = String(row + 1)
-  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;'
-  wrapper.appendChild(rowNum)
+  td.innerHTML = `
+    <div class="row-header-wrapper${isChecked ? ' is-checked' : ''}">
+      <div class="left-content">
+        <span class="row-num">${row + 1}</span>
+        <input type="checkbox" class="row-checkbox" ${isChecked ? 'checked' : ''} />
+      </div>
+      <div class="row-expand-btn">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <path d="M2 2L5 5M2 2H4.5M2 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 2L7 5M10 2H7.5M10 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 10L5 7M2 10H4.5M2 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M10 10L7 7M10 10H7.5M10 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+    </div>
+  `
 
-  // 2. Checkbox - absolute position, aligned with row-num (left: 6px matches padding-left)
-  const checkbox = document.createElement('input')
-  checkbox.type = 'checkbox'
-  checkbox.className = 'row-checkbox'
-  checkbox.style.cssText = 'position:absolute;left:6px;top:50%;transform:translateY(-50%);width:14px;height:14px;cursor:pointer;margin:0;padding:0;'
-  checkbox.onclick = (e) => {
-    e.stopPropagation()
-    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
-    if (rowData?.id) onRowCheckboxToggle?.(rowData.id, row)
+  // Checkbox event
+  const checkbox = td.querySelector('.row-checkbox') as HTMLInputElement
+  if (checkbox && rowId) {
+    checkbox.addEventListener('change', (e) => {
+      e.stopPropagation()
+      if (checkbox.checked) {
+        checkedRowsRefGlobal?.current.add(rowId)
+      } else {
+        checkedRowsRefGlobal?.current.delete(rowId)
+      }
+      // Sync selectedRowIds state
+      if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
+        setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
+      }
+      // Force Handsontable re-render to reflect all row check states
+      hotRefGlobal?.current?.render()
+    })
   }
-  wrapper.appendChild(checkbox)
 
-  // 3. Expand button - absolute position, right side
-  const expandBtn = document.createElement('div')
-  expandBtn.className = 'row-expand-btn'
-  expandBtn.style.cssText = 'position:absolute;right:3px;top:50%;transform:translateY(-50%);cursor:pointer;display:flex;align-items:center;justify-content:center;width:20px;height:20px;background:white;border:1px solid #d1d5db;border-radius:3px;transition:border-color 0.15s;'
-  expandBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-    <path d="M2 2L5 5M2 2H4.5M2 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M10 2L7 5M10 2H7.5M10 2V4.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M2 10L5 7M2 10H4.5M2 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M10 10L7 7M10 10H7.5M10 10V7.5" stroke="#4a4a4a" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>`
-  expandBtn.onclick = (e) => {
-    e.stopPropagation()
-    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
-    if (rowData?.id) onRowExpand?.(rowData.id)
+  // Expand button event
+  const expandBtn = td.querySelector('.row-expand-btn')
+  if (expandBtn && rowId) {
+    expandBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      console.log('[onExpandRow]', rowId)
+    })
   }
-  wrapper.appendChild(expandBtn)
-
-  td.appendChild(wrapper)
-
-  // Sync checkbox state
-  setTimeout(() => {
-    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
-    if (rowData?.id) {
-      const selected = getSelectedRowIds?.() ?? new Set()
-      checkbox.checked = selected.has(rowData.id)
-    }
-  }, 0)
 }
 
 const COLUMNS = [
@@ -678,7 +674,8 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
-  // Row header state: checkbox selection
+  // Row header state: checkbox selection (ref-based for renderer stability)
+  const checkedRowsRef = useRef<Set<string>>(new Set())
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
 
   // Refs for infinite scroll and stale-closure-safe access in HOT hooks
@@ -961,34 +958,10 @@ export default function WorksGrid() {
     return () => ro.disconnect()
   }, [])
 
-  // Set up row header callbacks
-  onRowCheckboxToggle = (rowId: string, rowIdx: number) => {
-    const tbody = hotRef.current?.rootElement?.querySelector('tbody')
-    const tr = tbody?.children[rowIdx] as HTMLElement | undefined
-
-    setSelectedRowIds(prev => {
-      const next = new Set(prev)
-      const isAdding = !next.has(rowId)
-
-      if (isAdding) {
-        next.add(rowId)
-        if (tr) tr.classList.add('row-checked')
-      } else {
-        next.delete(rowId)
-        if (tr) tr.classList.remove('row-checked')
-      }
-
-      return next
-    })
-    // Force re-render checkbox in the row
-    if (hotRef.current) hotRef.current.render()
-  }
-
-  onRowExpand = (rowId: string) => {
-    console.log('[onExpandRow]', rowId)
-  }
-
-  getSelectedRowIds = () => selectedRowIds
+  // Set up row header global refs
+  checkedRowsRefGlobal = checkedRowsRef
+  setSelectedRowIdsGlobal = setSelectedRowIds
+  hotRefGlobal = hotRef
 
   // Initialize Handsontable once
   useEffect(() => {
@@ -1257,33 +1230,29 @@ export default function WorksGrid() {
     })
     hotRef.current.addHook('afterDeselect', () => {
       setSelectedRowIndices(null)
-      // Clear row selection state
+      // Clear row checkbox state
+      checkedRowsRef.current.clear()
       setSelectedRowIds(new Set())
-      // Remove all .row-selected and .row-checked classes
+      // Remove all .row-selected classes
       const tbody = hotRef.current?.rootElement?.querySelector('tbody')
       if (tbody) {
         tbody.querySelectorAll('tr.row-selected').forEach(tr => tr.classList.remove('row-selected'))
-        tbody.querySelectorAll('tr.row-checked').forEach(tr => tr.classList.remove('row-checked'))
       }
+      // Force re-render to reflect unchecked state
+      hotRef.current?.render()
     })
     // Row hover state
     hotRef.current.addHook('afterOnCellMouseOver', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
-      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
-      if (!tbody) return
-      const tr = tbody.children[coords.row] as HTMLElement | undefined
-      if (tr) tr.classList.add('row-hovered')
+      const td = hotRef.current?.getCell(coords.row, coords.col)
+      const tr = td?.parentElement
+      if (tr) tr.classList.add('is-hovered')
     })
     hotRef.current.addHook('afterOnCellMouseOut', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
-      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
-      if (!tbody) return
-      const tr = tbody.children[coords.row] as HTMLElement | undefined
-      if (tr) {
-        // Always remove row-hovered
-        tr.classList.remove('row-hovered')
-        // .row-checked class persists independently (managed by checkbox click)
-      }
+      const td = hotRef.current?.getCell(coords.row, coords.col)
+      const tr = td?.parentElement
+      if (tr) tr.classList.remove('is-hovered')
     })
     // Row selection state
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
@@ -1605,6 +1574,7 @@ export default function WorksGrid() {
           <span style={{ fontWeight: 500 }}>{selectedRowIds.size}개 선택됨</span>
           <button
             onClick={() => {
+              checkedRowsRef.current.clear()
               setSelectedRowIds(new Set())
               if (hotRef.current) hotRef.current.render()
             }}

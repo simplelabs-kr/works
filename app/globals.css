@@ -441,67 +441,83 @@ body {
 
 /* ── Row header (Airtable-style) ────────────────────────────────── */
 
-/* Basic state: show row number only */
-.row-header-wrapper .row-num {
-  display: inline;
-}
-.row-header-wrapper .row-checkbox,
-.row-header-wrapper .row-expand-btn {
-  display: none;
+/* Wrapper structure */
+.row-header-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: 0 3px 0 0;
 }
 
-/* Expand button is ALWAYS hidden by default */
+/* Left content area - fixed width for number/checkbox swap */
+.left-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  flex-shrink: 0;
+}
+
+/* Basic state: show row number, hide checkbox and expand button */
+.row-num {
+  display: block;
+  color: #94A3B8;
+  font-size: 11px;
+  line-height: 32px;
+}
+.row-checkbox {
+  display: none;
+  margin: 0;
+  padding: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
 .row-expand-btn {
-  display: none !important;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+}
+.row-expand-btn:hover {
+  border-color: #9ca3af;
 }
 
 /* Hovered state: hide row number, show checkbox and expand button */
-tr.row-hovered .row-header-wrapper .row-num {
+tr.is-hovered .row-num {
   display: none;
 }
-tr.row-hovered .row-header-wrapper .row-checkbox {
+tr.is-hovered .row-checkbox {
   display: block;
 }
-tr.row-hovered .row-header-wrapper .row-expand-btn {
-  display: flex !important;
+tr.is-hovered .row-expand-btn {
+  display: flex;
 }
 
-/* Checked state (persists after hover): hide row number, show checkbox only */
-tr.row-checked .row-header-wrapper .row-num {
+/* Checked state (persists after hover): hide row number, show checkbox */
+.row-header-wrapper.is-checked .row-num {
   display: none;
 }
-tr.row-checked .row-header-wrapper .row-checkbox {
+.row-header-wrapper.is-checked .row-checkbox {
   display: block;
 }
-tr.row-checked .row-header-wrapper .row-expand-btn {
-  display: none !important;
+.row-header-wrapper.is-checked .row-expand-btn {
+  display: none;
 }
 
 /* Checked + hovered: show both checkbox and expand button */
-tr.row-checked.row-hovered .row-header-wrapper .row-expand-btn {
-  display: flex !important;
-}
-
-/* Selected state (not hovered): hide row number, show checkbox only */
-tr.row-selected .row-header-wrapper .row-num {
-  display: none;
-}
-tr.row-selected .row-header-wrapper .row-checkbox {
-  display: block;
-}
-/* Expand button stays hidden when selected but not hovered */
-tr.row-selected .row-header-wrapper .row-expand-btn {
-  display: none !important;
-}
-
-/* Selected + hovered: show both checkbox and expand button */
-tr.row-selected.row-hovered .row-header-wrapper .row-expand-btn {
-  display: flex !important;
-}
-
-/* Expand button hover effect */
-.row-expand-btn:hover {
-  border-color: #9ca3af !important;
+tr.is-hovered .row-header-wrapper.is-checked .row-expand-btn {
+  display: flex;
 }
 
 /* scrollbar */
