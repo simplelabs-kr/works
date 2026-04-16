@@ -295,6 +295,9 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   td.style.backgroundColor = '#F8FAFC'
   td.style.borderRight = '1px solid #E2E8F0'
   td.style.padding = '0'
+  td.style.height = '32px'
+  td.style.maxHeight = '32px'
+  td.style.overflow = 'hidden'
   td.style.verticalAlign = 'middle'
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
