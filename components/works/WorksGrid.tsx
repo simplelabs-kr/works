@@ -285,24 +285,79 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
   td.appendChild(wrapper)
 }
 
+// Row header global callbacks (set by WorksGrid component)
+let onRowCheckboxToggle: ((rowId: string) => void) | null = null
+let onRowExpand: ((rowId: string) => void) | null = null
+let getSelectedRowIds: (() => Set<string>) | null = null
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, _value: any) {
+  td.innerHTML = ''
+  td.style.backgroundColor = '#F8FAFC'
+  td.style.borderRight = '1px solid #E2E8F0'
+  td.style.padding = '0'
+  td.style.textAlign = 'center'
+  td.style.verticalAlign = 'middle'
+  td.style.position = 'relative'
+  td.style.overflow = 'visible'
+
+  const wrapper = document.createElement('div')
+  wrapper.className = 'row-header-wrapper'
+  wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;height:32px;padding:0 6px;position:relative;'
+
+  // 1. Row number
+  const rowNum = document.createElement('span')
+  rowNum.className = 'row-num'
+  rowNum.textContent = String(row + 1)
+  rowNum.style.cssText = 'color:#94A3B8;font-size:11px;line-height:32px;'
+  wrapper.appendChild(rowNum)
+
+  // 2. Checkbox
+  const checkbox = document.createElement('input')
+  checkbox.type = 'checkbox'
+  checkbox.className = 'row-checkbox'
+  checkbox.style.cssText = 'width:14px;height:14px;cursor:pointer;margin:0;'
+  checkbox.onclick = (e) => {
+    e.stopPropagation()
+    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
+    if (rowData?.id) onRowCheckboxToggle?.(rowData.id)
+  }
+  wrapper.appendChild(checkbox)
+
+  // 3. Expand button
+  const expandBtn = document.createElement('div')
+  expandBtn.className = 'row-expand-btn'
+  expandBtn.style.cssText = 'cursor:pointer;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;transition:background 0.15s;'
+  expandBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M1 10L10 1M10 1H4M10 1V7" stroke="#666" stroke-width="1.5" stroke-linecap="round"/></svg>`
+  expandBtn.onclick = (e) => {
+    e.stopPropagation()
+    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
+    if (rowData?.id) onRowExpand?.(rowData.id)
+  }
+  expandBtn.onmouseenter = () => { expandBtn.style.background = 'rgba(0,0,0,0.05)' }
+  expandBtn.onmouseleave = () => { expandBtn.style.background = '' }
+  wrapper.appendChild(expandBtn)
+
+  td.appendChild(wrapper)
+
+  // Sync checkbox state
+  setTimeout(() => {
+    const rowData = (_hot as Handsontable).getDataAtRow(row) as unknown as Row
+    if (rowData?.id) {
+      const selected = getSelectedRowIds?.() ?? new Set()
+      checkbox.checked = selected.has(rowData.id)
+    }
+  }, 0)
+}
+
 const COLUMNS = [
   {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: (_row: any) => '',
     title: '',
-    width: 50,
+    width: 65,
     readOnly: true,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
-      td.textContent = String(row + 1)
-      td.style.backgroundColor = '#F8FAFC'
-      td.style.color = '#94A3B8'
-      td.style.fontSize = '11px'
-      td.style.textAlign = 'center'
-      td.style.verticalAlign = 'middle'
-      td.style.lineHeight = '32px'
-      td.style.borderRight = '1px solid #E2E8F0'
-    },
+    renderer: rowHeaderRenderer,
   },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
@@ -620,6 +675,9 @@ export default function WorksGrid() {
   const hotRef = useRef<Handsontable | null>(null)
   const holidaysLoaded = useRef(false)
 
+  // Row header state: checkbox selection
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
+
   // Refs for infinite scroll and stale-closure-safe access in HOT hooks
   const rowsRef = useRef<Row[]>([])
   const hasMoreRef = useRef(true)
@@ -900,6 +958,24 @@ export default function WorksGrid() {
     return () => ro.disconnect()
   }, [])
 
+  // Set up row header callbacks
+  onRowCheckboxToggle = (rowId: string) => {
+    setSelectedRowIds(prev => {
+      const next = new Set(prev)
+      if (next.has(rowId)) next.delete(rowId)
+      else next.add(rowId)
+      return next
+    })
+    // Force re-render checkbox in the row
+    if (hotRef.current) hotRef.current.render()
+  }
+
+  onRowExpand = (rowId: string) => {
+    console.log('[onExpandRow]', rowId)
+  }
+
+  getSelectedRowIds = () => selectedRowIds
+
   // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
@@ -1165,7 +1241,47 @@ export default function WorksGrid() {
       for (let i = minR; i <= maxR; i++) indices.push(i)
       setSelectedRowIndices(indices)
     })
-    hotRef.current.addHook('afterDeselect', () => setSelectedRowIndices(null))
+    hotRef.current.addHook('afterDeselect', () => {
+      setSelectedRowIndices(null)
+      // Clear row selection state
+      setSelectedRowIds(new Set())
+      // Remove all .row-selected classes
+      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
+      if (tbody) {
+        tbody.querySelectorAll('tr.row-selected').forEach(tr => tr.classList.remove('row-selected'))
+      }
+    })
+    // Row hover state
+    hotRef.current.addHook('afterOnCellMouseOver', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      if (coords.row < 0) return
+      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
+      if (!tbody) return
+      const tr = tbody.children[coords.row] as HTMLElement | undefined
+      if (tr) tr.classList.add('row-hovered')
+    })
+    hotRef.current.addHook('afterOnCellMouseOut', (_e: MouseEvent, coords: { row: number; col: number }) => {
+      if (coords.row < 0) return
+      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
+      if (!tbody) return
+      const tr = tbody.children[coords.row] as HTMLElement | undefined
+      if (tr) tr.classList.remove('row-hovered')
+    })
+    // Row selection state
+    hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
+      const tbody = hotRef.current?.rootElement?.querySelector('tbody')
+      if (!tbody) return
+      // Remove all .row-selected first
+      tbody.querySelectorAll('tr.row-selected').forEach(tr => tr.classList.remove('row-selected'))
+      // Add .row-selected to selected rows
+      if (r1 >= 0) {
+        const minR = Math.min(r1, r2)
+        const maxR = Math.max(r1, r2)
+        for (let i = minR; i <= maxR; i++) {
+          const tr = tbody.children[i] as HTMLElement | undefined
+          if (tr) tr.classList.add('row-selected')
+        }
+      }
+    })
     // Copy: overwrite clipboard with plain TSV + show toast
     hotRef.current.addHook('afterCopy', (data: (string | number | boolean | null)[][]) => {
       const tsv = data
@@ -1445,6 +1561,70 @@ export default function WorksGrid() {
           startIndex={galleryStartIdx}
           onClose={() => setGalleryImages(null)}
         />
+      )}
+
+      {/* Delete mini bar */}
+      {selectedRowIds.size > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            background: '#1a1a1a',
+            color: '#fff',
+            fontSize: 13,
+            padding: '10px 16px',
+            borderRadius: 8,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
+          }}
+        >
+          <span style={{ fontWeight: 500 }}>{selectedRowIds.size}개 선택됨</span>
+          <button
+            onClick={() => {
+              setSelectedRowIds(new Set())
+              if (hotRef.current) hotRef.current.render()
+            }}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.3)',
+              color: '#fff',
+              fontSize: 12,
+              padding: '4px 10px',
+              borderRadius: 4,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+          >
+            선택 해제
+          </button>
+          <button
+            onClick={() => {
+              console.log('[Delete]', Array.from(selectedRowIds))
+            }}
+            style={{
+              background: '#EF4444',
+              border: 'none',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 500,
+              padding: '4px 12px',
+              borderRadius: 4,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#DC2626' }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#EF4444' }}
+          >
+            삭제
+          </button>
+        </div>
       )}
     </div>
   )

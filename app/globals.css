@@ -439,6 +439,47 @@ body {
   display: inline-flex;
 }
 
+/* ── Row header (Airtable-style) ────────────────────────────────── */
+
+/* Basic state: show row number only */
+.row-header-wrapper .row-num {
+  display: inline;
+}
+.row-header-wrapper .row-checkbox,
+.row-header-wrapper .row-expand-btn {
+  display: none;
+}
+
+/* Hovered state: hide row number, show checkbox and expand button */
+tr.row-hovered .row-header-wrapper .row-num {
+  display: none;
+}
+tr.row-hovered .row-header-wrapper .row-checkbox,
+tr.row-hovered .row-header-wrapper .row-expand-btn {
+  display: inline-flex;
+}
+
+/* Selected state (not hovered): hide row number, show checkbox only */
+tr.row-selected .row-header-wrapper .row-num {
+  display: none;
+}
+tr.row-selected .row-header-wrapper .row-checkbox {
+  display: inline-flex;
+}
+tr.row-selected .row-header-wrapper .row-expand-btn {
+  display: none;
+}
+
+/* Selected + hovered: show both checkbox and expand button */
+tr.row-selected.row-hovered .row-header-wrapper .row-expand-btn {
+  display: inline-flex;
+}
+
+/* Expand button hover effect */
+.row-expand-btn:hover {
+  background: rgba(0,0,0,0.05) !important;
+}
+
 /* scrollbar */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;
