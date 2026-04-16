@@ -990,6 +990,7 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
       manualColumnFreeze: true,
+      manualRowResize: false,
       columnHeaderHeight: 33,
       rowHeights: 32,
       fixedColumnsStart: 0,
@@ -1041,6 +1042,24 @@ export default function WorksGrid() {
         syncing = false
       })
     }, 100)
+    // Force fixed row height of 32px (prevent auto-calculation)
+    hotRef.current.addHook('modifyRowHeight', (_height: number | undefined, _row: number) => {
+      return 32
+    })
+    // Enforce row height constraints on all cells after render
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterRenderer', (_td: HTMLTableCellElement, row: number) => {
+      // Get the TR element and enforce height
+      const hot = hotRef.current
+      if (!hot) return
+      const td = hot.getCell(row, 0)
+      if (!td) return
+      const tr = td.parentElement
+      if (tr) {
+        tr.style.height = '32px'
+        tr.style.maxHeight = '32px'
+      }
+    })
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
