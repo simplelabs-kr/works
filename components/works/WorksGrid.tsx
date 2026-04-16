@@ -255,7 +255,9 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
 // ── Image gallery callback (set by WorksGrid component) ──────────────────────
 let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
 let checkedRowsRefGlobal: React.MutableRefObject<Set<string>> | null = null
-let onCheckboxChange: ((row: number, checked: boolean) => void) | null = null
+let lastCheckedRowRefGlobal: React.MutableRefObject<number | null> | null = null
+let setSelectedRowIdsGlobal: React.Dispatch<React.SetStateAction<Set<string>>> | null = null
+let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
@@ -318,10 +320,49 @@ const COLUMNS = [
       checkbox.className = 'row-select-checkbox'
       checkbox.checked = !!isChecked
       checkbox.style.cssText = 'width:13px;height:13px;margin:0;padding:0;cursor:pointer;flex-shrink:0;'
-      checkbox.onclick = (e) => {
+      checkbox.addEventListener('click', (e) => {
         e.stopPropagation()
-        onCheckboxChange?.(row, checkbox.checked)
-      }
+        if (!rowId) return
+
+        const isShift = (e as MouseEvent).shiftKey
+        const currentRow = row
+
+        if (isShift && lastCheckedRowRefGlobal?.current !== null) {
+          // 범위 선택
+          const start = Math.min(lastCheckedRowRefGlobal.current, currentRow)
+          const end = Math.max(lastCheckedRowRefGlobal.current, currentRow)
+          const hot = hotRefGlobal?.current
+          if (!hot) return
+
+          const data = hot.getSourceData() as Row[]
+          for (let i = start; i <= end; i++) {
+            const id = data[i]?.id
+            if (!id) continue
+            checkedRowsRefGlobal?.current.add(id)
+            // 해당 행의 체크박스 DOM도 직접 업데이트
+            const td = hot.getCell(i, 0)
+            const cb = td?.querySelector('.row-select-checkbox') as HTMLInputElement
+            if (cb) cb.checked = true
+          }
+        } else {
+          // 단일 선택/해제
+          if (checkbox.checked) {
+            checkedRowsRefGlobal?.current.add(rowId)
+          } else {
+            checkedRowsRefGlobal?.current.delete(rowId)
+          }
+        }
+
+        // shift 범위 선택 후에도 lastChecked 업데이트
+        if (lastCheckedRowRefGlobal) {
+          lastCheckedRowRefGlobal.current = currentRow
+        }
+
+        // selectedRowIds state 동기화
+        if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
+          setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
+        }
+      })
 
       const num = document.createElement('span')
       num.textContent = String(row + 1)
@@ -655,6 +696,7 @@ export default function WorksGrid() {
   const scrollLoadRef = useRef<(() => void) | null>(null)
   const holidaySetRef = useRef<Set<string>>(new Set())
   const checkedRowsRef = useRef<Set<string>>(new Set())
+  const lastCheckedRowRef = useRef<number | null>(null)
 
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
@@ -671,20 +713,11 @@ export default function WorksGrid() {
   const [galleryStartIdx, setGalleryStartIdx] = useState(0)
   onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
 
-  // Checkbox handler
+  // Global refs for renderer access
   checkedRowsRefGlobal = checkedRowsRef
-  onCheckboxChange = (row, checked) => {
-    const rowData = rowsRef.current[row]
-    if (!rowData?.id) return
-
-    if (checked) {
-      checkedRowsRef.current.add(rowData.id)
-    } else {
-      checkedRowsRef.current.delete(rowData.id)
-    }
-
-    setSelectedRowIds(new Set(checkedRowsRef.current))
-  }
+  lastCheckedRowRefGlobal = lastCheckedRowRef
+  setSelectedRowIdsGlobal = setSelectedRowIds
+  hotRefGlobal = hotRef
 
   // Attachment upload handler
   onAttachmentUpload = async (rowIdx, files) => {
@@ -1295,6 +1328,7 @@ export default function WorksGrid() {
   const handleClearSelection = () => {
     checkedRowsRef.current.clear()
     setSelectedRowIds(new Set())
+    lastCheckedRowRef.current = null
     hotRef.current?.render()
   }
 
