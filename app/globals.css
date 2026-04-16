@@ -222,16 +222,14 @@ body {
   padding: 0 !important;
 }
 .handsontable td.current:has(.image-popout-wrapper) {
-  position: relative !important;
   overflow: visible !important;
   z-index: 50;
 }
 
-/* wrapper 기본 상태 — relative로 td 높이 유지 */
+/* wrapper 기본 상태 — absolute with inset:0 to fill td without inflating height */
 .image-popout-wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -291,15 +289,13 @@ body {
   padding: 0 !important;
 }
 .handsontable td.current:has(.attachment-popout-wrapper) {
-  position: relative !important;
   overflow: visible !important;
   z-index: 50;
 }
 
 .attachment-popout-wrapper {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   gap: 4px;
