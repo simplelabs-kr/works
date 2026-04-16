@@ -447,9 +447,9 @@ body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  height: 32px;
-  max-height: 32px;
-  padding: 0 3px 0 0;
+  height: 31px;
+  max-height: 31px;
+  padding: 0 4px;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -460,7 +460,10 @@ body {
   align-items: center;
   justify-content: center;
   width: 24px;
+  height: 100%;
+  max-height: 31px;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 /* Basic state: show row number, hide checkbox and expand button */
@@ -468,7 +471,7 @@ body {
   display: block;
   color: #94A3B8;
   font-size: 11px;
-  line-height: 32px;
+  line-height: 31px;
 }
 .row-checkbox {
   display: none;
@@ -494,6 +497,12 @@ body {
 }
 .row-expand-btn:hover {
   border-color: #9ca3af;
+}
+.row-expand-btn svg {
+  width: 12px !important;
+  height: 12px !important;
+  display: block;
+  flex-shrink: 0;
 }
 
 /* Hovered state: hide row number, show checkbox and expand button */

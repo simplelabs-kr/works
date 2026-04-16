@@ -307,7 +307,7 @@ function rowHeaderRenderer(_hot: any, td: HTMLTableCellElement, row: number) {
   const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
 
   td.innerHTML = `
-    <div class="row-header-wrapper${isChecked ? ' is-checked' : ''}">
+    <div class="row-header-wrapper${isChecked ? ' is-checked' : ''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;height:31px;max-height:31px;box-sizing:border-box;overflow:hidden;padding:0 4px;">
       <div class="left-content">
         <span class="row-num">${row + 1}</span>
         <input type="checkbox" class="row-checkbox" ${isChecked ? 'checked' : ''} />
