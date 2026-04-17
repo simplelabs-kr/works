@@ -209,10 +209,18 @@ let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = nul
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+  // Sig-cache: click handlers close over `row` and the `fileIdx` of each chip,
+  // so the sig must include row plus url+name of every item. Skipping rebuild
+  // when content is identical cuts scroll-time DOM churn for rows with files.
+  const sig = `${row}|${row === 0 ? 1 : 0}|${items.map(i => `${i.url}\u0001${i.name}`).join('\u0002')}`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyTd = td as any
+  if (anyTd.__attSig === sig) return
+  anyTd.__attSig = sig
+
   td.innerHTML = ''
   td.style.padding = '0'
-
-  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
 
   const wrapper = document.createElement('div')
   wrapper.className = 'attachment-popout-wrapper'
@@ -302,11 +310,21 @@ let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+  // Sig-cache: skip rebuild if same urls + same first-row flag + same thumb width.
+  // Rebuilding creates fresh <img> elements which forces the browser to re-decode
+  // — visibly stutters vertical scroll. row index matters only for the
+  // is-first-row class (row 0 pops down instead of up).
+  const sig = `${row === 0 ? 1 : 0}|${imageThumbUrlWidth}|${imgs.map(i => i.url).join('\u0001')}`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyTd = td as any
+  if (anyTd.__imgSig === sig) return
+  anyTd.__imgSig = sig
+
   td.innerHTML = ''
   td.classList.add('htDimmed')
   td.style.padding = '0'
 
-  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
   if (imgs.length === 0) return
 
   const wrapper = document.createElement('div')
@@ -339,11 +357,20 @@ const COLUMNS = [
     readOnly: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
-      // Get row data to determine checked state
-      const data = (_hot as any).getSourceData?.() ?? []
-      const rowData = data[row] as Row | undefined
+      // Get row data to determine checked state. getSourceDataAtRow is O(1) —
+      // avoid getSourceData()[row] which would force the full array.
+      const rowData = (_hot as any).getSourceDataAtRow?.(row) as Row | undefined
       const rowId = rowData?.id
       const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
+
+      // Sig-cache: the click handler closes over `row` and `rowId`, so invalidate
+      // when either changes. Skips ~20 wrapper+checkbox+span DOM rebuilds per
+      // scroll tick for the No. column alone.
+      const sig = `${row}|${rowId ?? ''}|${isChecked ? '1' : '0'}`
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyTd = td as any
+      if (anyTd.__noSig === sig) return
+      anyTd.__noSig = sig
 
       td.innerHTML = ''
       td.style.backgroundColor = '#F8FAFC'
@@ -538,9 +565,22 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
+  // Skip DOM rebuild if the recycled td already shows the same checked state
+  // for the same (row,col). HOT reuses td elements across rows during vertical
+  // scroll; the click handler closes over row/col, so the sig must invalidate
+  // whenever row changes.
+  const checked = value === true
+  const sig = `${row}|${col}|${checked ? '1' : '0'}`
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyTd = td as any
+  if (anyTd.__cbSig === sig) return
+  anyTd.__cbSig = sig
+
   td.innerHTML = ''
-  // td must not add extra height — use flex to center content
-  td.style.cssText += ';padding:0;overflow:hidden;cursor:default;'
+  // CRITICAL: assign (not `+=`) — the `+=` operator grew the style attribute
+  // unboundedly on every scroll-triggered re-render, which thrashed style recalc
+  // after a few seconds of scrolling.
+  td.style.cssText = 'padding:0;overflow:hidden;cursor:default;'
   td.style.textAlign = 'center'
   td.style.verticalAlign = 'middle'
   td.style.lineHeight = '0'
@@ -548,8 +588,6 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
   td.onmouseenter = null
   td.onmouseleave = null
   td.onclick = null
-
-  const checked = value === true
 
   // Outer container: fills the td completely, flex-centers the hit target.
   // height:100% tracks --grid-row-h so the checkbox stays centered at any row height.
