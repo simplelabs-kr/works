@@ -173,10 +173,16 @@ let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = nul
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  // Signature cache: HOT re-runs renderers on scroll/selection even when data is unchanged.
+  // Skip the full DOM rebuild when row + file list identity is the same as the previous render.
+  const sig = `${row}|${items.length}|` + items.map(i => `${i.name}\u0001${i.url}`).join('\u0002')
+  if (td.dataset.attSig === sig) return
+  td.dataset.attSig = sig
+
   td.innerHTML = ''
   td.style.padding = '0'
-
-  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
 
   const wrapper = document.createElement('div')
   wrapper.className = 'attachment-popout-wrapper'
@@ -261,11 +267,19 @@ let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  const sig = `${row}|${imgs.length}|` + imgs.map(i => i.url).join('\u0001')
+  if (td.dataset.imgSig === sig) {
+    td.classList.add('htDimmed')
+    return
+  }
+  td.dataset.imgSig = sig
+
   td.innerHTML = ''
   td.classList.add('htDimmed')
   td.style.padding = '0'
 
-  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
   if (imgs.length === 0) return
 
   const wrapper = document.createElement('div')
@@ -303,6 +317,10 @@ const COLUMNS = [
       const rowData = data[row] as Row | undefined
       const rowId = rowData?.id
       const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
+
+      const sig = `${row}|${rowId ?? ''}|${isChecked ? 1 : 0}`
+      if (td.dataset.rsSig === sig) return
+      td.dataset.rsSig = sig
 
       td.innerHTML = ''
       td.style.backgroundColor = '#F8FAFC'
@@ -449,6 +467,10 @@ function getFieldTypeIcon(type: FieldType): string {
 // ── Common select badge renderer ──────────────────────────────────────────────
 
 function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, editable = false) {
+  const sig = `${value ?? ''}|${bg ?? ''}|${editable ? 1 : 0}`
+  if (td.dataset.sbSig === sig) return
+  td.dataset.sbSig = sig
+
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
@@ -469,6 +491,13 @@ function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+  const sig = value ?? ''
+  if (td.dataset.psSig === sig) {
+    td.classList.add('htDimmed')
+    return
+  }
+  td.dataset.psSig = sig
+
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
@@ -497,6 +526,11 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
+  const checked = value === true
+  const sig = `${row}|${col}|${checked ? 1 : 0}`
+  if (td.dataset.cbSig === sig) return
+  td.dataset.cbSig = sig
+
   td.innerHTML = ''
   // td must not add extra height — use flex to center content
   td.style.cssText += ';padding:0;overflow:hidden;cursor:default;'
@@ -507,8 +541,6 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
   td.onmouseenter = null
   td.onmouseleave = null
   td.onclick = null
-
-  const checked = value === true
 
   // Outer container: fills the td completely, flex-centers the hit target
   const outer = document.createElement('div')
@@ -739,74 +771,6 @@ export default function WorksGrid() {
     }
   }, [])
 
-  // Attachment upload handler
-  onAttachmentUpload = async (rowIdx, files) => {
-    const rowData = rowsRef.current[rowIdx]
-    if (!rowData?.id) return
-    const existing = rowData.reference_files ?? []
-    const uploaded: AttachmentItem[] = []
-    const failed: string[] = []
-    for (const file of Array.from(files)) {
-      const form = new FormData()
-      form.append('file', file)
-      form.append('order_item_id', rowData.id)
-      try {
-        const res = await fetch('/api/upload', { method: 'POST', body: form })
-        if (!res.ok) {
-          const raw = await res.text()
-          let errBody = raw.slice(0, 500)
-          try {
-            const j = JSON.parse(raw) as { error?: string }
-            if (j.error) errBody = j.error.slice(0, 500)
-          } catch { /* keep raw */ }
-          if (res.status === 413) failed.push(`${file.name} (최대 4.5MB)`)
-          else {
-            const hint = errBody.length > 80 ? `${errBody.slice(0, 80)}…` : errBody
-            failed.push(hint ? `${file.name} (${res.status}: ${hint})` : `${file.name} (HTTP ${res.status})`)
-          }
-          continue
-        }
-        const item = await res.json()
-        uploaded.push({ url: item.url, name: item.name })
-      } catch { failed.push(file.name) }
-    }
-    if (failed.length > 0) {
-      showToast({ message: `${failed.length}개 파일 업로드 실패: ${failed.join(', ')}`, type: 'error' }, 3000)
-    }
-    if (uploaded.length === 0) return
-    const newFiles = [...existing, ...uploaded]
-    const previousRows = rowsRef.current
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
-    const res = await fetch(`/api/order-items/${rowData.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field: 'reference_files', value: newFiles }),
-    })
-    if (!res.ok) {
-      setRows(previousRows)
-      showToast({ message: '파일 저장에 실패했습니다', type: 'error' }, 2000)
-    }
-  }
-
-  // Attachment delete handler
-  onAttachmentDelete = async (rowIdx, fileIdx) => {
-    const rowData = rowsRef.current[rowIdx]
-    if (!rowData?.id) return
-    const existing = rowData.reference_files ?? []
-    const newFiles = existing.filter((_, i) => i !== fileIdx)
-    const previousRows = rowsRef.current
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
-    const res = await fetch(`/api/order-items/${rowData.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field: 'reference_files', value: newFiles }),
-    })
-    if (!res.ok) {
-      setRows(previousRows)
-      showToast({ message: '파일 삭제에 실패했습니다', type: 'error' }, 2000)
-    }
-  }
-
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
@@ -835,6 +799,79 @@ export default function WorksGrid() {
       toastTimerRef.current = null
     }
   }, [])
+
+  // Register attachment upload/delete handlers on the module-level globals.
+  // Previously these were assigned in the render body, creating new closures on every
+  // render. The handlers only read stable refs/callbacks, so a single mount-time
+  // assignment is equivalent and avoids per-render allocation.
+  useEffect(() => {
+    onAttachmentUpload = async (rowIdx, files) => {
+      const rowData = rowsRef.current[rowIdx]
+      if (!rowData?.id) return
+      const existing = rowData.reference_files ?? []
+      const uploaded: AttachmentItem[] = []
+      const failed: string[] = []
+      for (const file of Array.from(files)) {
+        const form = new FormData()
+        form.append('file', file)
+        form.append('order_item_id', rowData.id)
+        try {
+          const res = await fetch('/api/upload', { method: 'POST', body: form })
+          if (!res.ok) {
+            const raw = await res.text()
+            let errBody = raw.slice(0, 500)
+            try {
+              const j = JSON.parse(raw) as { error?: string }
+              if (j.error) errBody = j.error.slice(0, 500)
+            } catch { /* keep raw */ }
+            if (res.status === 413) failed.push(`${file.name} (최대 4.5MB)`)
+            else {
+              const hint = errBody.length > 80 ? `${errBody.slice(0, 80)}…` : errBody
+              failed.push(hint ? `${file.name} (${res.status}: ${hint})` : `${file.name} (HTTP ${res.status})`)
+            }
+            continue
+          }
+          const item = await res.json()
+          uploaded.push({ url: item.url, name: item.name })
+        } catch { failed.push(file.name) }
+      }
+      if (failed.length > 0) {
+        showToast({ message: `${failed.length}개 파일 업로드 실패: ${failed.join(', ')}`, type: 'error' }, 3000)
+      }
+      if (uploaded.length === 0) return
+      const newFiles = [...existing, ...uploaded]
+      const previousRows = rowsRef.current
+      setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+      const res = await fetch(`/api/order-items/${rowData.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field: 'reference_files', value: newFiles }),
+      })
+      if (!res.ok) {
+        setRows(previousRows)
+        showToast({ message: '파일 저장에 실패했습니다', type: 'error' }, 2000)
+      }
+    }
+
+    onAttachmentDelete = async (rowIdx, fileIdx) => {
+      const rowData = rowsRef.current[rowIdx]
+      if (!rowData?.id) return
+      const existing = rowData.reference_files ?? []
+      const newFiles = existing.filter((_, i) => i !== fileIdx)
+      const previousRows = rowsRef.current
+      setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+      const res = await fetch(`/api/order-items/${rowData.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field: 'reference_files', value: newFiles }),
+      })
+      if (!res.ok) {
+        setRows(previousRows)
+        showToast({ message: '파일 삭제에 실패했습니다', type: 'error' }, 2000)
+      }
+    }
+  }, [showToast])
+
   const [filterCount, setFilterCount] = useState<number | null>(null)
   const [searchCount, setSearchCount] = useState<number | null>(null)
 
@@ -1154,6 +1191,14 @@ export default function WorksGrid() {
       // batch entry so multi-cell edits (e.g. drag-select + Delete) undo together.
       const batchItems: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> = []
 
+      // Coalesce per-row updates so multi-cell edits trigger a single setRows + single
+      // React re-render instead of one per changed cell.
+      const rowUpdates = new Map<number, Record<string, unknown>>()
+      const addUpdate = (idx: number, patch: Record<string, unknown>) => {
+        const existing = rowUpdates.get(idx)
+        rowUpdates.set(idx, existing ? { ...existing, ...patch } : patch)
+      }
+
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
         const rowIdx = row as number
@@ -1167,8 +1212,8 @@ export default function WorksGrid() {
           batchItems.push({ rowId: rowData.id, prop: prop as string, oldVal, newVal })
         }
 
-        // Optimistic local state update. Set skip flag so the [rows] effect
-        // doesn't trigger a full loadData — HOT already has the change via setDataAtCell.
+        // Optimistic local state update. HOT already has the change via setDataAtCell,
+        // so skipNextLoadRef avoids the full loadData on the resulting rows effect.
         if (field === '데드라인') {
           const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
           const current = rowsRef.current[rowIdx]
@@ -1178,15 +1223,9 @@ export default function WorksGrid() {
           if (shipCol >= 0) {
             hotRef.current?.setDataAtCell(rowIdx, shipCol, newShipDate, 'derived')
           }
-          skipNextLoadRef.current = true
-          setRows(prev => prev.map((r, i) =>
-            i === rowIdx ? { ...r, 데드라인: newDeadline, 출고예정일: newShipDate } : r
-          ))
+          addUpdate(rowIdx, { 데드라인: newDeadline, 출고예정일: newShipDate })
         } else {
-          skipNextLoadRef.current = true
-          setRows(prev => prev.map((r, i) =>
-            i === rowIdx ? { ...r, [prop as string]: newVal } : r
-          ))
+          addUpdate(rowIdx, { [prop as string]: newVal })
         }
 
         // Date columns: Postgres rejects '' — normalize empty/whitespace to null.
@@ -1230,6 +1269,15 @@ export default function WorksGrid() {
             showToast({ message: '수정에 실패했습니다', type: 'error' }, 2000)
           }
         })()
+      }
+
+      // Single setRows for all coalesced updates — one React commit for the whole batch.
+      if (rowUpdates.size > 0) {
+        skipNextLoadRef.current = true
+        setRows(prev => prev.map((r, i) => {
+          const patch = rowUpdates.get(i)
+          return patch ? { ...r, ...patch } : r
+        }))
       }
 
       // Commit the collected changes as a single batched undo entry.
