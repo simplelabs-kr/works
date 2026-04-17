@@ -1681,28 +1681,31 @@ export default function WorksGrid() {
 
   // ── Personal view settings (per-user persistence) ──────────────────────────
   //
-  // Seven settings are persisted in `user_view_settings` (three jsonb columns):
+  // Seven settings persist to `user_view_settings` across three jsonb cols:
   //   filters | sort | view{columnOrder, columnWidths, hiddenColumns,
   //                          frozenCount, rowHeight}
   //
-  // Restore order on mount:
-  //   1. Load all three blobs.
-  //   2. Push filters/sort into state, then call handleLoad() so the data
-  //      fetch effect reads the just-seeded refs (sync effects at lines ~1015
-  //      run before the fetch effect in the same commit, so refs are current
-  //      by the time fetchTrigger is observed).
-  //   3. Apply view to HOT (widths via manualColumnResize.setManualSize so
-  //      they stay glued to physical columns across later reorders; reorder
-  //      via manualColumnMove.moveColumns to avoid the updateSettings reinit).
+  // HOT lifecycle trap we navigate around:
+  //   `hot.loadData(rows)` (the rows effect further down) internally calls
+  //   `initIndexMappers()` which wipes *every* column plugin's state — the
+  //   column-order sequence (manualColumnMove), the widths map
+  //   (manualColumnResize), and the hidden-columns map. That means applying
+  //   the view before the first fetch lands is useless — loadData erases it
+  //   seconds later. It also means every infinite-scroll append resets the
+  //   view unless we re-apply it.
   //
-  // restoredRef gates the save effect so the batched state updates produced
-  // by the restore above do not round-trip back to the server. We flip it on
-  // a macrotask (setTimeout 0) scheduled AFTER the setState calls — that way
-  // React flushes the restore-driven commit (save effect sees restoredRef=
-  // false, bails) before the macrotask runs, and any *subsequent* user-driven
-  // change starts producing saves.
+  // Design:
+  //   - Mount restore: load all 3 blobs, mirror into React state + a
+  //     `savedViewRef`, trigger the data fetch. Do NOT touch HOT plugins here.
+  //   - A dedicated effect declared AFTER the loadData effect (same commit,
+  //     later declaration → runs later per React effect ordering rules)
+  //     re-applies the view to HOT plugins every time `rows` changes. That
+  //     catches initial load and every append.
+  //   - Save effect eagerly refreshes `savedViewRef` so subsequent re-applies
+  //     use the up-to-the-millisecond view, then debounces the server write.
   const restoredRef = useRef(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const savedViewRef = useRef<PersistedView | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -1710,114 +1713,87 @@ export default function WorksGrid() {
       const settings = await loadSettings(VIEW_PAGE_KEY)
       if (cancelled) return
 
-      // 1) filters + sort — always fire handleLoad afterward so the page
-      //    loads data with the restored selection (or the defaults, matching
-      //    the prior no-saved-settings behavior).
+      // Stash view in ref so the post-loadData effect can re-apply it
+      // even after every rows change (first fetch + infinite scroll).
+      savedViewRef.current = settings?.view ?? null
+
+      // filters + sort → state. Refs (line ~1015) re-sync in the commit
+      // triggered by these setters and fetchTrigger, so the fetch effect
+      // sees the restored filter/sort before it runs.
       if (settings?.filters && typeof settings.filters === 'object') {
         setFilterState(settings.filters as RootFilterState)
       }
       if (Array.isArray(settings?.sort)) {
-        setSortConditions(settings!.sort as SortCondition[])
+        setSortConditions(settings.sort as SortCondition[])
       }
-      handleLoad()
 
-      // 2) view — column layout + row height. Needs HOT to exist; the
-      //    init effect above ran earlier in this same mount commit, so
-      //    hotRef.current is populated here.
-      const hot = hotRef.current
-      const view = settings?.view
-      if (hot && view) {
-        // Target physical order. No. col (pi=0) pinned to visual 0.
-        // New columns added in code since the user's last save fall in at
-        // their physical position after the saved set.
-        const newOrder: number[] = [0]
-        const seen = new Set<number>([0])
-        for (const prop of view.columnOrder) {
-          const pi = PROP_TO_COL[prop]
-          if (typeof pi === 'number' && pi > 0 && !seen.has(pi)) {
-            newOrder.push(pi)
-            seen.add(pi)
-          }
-        }
+      // State-backed view fields (not plugin-backed, so safe to set now —
+      // their individual effects will sync to HOT when relevant).
+      if (settings?.view) {
+        const view = settings.view
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
-          if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
-        }
-
-        // Widths first, while visual === physical. setManualSize stores
-        // widths keyed by physical index internally, so they stay glued
-        // to their columns across the reorder that follows.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mcr = hot.getPlugin('manualColumnResize') as any
-        const widthsArr: number[] = []
+        const widthsArr = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         ;(COLUMNS as any[]).forEach((c: any, pi: number) => {
-          const savedW = typeof c?.data === 'string' && c.data
-            ? view.columnWidths[c.data]
-            : undefined
-          const w = typeof savedW === 'number' && savedW > 0 ? savedW : (c?.width ?? 100)
-          widthsArr[pi] = w
-          if (mcr && savedW != null && pi > 0) mcr.setManualSize(pi, w)
+          if (typeof c?.data === 'string' && c.data) {
+            const w = view.columnWidths[c.data]
+            if (typeof w === 'number' && w > 0) widthsArr[pi] = w
+          }
         })
         setColWidths(widthsArr)
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mcm = hot.getPlugin('manualColumnMove') as any
-        if (mcm && newOrder.length > 0) mcm.moveColumns(newOrder, 0)
-        setColumnOrderVersion(v => v + 1)
-
         setHiddenColumns(new Set(view.hiddenColumns))
         setFrozenCount(view.frozenCount)
         setRowHeight(view.rowHeight)
-        hot.render()
       }
 
-      // 3) Unblock saves on the next macrotask so the batched restore commit
-      //    runs the save effect once with restoredRef=false and no-ops.
+      // Trigger the data fetch. The post-loadData effect will apply view
+      // to HOT plugins once rows arrive.
+      handleLoad()
+
+      // Unblock saves on the next macrotask — the batched restore commit
+      // runs the save effect with restoredRef=false and no-ops.
       setTimeout(() => { restoredRef.current = true }, 0)
     })()
     return () => { cancelled = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debounced save (1s) — fires on any of the seven persisted inputs. All
-  // three jsonb blobs are captured on every save so the server row always
-  // reflects the latest client state.
+  // Debounced save (1s). Snapshots the view into `savedViewRef` immediately
+  // so that any rows change between now and the timer firing still gets the
+  // up-to-date view re-applied by the post-loadData effect. The server write
+  // is what gets debounced.
   useEffect(() => {
     if (!restoredRef.current) return
+
+    // Snapshot current state → ref, eagerly (pre-debounce).
+    const hot = hotRef.current
+    const columnOrder: string[] = []
+    const columnWidths: Record<string, number> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const total = (COLUMNS as any[]).length
+    if (hot) {
+      for (let vi = 1; vi < total; vi++) {
+        const pi = hot.toPhysicalColumn(vi)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c = (COLUMNS as any[])[pi]
+        if (c && typeof c.data === 'string' && c.data) {
+          columnOrder.push(c.data)
+          const w = colWidths[pi]
+          if (typeof w === 'number' && w > 0) columnWidths[c.data] = w
+        }
+      }
+    }
+    const view: PersistedView = {
+      columnOrder,
+      columnWidths,
+      hiddenColumns: Array.from(hiddenColumns),
+      frozenCount,
+      rowHeight,
+    }
+    savedViewRef.current = view
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
-      const hot = hotRef.current
-
-      // Column order / widths — derived from HOT's current visual order.
-      const columnOrder: string[] = []
-      const columnWidths: Record<string, number> = {}
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const total = (COLUMNS as any[]).length
-      if (hot) {
-        for (let vi = 1; vi < total; vi++) {
-          const pi = hot.toPhysicalColumn(vi)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const c = (COLUMNS as any[])[pi]
-          if (c && typeof c.data === 'string' && c.data) {
-            columnOrder.push(c.data)
-            // Prefer state-tracked widths (physical-indexed) so hidden
-            // columns still record their last known width.
-            const w = colWidths[pi]
-            if (typeof w === 'number' && w > 0) columnWidths[c.data] = w
-          }
-        }
-      }
-
-      const view: PersistedView = {
-        columnOrder,
-        columnWidths,
-        hiddenColumns: Array.from(hiddenColumns),
-        frozenCount,
-        rowHeight,
-      }
-
       saveSettings(VIEW_PAGE_KEY, {
         filters: filterState,
         sort: sortConditions,
@@ -1870,6 +1846,11 @@ export default function WorksGrid() {
 
   // Hidden columns change → sync with HOT's HiddenColumns plugin.
   // Diff-style: show everything currently hidden, then hide the target set.
+  //
+  // hideColumns/showColumns take *visual* indices (HOT source:
+  // plugins/hiddenColumns/hiddenColumns.js:304, .318). PROP_TO_COL yields a
+  // physical index, so we must convert via toVisualColumn — otherwise after
+  // any manualColumnMove reorder the wrong columns get hidden.
   useEffect(() => {
     const hot = hotRef.current
     if (!hot) return
@@ -1878,12 +1859,15 @@ export default function WorksGrid() {
     if (!plugin) return
     const prevHidden: number[] = plugin.getHiddenColumns?.() ?? []
     if (prevHidden.length > 0) plugin.showColumns(prevHidden)
-    const targetIdx: number[] = []
+    const targetVisual: number[] = []
     hiddenColumns.forEach(prop => {
       const pi = PROP_TO_COL[prop]
-      if (typeof pi === 'number') targetIdx.push(pi)
+      if (typeof pi === 'number') {
+        const vi = hot.toVisualColumn(pi)
+        if (vi >= 0) targetVisual.push(vi)
+      }
     })
-    if (targetIdx.length > 0) plugin.hideColumns(targetIdx)
+    if (targetVisual.length > 0) plugin.hideColumns(targetVisual)
     hot.render()
   }, [hiddenColumns])
 
@@ -2069,6 +2053,84 @@ export default function WorksGrid() {
     }
     hotRef.current.loadData(rows)
     if (rows.length > 0) hotRef.current.refreshDimensions()
+  }, [rows])
+
+  // Post-loadData view re-apply. Must be declared AFTER the loadData effect
+  // above so React runs it later in the same commit — that's the point where
+  // HOT's column plugins have just been reset to identity by initIndexMappers
+  // and we can cleanly re-attach widths / order / hidden / freeze.
+  //
+  // Applied every time `rows` changes (initial load, filter/sort reload,
+  // infinite scroll append) because each of those paths hits loadData. Cheap
+  // on large datasets — the work is O(columns).
+  useEffect(() => {
+    const hot = hotRef.current
+    if (!hot) return
+    const view = savedViewRef.current
+    if (!view) return
+
+    // 1) Widths — before any move so visual === physical and we can pass
+    //    physical indices to setManualSize (which treats its arg as visual
+    //    and internally converts; identity mapping here makes that safe).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mcr = hot.getPlugin('manualColumnResize') as any
+    if (mcr) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(COLUMNS as any[]).forEach((c: any, pi: number) => {
+        if (pi === 0) return
+        const savedW = typeof c?.data === 'string' && c.data
+          ? view.columnWidths[c.data]
+          : undefined
+        if (typeof savedW === 'number' && savedW > 0) {
+          mcr.setManualSize(pi, savedW)
+        }
+      })
+    }
+
+    // 2) Column order. No. col pinned at visual 0; new (unsaved) columns
+    //    fall in after the saved set so a schema addition doesn't lose data.
+    const newOrder: number[] = [0]
+    const seen = new Set<number>([0])
+    for (const prop of view.columnOrder) {
+      const pi = PROP_TO_COL[prop]
+      if (typeof pi === 'number' && pi > 0 && !seen.has(pi)) {
+        newOrder.push(pi); seen.add(pi)
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
+      if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mcm = hot.getPlugin('manualColumnMove') as any
+    if (mcm && newOrder.length > 0) mcm.moveColumns(newOrder, 0)
+
+    // 3) Hidden columns — after the move so toVisualColumn reflects the
+    //    new mapping. hideColumns takes *visual* indices
+    //    (handsontable/plugins/hiddenColumns/hiddenColumns.js:304, .318).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hiddenPlugin = hot.getPlugin('hiddenColumns') as any
+    if (hiddenPlugin) {
+      const prevHidden: number[] = hiddenPlugin.getHiddenColumns?.() ?? []
+      if (prevHidden.length > 0) hiddenPlugin.showColumns(prevHidden)
+      const targetVisual: number[] = []
+      for (const prop of view.hiddenColumns) {
+        const pi = PROP_TO_COL[prop]
+        if (typeof pi === 'number') {
+          const vi = hot.toVisualColumn(pi)
+          if (vi >= 0) targetVisual.push(vi)
+        }
+      }
+      if (targetVisual.length > 0) hiddenPlugin.hideColumns(targetVisual)
+    }
+
+    // 4) Freeze.
+    const currentFrozen = (hot.getSettings().fixedColumnsStart as number) ?? 0
+    if (currentFrozen !== view.frozenCount) {
+      hot.updateSettings({ fixedColumnsStart: view.frozenCount })
+    }
+
+    hot.render()
   }, [rows])
 
   // Custom Cmd+Z / Cmd+Shift+Z undo/redo.
