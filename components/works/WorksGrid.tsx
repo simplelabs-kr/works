@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Handsontable from 'handsontable'
 import 'handsontable/dist/handsontable.full.min.css'
 import { supabase } from '@/lib/supabase/client'
@@ -31,6 +31,22 @@ const ROW_HEIGHT_LABEL: Record<RowHeight, string> = {
   'medium': 'Medium',
   'tall': 'Tall',
   'extra-tall': 'Extra Tall',
+}
+// Image thumbnail size per row height. Applies to every `fieldType: 'image'`
+// column via the shared --grid-thumb-size CSS var (globals.css .image-thumb).
+const ROW_THUMB_PX: Record<RowHeight, number> = {
+  'short': 24,
+  'medium': 36,
+  'tall': 52,
+  'extra-tall': 80,
+}
+// Supabase Storage image transform width — chosen ≈ 2× thumb px for retina,
+// capped at sensible values to keep payloads small on Short/Medium.
+const ROW_THUMB_URL_W: Record<RowHeight, number> = {
+  'short': 48,
+  'medium': 72,
+  'tall': 104,
+  'extra-tall': 160,
 }
 
 type ImageItem = { url: string; name: string }
@@ -274,6 +290,11 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
 
 // ── Image gallery callback (set by WorksGrid component) ──────────────────────
 let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
+// Current Supabase ?width= param used by imageRenderer. Updated from the
+// rowHeight effect so thumbnails fetch at an appropriate resolution per size.
+// Defaults to the Short-row value so initial renders (before first effect
+// flush) already get a sensible size.
+let imageThumbUrlWidth: number = 48
 let checkedRowsRefGlobal: React.MutableRefObject<Set<string>> | null = null
 let lastCheckedRowRefGlobal: React.MutableRefObject<number | null> | null = null
 let setSelectedRowIdsGlobal: React.Dispatch<React.SetStateAction<Set<string>>> | null = null
@@ -296,7 +317,7 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
     const img = document.createElement('img')
     img.className = 'image-thumb'
     img.src = item.url.includes('supabase.co/storage')
-      ? item.url + '?width=48&quality=70'
+      ? item.url + `?width=${imageThumbUrlWidth}&quality=70`
       : item.url
     img.onclick = (e) => {
       if (!td.classList.contains('current')) return
@@ -879,7 +900,18 @@ export default function WorksGrid() {
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set())
-  const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set())
+  // Number of leftmost visual columns currently frozen. We drive
+  // HOT's `fixedColumnsStart` option ourselves (Airtable-style "freeze up to
+  // here" — always freezes columns 1..N). Tracked via state so handleResetView
+  // and future Phase 2 persistence can read/write a single value.
+  const [frozenCount, setFrozenCount] = useState(0)
+  // Mirror of frozenCount for the contextMenu callbacks, which close over
+  // stale values at HOT-init time. Updated on every state change below.
+  const frozenCountRef = useRef(0)
+  // Bumped whenever HOT's visual column order changes (header drag, modal
+  // drag reorder, or programmatic manualColumnMove). Used as a useMemo dep
+  // so `managedColumns` reflects the current visual order in the dropdown.
+  const [columnOrderVersion, setColumnOrderVersion] = useState(0)
   const [showColumnManager, setShowColumnManager] = useState(false)
   const [showRowHeightMenu, setShowRowHeightMenu] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
@@ -887,6 +919,10 @@ export default function WorksGrid() {
   const columnManagerRef = useRef<HTMLDivElement>(null)
   const rowHeightMenuRef = useRef<HTMLDivElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
+  // Mirror of rowHeight in px for the modifyRowHeight HOT hook.
+  // The hook closure at init time would otherwise capture the initial value forever;
+  // reading from a ref keeps HOT's internal row-height computation in sync with state.
+  const rowHeightPxRef = useRef<number>(ROW_HEIGHT_PX.short)
   const filterStateRef = useRef<RootFilterState>({ logic: 'AND', conditions: [] })
   const sortConditionsRef = useRef<SortCondition[]>([])
 
@@ -1074,7 +1110,10 @@ export default function WorksGrid() {
       autoColumnSize: false,
       manualColumnResize: true,
       manualColumnMove: true,
-      manualColumnFreeze: true,
+      // manualColumnFreeze plugin intentionally disabled — it freezes a single
+      // column by moving it to the front, which fights our "freeze from first
+      // to selected column" (Airtable/Excel) UX. We drive fixedColumnsStart
+      // directly via updateSettings in response to contextMenu actions.
       // HiddenColumns plugin — driven via updateSettings in the effect below.
       // indicators:false keeps the header visually stable; our own "컬럼 관리" dropdown is the UX.
       hiddenColumns: { columns: [], indicators: false },
@@ -1089,7 +1128,47 @@ export default function WorksGrid() {
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
-      contextMenu: ['freeze_column', 'unfreeze_column'],
+      // Custom context menu: Airtable-style freeze semantics.
+      // - "여기까지 고정": set fixedColumnsStart = clickedVisualCol + 1
+      //   (freezes columns 1..N, where N is the clicked column, 1-indexed).
+      // - "고정 해제": clear all frozen columns.
+      // Callbacks use frozenCountRef to avoid stale closures from init-time.
+      contextMenu: {
+        items: {
+          'freeze_up_to_here': {
+            name() { return '여기까지 고정' },
+            disabled() {
+              const hot = hotRef.current
+              if (!hot) return true
+              const sel = hot.getSelectedLast()
+              if (!sel) return true
+              const col = sel[1]
+              if (typeof col !== 'number' || col < 0) return true
+              // Already the last frozen column — freezing again is a no-op.
+              return col + 1 === frozenCountRef.current
+            },
+            callback: (_key: string, selection: Array<{ start: { col: number } }>) => {
+              const col = selection?.[0]?.start?.col
+              if (typeof col !== 'number' || col < 0) return
+              const hot = hotRef.current
+              if (!hot) return
+              const n = col + 1
+              hot.updateSettings({ fixedColumnsStart: n })
+              setFrozenCount(n)
+            },
+          },
+          'unfreeze_all': {
+            name() { return '고정 해제' },
+            disabled() { return frozenCountRef.current === 0 },
+            callback: () => {
+              const hot = hotRef.current
+              if (!hot) return
+              hot.updateSettings({ fixedColumnsStart: 0 })
+              setFrozenCount(0)
+            },
+          },
+        },
+      },
       // Disable HOT native UndoRedo plugin — we implement a custom stack that
       // survives loadData resets and syncs DB. With the skipNextLoadRef
       // optimization HOT's internal stack is no longer reset per edit, so its
@@ -1115,6 +1194,10 @@ export default function WorksGrid() {
         const capped = Math.min(masterEl.scrollLeft, maxScroll)
         masterEl.scrollLeft = capped
         topEl.scrollLeft = capped
+        // Toggle class driving the frozen-columns right-edge shadow so it
+        // only appears while horizontally scrolled.
+        const rootEl = hotRef.current?.rootElement as HTMLElement | undefined
+        if (rootEl) rootEl.classList.toggle('is-scrolled-x', capped > 0)
         if (summaryInnerRef.current) {
           summaryInnerRef.current.style.transform = `translateX(-${capped}px)`
         }
@@ -1396,6 +1479,13 @@ export default function WorksGrid() {
       const rect = td.getBoundingClientRect()
       setSelectMenu({ top: rect.bottom + 4, left: rect.left, row: coords.row, width: Math.max(rect.width, 120), column, options })
     })
+    // Row height override — single source of truth for HOT's internal
+    // row-height math (viewport, virtualization, scroll). Reads from a ref so
+    // updates to the rowHeight state take effect on the next render without
+    // needing to re-register the hook.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('modifyRowHeight' as any, (_h: number, _row: number) => rowHeightPxRef.current)
+
     // Column resize → sync summary bar widths
     hotRef.current.addHook('afterColumnResize', (newSize: number, column: number) => {
       setColWidths(prev => {
@@ -1404,26 +1494,40 @@ export default function WorksGrid() {
         return next
       })
     })
-    // Column freeze/unfreeze (via context menu or programmatic) → recompute frozen set.
-    // fixedColumnsStart is the authoritative count; we derive which data props are
-    // currently frozen from the first N visual columns.
-    const syncFrozenSet = () => {
-      const hot = hotRef.current
-      if (!hot) return
-      const count = (hot.getSettings().fixedColumnsStart as number) ?? 0
-      const set = new Set<string>()
-      for (let vi = 0; vi < count; vi++) {
-        const pi = hot.toPhysicalColumn(vi)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const prop = (COLUMNS as any[])[pi]?.data
-        if (typeof prop === 'string' && prop) set.add(prop)
+    // Column move (header drag OR modal drag OR programmatic) → bump version
+    // so `managedColumns` recomputes with the current visual order. Also
+    // adjust frozenCount: if the moved column crossed the freeze boundary
+    // we grow or shrink the frozen region so the "first N visual columns"
+    // invariant is preserved.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterColumnMove' as any, (
+      movedColumns: number[],
+      finalIndex: number,
+      _dropIndex: number | undefined,
+      movePossible: boolean,
+      orderChanged: boolean,
+    ) => {
+      setColumnOrderVersion(v => v + 1)
+      if (!movePossible || !orderChanged) return
+      if (!movedColumns || movedColumns.length !== 1) return
+      const oldIdx = movedColumns[0]
+      const newIdx = finalIndex
+      const cur = frozenCountRef.current
+      const wasFrozen = oldIdx < cur
+      const isFrozen = newIdx < cur
+      if (wasFrozen && !isFrozen) {
+        const n = Math.max(0, cur - 1)
+        setFrozenCount(n)
+        hotRef.current?.updateSettings({ fixedColumnsStart: n })
+      } else if (!wasFrozen && isFrozen) {
+        const n = cur + 1
+        setFrozenCount(n)
+        hotRef.current?.updateSettings({ fixedColumnsStart: n })
       }
-      setFrozenColumns(set)
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hotRef.current.addHook('afterColumnFreeze' as any, syncFrozenSet)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    hotRef.current.addHook('afterColumnUnfreeze' as any, syncFrozenSet)
+    })
+    // Freeze is now driven entirely by our contextMenu callbacks →
+    // setFrozenCount → the dedicated useEffect that syncs fixedColumnsStart.
+    // No hook plumbing required here because we dropped manualColumnFreeze.
     // Selection → update selectedRowIndices for summary bar
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
       if (r1 < 0) { setSelectedRowIndices(null); return }
@@ -1463,16 +1567,40 @@ export default function WorksGrid() {
     }
   }, [])
 
-  // Row height change → update CSS var AND HOT rowHeights option in lockstep.
-  // CSS alone is not enough: HOT uses rowHeights for scroll/virtualization math.
+  // Row height change → update CSS var, ref (drives modifyRowHeight hook),
+  // and force HOT to recompute viewport dimensions.
+  // updateSettings({ rowHeights }) alone doesn't bust Walkontable's measured
+  // row-height cache, which causes stale scroll math and clipped rows.
+  // modifyRowHeight (registered at init) is the authoritative override; we
+  // just need to update the ref + refreshDimensions + render.
   useEffect(() => {
     const px = ROW_HEIGHT_PX[rowHeight]
+    const thumbPx = ROW_THUMB_PX[rowHeight]
+    rowHeightPxRef.current = px
+    imageThumbUrlWidth = ROW_THUMB_URL_W[rowHeight]
     document.documentElement.style.setProperty('--grid-row-h', `${px}px`)
+    document.documentElement.style.setProperty('--grid-thumb-size', `${thumbPx}px`)
     const hot = hotRef.current
     if (!hot) return
-    hot.updateSettings({ rowHeights: px })
+    hot.refreshDimensions()
+    // render() re-invokes every cell renderer, so image cells fetch the new
+    // Supabase ?width= URL for the updated thumb size.
     hot.render()
   }, [rowHeight])
+
+  // Frozen count → HOT fixedColumnsStart. Single source of truth for the
+  // "freeze from column 1 to N" behavior. Keep the ref in lockstep so the
+  // contextMenu callbacks (which closed over values at init time) see the
+  // current count in their disabled()/callback() lookups.
+  useEffect(() => {
+    frozenCountRef.current = frozenCount
+    const hot = hotRef.current
+    if (!hot) return
+    const current = (hot.getSettings().fixedColumnsStart as number) ?? 0
+    if (current !== frozenCount) {
+      hot.updateSettings({ fixedColumnsStart: frozenCount })
+    }
+  }, [frozenCount])
 
   // Hidden columns change → sync with HOT's HiddenColumns plugin.
   // Diff-style: show everything currently hidden, then hide the target set.
@@ -1531,24 +1659,40 @@ export default function WorksGrid() {
     })
   }, [])
 
-  // Column freeze toggle. Uses the manualColumnFreeze plugin; afterColumnFreeze/Unfreeze
-  // hooks recompute frozenColumns via syncFrozenSet.
-  const handleToggleFrozen = useCallback((prop: string) => {
+  // Show all columns.
+  const handleShowAll = useCallback(() => {
+    setHiddenColumns(new Set())
+  }, [])
+
+  // Hide all columns (except the No. column, which is never in managedColumns).
+  const handleHideAll = useCallback(() => {
+    const all = new Set<string>()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(COLUMNS as any[]).forEach((c: any, i: number) => {
+      if (i > 0 && typeof c.data === 'string' && c.data) all.add(c.data)
+    })
+    setHiddenColumns(all)
+  }, [])
+
+  // Drag reorder from the column manager modal. Uses HOT's manualColumnMove
+  // plugin. moveColumn(from, to) moves the column at visual index `from` so
+  // it lands at visual index `to` in the final order. afterColumnMove hook
+  // bumps columnOrderVersion → managedColumns recomputes.
+  const handleReorderColumn = useCallback((fromProp: string, toProp: string) => {
     const hot = hotRef.current
     if (!hot) return
-    const pi = PROP_TO_COL[prop]
-    if (typeof pi !== 'number') return
+    const fromPi = PROP_TO_COL[fromProp]
+    const toPi = PROP_TO_COL[toProp]
+    if (typeof fromPi !== 'number' || typeof toPi !== 'number') return
+    const fromVi = hot.toVisualColumn(fromPi)
+    const toVi = hot.toVisualColumn(toPi)
+    if (fromVi < 0 || toVi < 0) return
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const plugin = hot.getPlugin('manualColumnFreeze') as any
+    const plugin = hot.getPlugin('manualColumnMove') as any
     if (!plugin) return
-    if (frozenColumns.has(prop)) {
-      // For unfreeze, the plugin wants the visual column index of the frozen column
-      const vi = hot.toVisualColumn(pi)
-      plugin.unfreezeColumn(vi)
-    } else {
-      plugin.freezeColumn(pi)
-    }
-  }, [frozenColumns])
+    plugin.moveColumn(fromVi, toVi)
+    hot.render()
+  }, [])
 
   // Reset view — restores column widths, unhides everything, unfreezes everything,
   // and returns rowHeight to Short. Does NOT reset column order (Phase 2).
@@ -1561,22 +1705,12 @@ export default function WorksGrid() {
     if (prevHidden.length > 0) hiddenPlugin.showColumns(prevHidden)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const freezePlugin = hot.getPlugin('manualColumnFreeze') as any
-    let curFixed = (hot.getSettings().fixedColumnsStart as number) ?? 0
-    while (curFixed > 0) {
-      freezePlugin?.unfreezeColumn(0)
-      const next = (hot.getSettings().fixedColumnsStart as number) ?? 0
-      if (next >= curFixed) break // safety — avoid infinite loop if plugin no-ops
-      curFixed = next
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const defaultWidths = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
-    hot.updateSettings({ colWidths: defaultWidths })
+    hot.updateSettings({ colWidths: defaultWidths, fixedColumnsStart: 0 })
     setColWidths(defaultWidths)
 
     setHiddenColumns(new Set())
-    setFrozenColumns(new Set())
+    setFrozenCount(0)
     setRowHeight('short')
     setShowColumnManager(false)
     hot.render()
@@ -1638,12 +1772,25 @@ export default function WorksGrid() {
     setShowExportMenu(false)
   }, [hiddenColumns, selectedRowIds, showToast])
 
-  // Manageable columns (for the column manager dropdown) — excludes the No. column.
-  const managedColumns: ManagedColumn[] = (COLUMNS as unknown as Array<{ data: unknown; title: unknown }>)
-    .filter((c, i): c is { data: string; title: string } =>
-      i > 0 && typeof c.data === 'string' && !!c.data && typeof c.title === 'string',
-    )
-    .map(c => ({ data: c.data, title: c.title }))
+  // Manageable columns (for the column manager dropdown) — in HOT's current
+  // visual order (so reorders from either the header drag or the modal drag
+  // are reflected). Excludes the No. column. Depends on columnOrderVersion so
+  // reorders trigger recomputation.
+  const managedColumns: ManagedColumn[] = useMemo(() => {
+    const hot = hotRef.current
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const total = (COLUMNS as any[]).length
+    const result: ManagedColumn[] = []
+    for (let vi = 1; vi < total; vi++) {
+      const pi = hot ? hot.toPhysicalColumn(vi) : vi
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const c = (COLUMNS as any[])[pi]
+      if (c && typeof c.data === 'string' && c.data && typeof c.title === 'string') {
+        result.push({ data: c.data, title: c.title })
+      }
+    }
+    return result
+  }, [columnOrderVersion])
 
   // Update grid data
   useEffect(() => {
@@ -1906,7 +2053,7 @@ export default function WorksGrid() {
             {ROW_HEIGHT_LABEL[rowHeight]}
           </button>
           {showRowHeightMenu && (
-            <div className="absolute right-0 top-[34px] z-50 w-[140px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+            <div className="absolute right-0 top-[34px] z-[1000] w-[140px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
               {(['short', 'medium', 'tall', 'extra-tall'] as const).map(h => (
                 <button
                   key={h}
@@ -1932,17 +2079,18 @@ export default function WorksGrid() {
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2h10v10H2z M5.5 2v10 M8.5 2v10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             컬럼
-            {(hiddenColumns.size > 0 || frozenColumns.size > 0) && (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{hiddenColumns.size + frozenColumns.size}</span>
+            {hiddenColumns.size > 0 && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{hiddenColumns.size}</span>
             )}
           </button>
           {showColumnManager && (
             <ColumnManagerDropdown
               columns={managedColumns}
               hiddenColumns={hiddenColumns}
-              frozenColumns={frozenColumns}
               onToggleHidden={handleToggleHidden}
-              onToggleFrozen={handleToggleFrozen}
+              onShowAll={handleShowAll}
+              onHideAll={handleHideAll}
+              onReorder={handleReorderColumn}
               onResetView={handleResetView}
               onClose={() => setShowColumnManager(false)}
             />
@@ -1961,7 +2109,7 @@ export default function WorksGrid() {
             내보내기
           </button>
           {showExportMenu && (
-            <div className="absolute right-0 top-[34px] z-50 w-[160px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+            <div className="absolute right-0 top-[34px] z-[1000] w-[160px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
               <button
                 type="button"
                 onClick={() => { handleExportCSV(false); setShowExportMenu(false) }}

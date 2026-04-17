@@ -26,10 +26,16 @@ body {
   --works-row-focus: #ecf2f9;
   --works-range: #e2ebf6;
   --works-focus-ring: #2d7ff9;
-  /* Dynamic row height — updated by WorksGrid when user picks Short/Medium/Tall/Extra Tall.
-     Default 32px matches the original static sizing. All renderer heights must use
-     100% or this var; never hardcode row-height values inline on td. */
+}
+
+/* Dynamic row height / thumbnail size — declared on :root ONLY so WorksGrid's
+   inline override on documentElement cascades into the grid. Do NOT re-declare
+   on .handsontable; that would shadow the override for td/tr descendants and
+   cause HOT's row math (from modifyRowHeight) to diverge from rendered CSS
+   height. Defaults match Short row size (32px row / 24px thumb). */
+:root {
   --grid-row-h: 32px;
+  --grid-thumb-size: 24px;
 }
 
 .handsontable thead th {
@@ -96,9 +102,32 @@ body {
   background-color: var(--works-row-focus) !important;
 }
 
-.handsontable tr {
+/* Scope to tbody only — thead rows keep their fixed 33px header height
+   (see .handsontable thead th above). Without this scoping, the header
+   would stretch with --grid-row-h when the user picks Tall/Extra Tall. */
+.handsontable tbody tr {
   height: var(--grid-row-h) !important;
   max-height: var(--grid-row-h) !important;
+}
+
+/* ── Frozen columns (inline_start clone) ─────────────────────────
+   HOT renders frozen columns in separate clone tables. Give them a
+   subtle tint + shadow on the right edge so the user can see the
+   boundary between the frozen and scrollable regions. */
+.handsontable .ht_clone_inline_start thead th,
+.handsontable .ht_clone_top_inline_start_corner thead th {
+  background: #f1f5fb !important;
+}
+.handsontable .ht_clone_inline_start,
+.handsontable .ht_clone_top_inline_start_corner {
+  /* Keep above master table body so the shadow renders over cell backgrounds. */
+  z-index: 102;
+}
+/* Only show the right-edge shadow when horizontally scrolled. The
+   is-scrolled-x class is toggled by the master scroll handler. */
+.handsontable.is-scrolled-x .ht_clone_inline_start,
+.handsontable.is-scrolled-x .ht_clone_top_inline_start_corner {
+  box-shadow: 2px 0 4px rgba(15, 23, 42, 0.06);
 }
 
 /* dropdown 옵션 텍스트 크기 */
@@ -280,21 +309,16 @@ body {
   bottom: -16px;
 }
 
-/* 기본 썸네일 크기 */
+/* 썸네일 크기 — row height에 비례 (WorksGrid가 --grid-thumb-size 갱신).
+   선택 상태에서도 동일 크기; 선택은 팝아웃 카드(border/shadow/확장)로 구분. */
 .image-popout-wrapper img.image-thumb {
-  width: 24px;
-  height: 24px;
+  width: var(--grid-thumb-size);
+  height: var(--grid-thumb-size);
   object-fit: cover;
   border-radius: 3px;
   border: 1px solid #CBD5E1;
   flex-shrink: 0;
   cursor: default;
-}
-
-/* 선택 시 썸네일 확대 */
-.handsontable td.current .image-popout-wrapper img.image-thumb {
-  width: 34px;
-  height: 34px;
 }
 
 /* 선택 상태에서만 hover 효과 */
