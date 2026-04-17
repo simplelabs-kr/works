@@ -15,6 +15,11 @@ import ImageModal from '@/components/works/ImageModal'
 import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
+import { loadView, saveView, type PersistedView } from '@/lib/works/viewSettings'
+
+// page_key stored in user_view_settings. Other grids (products, bundles, …)
+// will pick their own page_key when they come online.
+const VIEW_PAGE_KEY = 'works'
 
 // Row height presets. Values are the actual row px height used for both the CSS
 // var (--grid-row-h) and HOT's rowHeights option. Keeping them in lockstep is
@@ -1668,6 +1673,123 @@ export default function WorksGrid() {
       hotRef.current = null
     }
   }, [])
+
+  // ── Personal view settings (per-user persistence) ──────────────────────────
+  //
+  // viewRestoredRef gates the save effect so it can't fire until the initial
+  // restore completes — otherwise a user with a saved view would briefly mount
+  // with default state, schedule a save, and overwrite the server copy before
+  // the fetched view is applied.
+  //
+  // Restore runs after HOT init (declared above, same mount commit, same
+  // dep `[]`), so hotRef.current is guaranteed populated when we apply
+  // manualColumnMove / colWidths via updateSettings.
+  const viewRestoredRef = useRef(false)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const view = await loadView(VIEW_PAGE_KEY)
+      if (cancelled) return
+      const hot = hotRef.current
+      if (hot && view) {
+        // Column order: map each saved prop to its physical index. Append any
+        // physical columns missing from the saved list (columns added in code
+        // after the user's last save) so the grid stays consistent with
+        // COLUMNS. No. column (physical 0) is always pinned to visual 0.
+        const newOrder: number[] = [0]
+        const seen = new Set<number>([0])
+        for (const prop of view.columnOrder) {
+          const pi = PROP_TO_COL[prop]
+          if (typeof pi === 'number' && pi > 0 && !seen.has(pi)) {
+            newOrder.push(pi)
+            seen.add(pi)
+          }
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
+          if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
+        }
+
+        // Column widths: build a physical-indexed array. Saved map is keyed
+        // by data prop; missing entries fall back to the column's default.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const widthsArr = (COLUMNS as any[]).map((c: any) => {
+          if (typeof c.data === 'string' && c.data && typeof view.columnWidths[c.data] === 'number') {
+            return view.columnWidths[c.data]
+          }
+          return c.width ?? 100
+        })
+
+        hot.updateSettings({
+          manualColumnMove: newOrder,
+          colWidths: widthsArr,
+        })
+        setColWidths(widthsArr)
+        // updateSettings({ manualColumnMove }) doesn't always fire
+        // afterColumnMove, so bump the version explicitly to keep
+        // managedColumns in sync with the restored order.
+        setColumnOrderVersion(v => v + 1)
+
+        // State-driven restores — the existing effects for hiddenColumns,
+        // frozenCount, and rowHeight push these into HOT.
+        setHiddenColumns(new Set(view.hiddenColumns))
+        setFrozenCount(view.frozenCount)
+        setRowHeight(view.rowHeight)
+        hot.render()
+      }
+      // Always unblock saves — a user with no saved row still needs their
+      // first customization to persist.
+      viewRestoredRef.current = true
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Debounced save: 1s after the last relevant state change, capture the
+  // current view and POST it. Gated by viewRestoredRef so initial mount /
+  // restore doesn't trigger a write. Failures are silent inside saveView.
+  useEffect(() => {
+    if (!viewRestoredRef.current) return
+    const hot = hotRef.current
+    if (!hot) return
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null
+      const columnOrder: string[] = []
+      const columnWidths: Record<string, number> = {}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const total = (COLUMNS as any[]).length
+      for (let vi = 1; vi < total; vi++) {
+        const pi = hot.toPhysicalColumn(vi)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const c = (COLUMNS as any[])[pi]
+        if (c && typeof c.data === 'string' && c.data) {
+          columnOrder.push(c.data)
+          // Prefer the state-tracked width (physical-indexed) so hidden
+          // columns still record their last known width.
+          const w = colWidths[pi]
+          if (typeof w === 'number' && w > 0) columnWidths[c.data] = w
+        }
+      }
+      const view: PersistedView = {
+        columnOrder,
+        columnWidths,
+        hiddenColumns: Array.from(hiddenColumns),
+        frozenCount,
+        rowHeight,
+      }
+      saveView(VIEW_PAGE_KEY, view)
+    }, 1000)
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+    }
+  }, [rowHeight, hiddenColumns, frozenCount, colWidths, columnOrderVersion])
 
   // Row height change → update CSS var, ref (drives modifyRowHeight hook),
   // and force HOT to recompute viewport dimensions.
