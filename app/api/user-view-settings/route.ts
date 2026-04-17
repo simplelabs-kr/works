@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
 
   // PGRST116 = no rows found — treat as empty, not an error
   if (error && error.code !== 'PGRST116') {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[user-view-settings GET] supabase error:', error.message)
+    return NextResponse.json({ error: '설정 조회에 실패했습니다' }, { status: 500 })
   }
 
   return NextResponse.json({ data: data ?? null })
@@ -42,6 +43,9 @@ export async function POST(req: NextRequest) {
       { onConflict: 'user_key,page_key' }
     )
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[user-view-settings POST] supabase error:', error.message)
+    return NextResponse.json({ error: '설정 저장에 실패했습니다' }, { status: 500 })
+  }
   return NextResponse.json({ success: true })
 }

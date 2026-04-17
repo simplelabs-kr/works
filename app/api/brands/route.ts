@@ -7,6 +7,9 @@ export async function GET() {
     .select("id, name")
     .order("name");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[brands] supabase error:', error.message);
+    return NextResponse.json({ error: '브랜드 목록 조회에 실패했습니다' }, { status: 500 });
+  }
   return NextResponse.json({ data: data ?? [] });
 }

@@ -550,6 +550,18 @@ function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _c
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const COL_HEADERS: string[] = (COLUMNS as any[]).map((c) => c.title ?? '')
 
+// Prop → column index cache. COLUMNS is static, so this never needs to update.
+// HOT의 propToCol()이 편집 hot path(afterChange, undo/redo replay)에서
+// 반복 호출되며 매번 문자열 탐색을 하기 때문에 Map으로 대체.
+const PROP_TO_COL: Record<string, number> = (() => {
+  const m: Record<string, number> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ;(COLUMNS as any[]).forEach((c, i) => {
+    if (typeof c.data === 'string' && c.data) m[c.data] = i
+  })
+  return m
+})()
+
 // ── Workday helpers ──────────────────────────────────────────────────────────
 
 // holidaySet은 React state로 관리 (컴포넌트 내부)
@@ -706,13 +718,26 @@ export default function WorksGrid() {
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
   const [galleryImages, setGalleryImages] = useState<ImageItem[] | null>(null)
   const [galleryStartIdx, setGalleryStartIdx] = useState(0)
-  onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
 
-  // Global refs for renderer access
-  checkedRowsRefGlobal = checkedRowsRef
-  lastCheckedRowRefGlobal = lastCheckedRowRef
-  setSelectedRowIdsGlobal = setSelectedRowIds
-  hotRefGlobal = hotRef
+  // Register module-level globals used by HOT cell renderers (they can't access React closures).
+  // On unmount, null them out so stale references from a previous mount don't leak
+  // into a subsequent one (StrictMode, route re-entry).
+  useEffect(() => {
+    onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
+    checkedRowsRefGlobal = checkedRowsRef
+    lastCheckedRowRefGlobal = lastCheckedRowRef
+    setSelectedRowIdsGlobal = setSelectedRowIds
+    hotRefGlobal = hotRef
+    return () => {
+      onImageGallery = null
+      onAttachmentUpload = null
+      onAttachmentDelete = null
+      checkedRowsRefGlobal = null
+      lastCheckedRowRefGlobal = null
+      setSelectedRowIdsGlobal = null
+      hotRefGlobal = null
+    }
+  }, [])
 
   // Attachment upload handler
   onAttachmentUpload = async (rowIdx, files) => {
@@ -728,15 +753,12 @@ export default function WorksGrid() {
       try {
         const res = await fetch('/api/upload', { method: 'POST', body: form })
         if (!res.ok) {
-          // #region agent log
           const raw = await res.text()
           let errBody = raw.slice(0, 500)
           try {
             const j = JSON.parse(raw) as { error?: string }
             if (j.error) errBody = j.error.slice(0, 500)
           } catch { /* keep raw */ }
-          fetch('http://127.0.0.1:7939/ingest/002c7475-2e2c-40b8-8f0f-3a6ab2ed0703',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ffe531'},body:JSON.stringify({sessionId:'ffe531',hypothesisId:'H-client',location:'WorksGrid.tsx:onAttachmentUpload',message:'upload fetch not ok',data:{status:res.status,name:file.name,type:file.type||'(empty)',size:file.size,errBody},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
           if (res.status === 413) failed.push(`${file.name} (최대 4.5MB)`)
           else {
             const hint = errBody.length > 80 ? `${errBody.slice(0, 80)}…` : errBody
@@ -749,8 +771,7 @@ export default function WorksGrid() {
       } catch { failed.push(file.name) }
     }
     if (failed.length > 0) {
-      setToast({ message: `${failed.length}개 파일 업로드 실패: ${failed.join(', ')}`, type: 'error' })
-      setTimeout(() => setToast(null), 3000)
+      showToast({ message: `${failed.length}개 파일 업로드 실패: ${failed.join(', ')}`, type: 'error' }, 3000)
     }
     if (uploaded.length === 0) return
     const newFiles = [...existing, ...uploaded]
@@ -763,8 +784,7 @@ export default function WorksGrid() {
     })
     if (!res.ok) {
       setRows(previousRows)
-      setToast({ message: '파일 저장에 실패했습니다', type: 'error' })
-      setTimeout(() => setToast(null), 2000)
+      showToast({ message: '파일 저장에 실패했습니다', type: 'error' }, 2000)
     }
   }
 
@@ -783,8 +803,7 @@ export default function WorksGrid() {
     })
     if (!res.ok) {
       setRows(previousRows)
-      setToast({ message: '파일 삭제에 실패했습니다', type: 'error' })
-      setTimeout(() => setToast(null), 2000)
+      showToast({ message: '파일 삭제에 실패했습니다', type: 'error' }, 2000)
     }
   }
 
@@ -794,6 +813,28 @@ export default function WorksGrid() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error'; undoAction?: () => void } | null>(null)
+  // 토스트 auto-dismiss 타이머. 새 토스트가 뜨면 이전 타이머를 cancel하여
+  // 다중 토스트가 서로의 dismiss 타이밍에 간섭하지 않도록 한다. Unmount 시 cleanup.
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const showToast = useCallback((t: { message: string; type: 'success' | 'error'; undoAction?: () => void } | null, autoDismissMs?: number) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+    setToast(t)
+    if (t && autoDismissMs != null) {
+      toastTimerRef.current = setTimeout(() => {
+        setToast(null)
+        toastTimerRef.current = null
+      }, autoDismissMs)
+    }
+  }, [])
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+  }, [])
   const [filterCount, setFilterCount] = useState<number | null>(null)
   const [searchCount, setSearchCount] = useState<number | null>(null)
 
@@ -817,21 +858,28 @@ export default function WorksGrid() {
   const isAppend = useRef(false)
   const dataLoaded = useRef(false) // true after first successful load
 
-  // Sync refs during render (no effect needed — refs don't cause re-renders)
-  rowsRef.current = rows
-  holidaySetRef.current = holidaySet
-  filterStateRef.current = filterState
-  sortConditionsRef.current = sortConditions
-  searchTermRef.current = searchTerm
+  // Sync refs after render commits. Writing refs in the render body violates React's
+  // "no side-effects during render" guidance (StrictMode double-invocation, concurrent
+  // rendering) even if it happens to work today. All consumers of these refs run in
+  // async HOT hooks / scroll callbacks that fire after commit, so the effect-based
+  // sync is functionally equivalent and future-proof.
+  useEffect(() => { rowsRef.current = rows }, [rows])
+  useEffect(() => { holidaySetRef.current = holidaySet }, [holidaySet])
+  useEffect(() => { filterStateRef.current = filterState }, [filterState])
+  useEffect(() => { sortConditionsRef.current = sortConditions }, [sortConditions])
+  useEffect(() => { searchTermRef.current = searchTerm }, [searchTerm])
 
-  // Stable scroll-load callback (read by HOT afterScrollVertically hook)
-  scrollLoadRef.current = () => {
-    if (isScrollLoadingRef.current) return
-    if (!hasMoreRef.current) return
-    isScrollLoadingRef.current = true
-    isAppend.current = true
-    setOffset(o => o + 100)
-  }
+  // Stable scroll-load callback (read by HOT afterScrollVertically hook).
+  // Assigned in an effect so it's refreshed after commit, not during render.
+  useEffect(() => {
+    scrollLoadRef.current = () => {
+      if (isScrollLoadingRef.current) return
+      if (!hasMoreRef.current) return
+      isScrollLoadingRef.current = true
+      isAppend.current = true
+      setOffset(o => o + 100)
+    }
+  }, [])
 
   const handleLoad = () => {
     isAppend.current = false
@@ -865,8 +913,8 @@ export default function WorksGrid() {
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
     const hot = hotRef.current
     if (!hot) return
-    const col = hot.propToCol(column) as number
-    if (col == null || col < 0) return
+    const col = PROP_TO_COL[column] ?? -1
+    if (col < 0) return
     // Route through setDataAtCell so afterChange handles PATCH, local state, and undo-stack tracking.
     hot.setDataAtCell(rowIdx, col, value)
     setSelectMenu(null)
@@ -920,7 +968,6 @@ export default function WorksGrid() {
 
     const apiFilters = filterStateRef.current
     const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
-    console.log('[WorksGrid] filters:', JSON.stringify(apiFilters))
 
     fetch('/api/order-items', {
       method: 'POST',
@@ -1127,8 +1174,8 @@ export default function WorksGrid() {
           const current = rowsRef.current[rowIdx]
           const newShipDate = calcShipDateFromRow({ ...current, 데드라인: newDeadline }, holidaySetRef.current)
           // Propagate derived 출고예정일 to HOT directly (readonly formula column).
-          const shipCol = hotRef.current?.propToCol('출고예정일') as number | undefined
-          if (shipCol != null && shipCol >= 0) {
+          const shipCol = PROP_TO_COL['출고예정일'] ?? -1
+          if (shipCol >= 0) {
             hotRef.current?.setDataAtCell(rowIdx, shipCol, newShipDate, 'derived')
           }
           skipNextLoadRef.current = true
@@ -1156,14 +1203,17 @@ export default function WorksGrid() {
           })
           if (!res.ok) {
             // Rollback HOT cell
-            hotRef.current?.setDataAtCell(rowIdx, hotRef.current.propToCol(prop as string), oldVal, 'rollback')
+            const rollbackCol = PROP_TO_COL[prop as string] ?? -1
+            if (rollbackCol >= 0) {
+              hotRef.current?.setDataAtCell(rowIdx, rollbackCol, oldVal, 'rollback')
+            }
             // Rollback rows state (HOT already reverted via setDataAtCell — skip full reload)
             if (field === '데드라인') {
               const oldDeadline = oldVal ? String(oldVal).slice(0, 10) : ''
               const current = rowsRef.current[rowIdx]
               const oldShipDate = calcShipDateFromRow({ ...current, 데드라인: oldDeadline }, holidaySetRef.current)
-              const shipCol = hotRef.current?.propToCol('출고예정일') as number | undefined
-              if (shipCol != null && shipCol >= 0) {
+              const shipCol = PROP_TO_COL['출고예정일'] ?? -1
+              if (shipCol >= 0) {
                 hotRef.current?.setDataAtCell(rowIdx, shipCol, oldShipDate, 'derived')
               }
               skipNextLoadRef.current = true
@@ -1177,8 +1227,7 @@ export default function WorksGrid() {
               ))
             }
             // Error toast
-            setToast({ message: '수정에 실패했습니다', type: 'error' })
-            setTimeout(() => setToast(null), 2000)
+            showToast({ message: '수정에 실패했습니다', type: 'error' }, 2000)
           }
         })()
       }
@@ -1323,8 +1372,7 @@ export default function WorksGrid() {
         }).join('\t'))
         .join('\n')
       navigator.clipboard.writeText(tsv).catch(() => {})
-      setToast({ message: '복사되었습니다', type: 'success' })
-      setTimeout(() => setToast(null), 2000)
+      showToast({ message: '복사되었습니다', type: 'success' }, 2000)
     })
     // Infinite scroll — load next page when near bottom (90% threshold)
     hotRef.current.addHook('afterScrollVertically', () => {
@@ -1377,8 +1425,8 @@ export default function WorksGrid() {
         for (const item of entry.items) {
           const rowIdx = rowsRef.current.findIndex(r => r.id === item.rowId)
           if (rowIdx === -1) continue
-          const col = hot.propToCol(item.prop) as number
-          if (col == null || col < 0) continue
+          const col = PROP_TO_COL[item.prop] ?? -1
+          if (col < 0) continue
           tuples.push([rowIdx, col, pickValue(item)])
           validItems.push(item)
         }
@@ -1462,8 +1510,7 @@ export default function WorksGrid() {
       })
 
       if (!res.ok) {
-        setToast({ message: '삭제에 실패했습니다', type: 'error' })
-        setTimeout(() => setToast(null), 3000)
+        showToast({ message: '삭제에 실패했습니다', type: 'error' }, 3000)
         return
       }
 
@@ -1476,7 +1523,7 @@ export default function WorksGrid() {
       lastCheckedRowRef.current = null
 
       // Show toast with undo action
-      setToast({
+      showToast({
         message: `${ids.length}개 삭제됨`,
         type: 'success',
         undoAction: async () => {
@@ -1488,26 +1535,21 @@ export default function WorksGrid() {
             })
 
             if (!restoreRes.ok) {
-              setToast({ message: '복구에 실패했습니다', type: 'error' })
-              setTimeout(() => setToast(null), 3000)
+              showToast({ message: '복구에 실패했습니다', type: 'error' }, 3000)
               return
             }
 
             // Reload data to restore rows
             setOffset(0)
             setFetchTrigger(prev => prev + 1)
-            setToast({ message: `${ids.length}개 복구됨`, type: 'success' })
-            setTimeout(() => setToast(null), 2000)
+            showToast({ message: `${ids.length}개 복구됨`, type: 'success' }, 2000)
           } catch {
-            setToast({ message: '복구에 실패했습니다', type: 'error' })
-            setTimeout(() => setToast(null), 3000)
+            showToast({ message: '복구에 실패했습니다', type: 'error' }, 3000)
           }
         },
-      })
-      setTimeout(() => setToast(null), 5000)
+      }, 5000)
     } catch {
-      setToast({ message: '삭제에 실패했습니다', type: 'error' })
-      setTimeout(() => setToast(null), 3000)
+      showToast({ message: '삭제에 실패했습니다', type: 'error' }, 3000)
     }
   }
 
@@ -1682,12 +1724,17 @@ export default function WorksGrid() {
       {selectMenu && (
         <div
           ref={selectMenuRef}
+          role="listbox"
+          aria-label="옵션 선택"
           style={{ position: 'fixed', top: selectMenu.top, left: selectMenu.left, minWidth: selectMenu.width, zIndex: 9999 }}
           className="bg-white border border-[#E2E8F0] rounded-[6px] shadow-[0_4px_16px_rgba(0,0,0,0.12)] p-1 max-h-[320px] overflow-y-auto"
         >
           {selectMenu.options.map(({ value, bg }) => (
             <div
               key={value}
+              role="option"
+              aria-selected={false}
+              tabIndex={0}
               className="flex items-center px-2 py-[5px] rounded-[4px] cursor-pointer hover:bg-[#F8FAFC]"
               onMouseDown={e => { e.preventDefault(); handleSelectOption(selectMenu.column, selectMenu.row, value) }}
             >
@@ -1704,21 +1751,24 @@ export default function WorksGrid() {
 
       {/* Toast */}
       {toast && (
-        <div style={{
-          position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
-          background: toast.type === 'error' ? '#EF4444' : '#1F2937',
-          color: '#fff', fontSize: 13,
-          padding: '8px 16px', borderRadius: 6,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}>
+        <div
+          role="status"
+          aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+          style={{
+            position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999,
+            background: toast.type === 'error' ? '#EF4444' : '#1F2937',
+            color: '#fff', fontSize: 13,
+            padding: '8px 16px', borderRadius: 6,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
           <span>{toast.message}</span>
           {toast.undoAction && (
             <button
               onClick={() => {
-                setToast(null)
+                showToast(null)
                 toast.undoAction?.()
               }}
               style={{

@@ -18,7 +18,8 @@ export async function POST(req: NextRequest) {
     .in('id', ids)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    console.error('[restore] supabase error:', error.message)
+    return NextResponse.json({ error: '복구에 실패했습니다' }, { status: 500 })
   }
 
   return NextResponse.json({ success: true, restoredCount: ids.length })

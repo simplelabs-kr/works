@@ -229,4 +229,27 @@
 
 ---
 
+## 적용 현황 (2026-04-17)
+
+이 커밋에서 수정:
+- Critical: C1, C3, C4
+- Critical 부분 수정: C5 (offset/search 입력 상한만 — 필터/정렬 컬럼 화이트리스트는 DB 작업 필요)
+- Warning: W1, W2, W3, W4, W7, W12
+- Suggestion: S10, S14
+
+인증 관련(feature/auth 브랜치에서 별도 진행):
+- C2, W11
+
+DB 스키마 / RPC 작업 필요(claude.ai 영역):
+- C5 나머지: `count_flat_order_details(jsonb, text)` 오버로드 통일, 필터 컬럼/오퍼레이터 화이트리스트 RPC 레벨 적용
+
+향후 작업 권장(기존 기능 영향 우려로 이번 커밋에서 미적용):
+- W5 (배치 PATCH API) — 새 API + 트랜잭션 설계 필요
+- W6 (Realtime 편집 중 충돌 가드) — updated_at 토큰 비교 / 편집 중 큐잉 로직
+- W8 (렌더러 데이터 서명 기반 skip) — HOT 내부 동작 영향 가능
+- W9 (init 가드 주석 강화) — 현재 `if (!containerRef.current || hotRef.current) return`로 이미 보호됨
+- W10 (Pikaday setTimeout 제거 / MutationObserver) — 날짜 에디터 타이밍 리스크
+- W13 (holidays 재계산 gate) — 현재 UX와 호환 여부 확인 필요
+- S1 (파일 분할), S2 (공통 타입), S3 (scrollController), S5, S6 (CSS @layer), S7, S8, S9 (fetch 래퍼), S11, S12, S13, S15 — 점진 개선
+
 *리뷰에서 언급된 DB/RPC 관련 수정(C5의 RPC 오버로드 해소 등)은 CLAUDE.md 역할 분담 원칙에 따라 claude.ai 측 작업 영역.*

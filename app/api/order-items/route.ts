@@ -3,12 +3,20 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const maxDuration = 10;
 
+// 방어적 상한: 일반 사용자는 수십만 건을 페이지네이션해도 이 범위 내. 초과 시 거부.
+const MAX_OFFSET = 1_000_000;
+const MAX_SEARCH_LENGTH = 200;
+
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const offset      = Number(body.offset ?? 0);
-  const filters     = body.filters     ?? [];
-  const sorts       = body.sorts       ?? [];
-  const searchTerm  = body.search_term || null;
+  const offsetRaw = Number(body.offset ?? 0);
+  const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 && offsetRaw <= MAX_OFFSET
+    ? Math.floor(offsetRaw)
+    : 0;
+  const filters     = Array.isArray(body.filters) ? body.filters : (body.filters && typeof body.filters === 'object' ? body.filters : []);
+  const sorts       = Array.isArray(body.sorts) ? body.sorts : [];
+  const searchRaw   = typeof body.search_term === 'string' ? body.search_term : '';
+  const searchTerm  = searchRaw ? searchRaw.slice(0, MAX_SEARCH_LENGTH) : null;
 
   const noopResult = Promise.resolve({ data: null, error: null } as { data: null; error: null });
 
@@ -33,7 +41,7 @@ export async function POST(request: NextRequest) {
 
   if (dataResult.error) {
     console.error("[order-items] rpc error:", dataResult.error.message);
-    return NextResponse.json({ error: dataResult.error.message }, { status: 500 });
+    return NextResponse.json({ error: '데이터 조회에 실패했습니다' }, { status: 500 });
   }
 
   let filterCount: number | null = null;
