@@ -1593,11 +1593,16 @@ export default function WorksGrid() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('modifyRowHeight' as any, (_h: number, _row: number) => rowHeightPxRef.current)
 
-    // Column resize → sync summary bar widths
+    // Column resize → sync summary bar widths. HOT passes a VISUAL index here,
+    // but `colWidths` state is physical-indexed (SummaryBar iterates COLUMNS
+    // in its natural/physical order) so we convert before writing. Without
+    // this conversion, a resize after a column move would land on the wrong
+    // slot in the state array.
     hotRef.current.addHook('afterColumnResize', (newSize: number, column: number) => {
+      const pi = hotRef.current?.toPhysicalColumn(column) ?? column
       setColWidths(prev => {
         const next = [...prev]
-        next[column] = newSize
+        next[pi] = newSize
         return next
       })
     })
@@ -1694,10 +1699,9 @@ export default function WorksGrid() {
       if (cancelled) return
       const hot = hotRef.current
       if (hot && view) {
-        // Column order: map each saved prop to its physical index. Append any
-        // physical columns missing from the saved list (columns added in code
-        // after the user's last save) so the grid stays consistent with
-        // COLUMNS. No. column (physical 0) is always pinned to visual 0.
+        // Build target physical order. No. col (pi=0) pinned to visual 0.
+        // Any new columns added in code after the user's last save fall in
+        // at their physical position after the saved set.
         const newOrder: number[] = [0]
         const seen = new Set<number>([0])
         for (const prop of view.columnOrder) {
@@ -1712,28 +1716,48 @@ export default function WorksGrid() {
           if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
         }
 
-        // Column widths: build a physical-indexed array. Saved map is keyed
-        // by data prop; missing entries fall back to the column's default.
+        // 1) Apply widths BEFORE reorder so we can use physical indices
+        // directly. At this point HOT has no moves yet, so visual === physical
+        // and setManualSize(pi, w) stores the width keyed by physical
+        // internally — it stays glued to the column across later moves.
+        //
+        // Why not updateSettings({ colWidths }) here: HOT core's
+        // _getColWidthFromSettings reads the array by *visual* index
+        // (core.js:3476), so after the reorder those widths would land on
+        // the wrong columns. The resize plugin's setManualSize is the one
+        // API that is physical-scoped.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const widthsArr = (COLUMNS as any[]).map((c: any) => {
-          if (typeof c.data === 'string' && c.data && typeof view.columnWidths[c.data] === 'number') {
-            return view.columnWidths[c.data]
+        const mcr = hot.getPlugin('manualColumnResize') as any
+        const widthsArr: number[] = []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(COLUMNS as any[]).forEach((c: any, pi: number) => {
+          const savedW = typeof c?.data === 'string' && c.data
+            ? view.columnWidths[c.data]
+            : undefined
+          const w = typeof savedW === 'number' && savedW > 0 ? savedW : (c?.width ?? 100)
+          widthsArr[pi] = w
+          if (mcr && savedW != null && pi > 0) {
+            mcr.setManualSize(pi, w)
           }
-          return c.width ?? 100
-        })
-
-        hot.updateSettings({
-          manualColumnMove: newOrder,
-          colWidths: widthsArr,
         })
         setColWidths(widthsArr)
-        // updateSettings({ manualColumnMove }) doesn't always fire
-        // afterColumnMove, so bump the version explicitly to keep
-        // managedColumns in sync with the restored order.
+
+        // 2) Reorder via plugin. moveColumns takes *visual* indices of the
+        // columns to move; pre-reorder visual === physical, so passing
+        // physical indices here is correct. Using the plugin API directly
+        // (instead of updateSettings({ manualColumnMove })) avoids the
+        // disable/enable reinit side effect and guarantees afterColumnMove
+        // fires with the full reordering context.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mcm = hot.getPlugin('manualColumnMove') as any
+        if (mcm && newOrder.length > 0) {
+          mcm.moveColumns(newOrder, 0)
+        }
         setColumnOrderVersion(v => v + 1)
 
-        // State-driven restores — the existing effects for hiddenColumns,
-        // frozenCount, and rowHeight push these into HOT.
+        // 3) State-driven restores — existing effects push these into HOT
+        // on the next commit (hiddenColumns → plugin.hideColumns,
+        // frozenCount → fixedColumnsStart, rowHeight → CSS var + refresh).
         setHiddenColumns(new Set(view.hiddenColumns))
         setFrozenCount(view.frozenCount)
         setRowHeight(view.rowHeight)
