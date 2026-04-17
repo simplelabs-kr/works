@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/requireUser";
 
 // 지난 1년 ~ 앞으로 3년치 공휴일만 조회. 출고예정일 계산은 실제로 이 범위 내에서만 수행됨.
 const YEARS_PAST = 1;
 const YEARS_FUTURE = 3;
 
 export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   const now = new Date();
   const fromYear = now.getFullYear() - YEARS_PAST;
   const toYear = now.getFullYear() + YEARS_FUTURE;

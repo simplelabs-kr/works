@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/requireUser";
 
 export const maxDuration = 10;
 
@@ -8,6 +9,9 @@ const MAX_OFFSET = 1_000_000;
 const MAX_SEARCH_LENGTH = 200;
 
 export async function POST(request: NextRequest) {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   const body = await request.json();
   const offsetRaw = Number(body.offset ?? 0);
   const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 && offsetRaw <= MAX_OFFSET

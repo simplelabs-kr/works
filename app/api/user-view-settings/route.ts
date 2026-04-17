@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/auth/requireUser'
 
 export const maxDuration = 10
 
 export async function GET(req: NextRequest) {
+  const auth = await requireUser()
+  if (auth.response) return auth.response
+
   const { searchParams } = new URL(req.url)
   const user_key = searchParams.get('user_key')
   const page_key = searchParams.get('page_key')
@@ -29,6 +33,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireUser()
+  if (auth.response) return auth.response
+
   const body = await req.json()
   const { user_key, page_key, filters, sort } = body
 

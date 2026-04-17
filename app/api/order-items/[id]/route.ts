@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/server'
+import { requireUser } from '@/lib/auth/requireUser'
 
 export const maxDuration = 10
 
@@ -92,6 +93,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const auth = await requireUser()
+  if (auth.response) return auth.response
+
   if (!/^[A-Za-z0-9-]{8,64}$/.test(params.id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 })
   }

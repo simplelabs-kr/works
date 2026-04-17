@@ -1,4 +1,5 @@
 import dynamic from 'next/dynamic'
+import WorksHeader from '@/components/works/WorksHeader'
 
 const WorksGrid = dynamic(() => import('@/components/works/WorksGrid'), {
   ssr: false,
@@ -10,10 +11,7 @@ const WorksGrid = dynamic(() => import('@/components/works/WorksGrid'), {
 export default function WorksPage() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-white">
-      {/* Top bar — shrink-0 */}
-      <div className="flex-shrink-0 flex items-center border-b border-[#E2E8F0] bg-white px-6 h-[44px]">
-        <h1 className="text-[15px] font-semibold text-[#0F172A]">Works</h1>
-      </div>
+      <WorksHeader />
 
       {/* Content — fills remaining height, no padding */}
       <div className="flex-1 overflow-hidden min-h-0">

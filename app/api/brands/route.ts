@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { requireUser } from "@/lib/auth/requireUser";
 
 export async function GET() {
+  const auth = await requireUser();
+  if (auth.response) return auth.response;
+
   const { data, error } = await supabaseAdmin
     .from("brands")
     .select("id, name")

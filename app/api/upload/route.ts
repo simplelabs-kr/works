@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
+import { requireUser } from '@/lib/auth/requireUser'
 
 export const maxDuration = 30
 
@@ -42,6 +43,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await requireUser()
+    if (auth.response) return auth.response
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.error('[upload] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY')
       return NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
