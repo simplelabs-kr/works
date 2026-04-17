@@ -210,13 +210,22 @@ let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = nul
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
-  // Sig-cache: click handlers close over `row` and the `fileIdx` of each chip,
-  // so the sig must include row plus url+name of every item. Skipping rebuild
-  // when content is identical cuts scroll-time DOM churn for rows with files.
+  // Sig-cache: skip DOM rebuild when the cell's visible content would be identical.
+  // Click handlers close over `row` and the `fileIdx` of each chip, so the sig must
+  // include row + url+name of every item.
+  //
+  // DOM verification is CRITICAL: HOT reuses td elements across columns during
+  // virtualization. A td that was ours may later be used by the default text
+  // renderer for a different column — which clears our wrapper but leaves our
+  // __attSig intact. If we skipped rebuild on the next match, the user would
+  // see the other column's stale text in this cell. So before trusting the sig
+  // we require our `.attachment-popout-wrapper` to still be the first child.
   const sig = `${row}|${row === 0 ? 1 : 0}|${items.map(i => `${i.url}\u0001${i.name}`).join('\u0002')}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyTd = td as any
-  if (anyTd.__attSig === sig) return
+  const firstEl = td.firstElementChild as HTMLElement | null
+  const domIsOurs = !!firstEl && firstEl.classList.contains('attachment-popout-wrapper')
+  if (domIsOurs && anyTd.__attSig === sig) return
   anyTd.__attSig = sig
 
   td.innerHTML = ''
@@ -311,21 +320,33 @@ let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
-  // Sig-cache: skip rebuild if same urls + same first-row flag + same thumb width.
-  // Rebuilding creates fresh <img> elements which forces the browser to re-decode
-  // — visibly stutters vertical scroll. row index matters only for the
-  // is-first-row class (row 0 pops down instead of up).
+  // Sig-cache with DOM verification (see attachmentRenderer for rationale).
+  // HOT can reuse a td across different columns during virtualization — the
+  // sig alone is not enough; we also verify `.image-popout-wrapper` is still
+  // the td's first child. If it's gone, another renderer has touched this td
+  // and we must rebuild to avoid showing stale content from another column.
   const sig = `${row === 0 ? 1 : 0}|${imageThumbUrlWidth}|${imgs.map(i => i.url).join('\u0001')}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyTd = td as any
-  if (anyTd.__imgSig === sig) return
+  const firstEl = td.firstElementChild as HTMLElement | null
+  const domIsOurs = !!firstEl && firstEl.classList.contains('image-popout-wrapper')
+
+  if (imgs.length === 0) {
+    // Empty state: always clear. We cannot reliably detect stale text nodes
+    // (firstElementChild ignores them), and the work is trivial.
+    anyTd.__imgSig = ''
+    td.innerHTML = ''
+    td.classList.add('htDimmed')
+    td.style.padding = '0'
+    return
+  }
+
+  if (domIsOurs && anyTd.__imgSig === sig) return
   anyTd.__imgSig = sig
 
   td.innerHTML = ''
   td.classList.add('htDimmed')
   td.style.padding = '0'
-
-  if (imgs.length === 0) return
 
   const wrapper = document.createElement('div')
   wrapper.className = 'image-popout-wrapper'
@@ -363,13 +384,16 @@ const COLUMNS = [
       const rowId = rowData?.id
       const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
 
-      // Sig-cache: the click handler closes over `row` and `rowId`, so invalidate
-      // when either changes. Skips ~20 wrapper+checkbox+span DOM rebuilds per
-      // scroll tick for the No. column alone.
+      // Sig-cache + DOM verification. Sig alone is unsafe: HOT can reuse a td
+      // across different columns during virtualization, in which case another
+      // renderer overwrites our DOM while __noSig still persists. We require
+      // our marker class to still be the td's first child before trusting it.
       const sig = `${row}|${rowId ?? ''}|${isChecked ? '1' : '0'}`
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const anyTd = td as any
-      if (anyTd.__noSig === sig) return
+      const firstEl = td.firstElementChild as HTMLElement | null
+      const domIsOurs = !!firstEl && firstEl.classList.contains('no-col-wrapper')
+      if (domIsOurs && anyTd.__noSig === sig) return
       anyTd.__noSig = sig
 
       td.innerHTML = ''
@@ -381,6 +405,7 @@ const COLUMNS = [
       td.style.overflow = 'hidden'
 
       const wrapper = document.createElement('div')
+      wrapper.className = 'no-col-wrapper'
       wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;'
 
       const checkbox = document.createElement('input')
@@ -565,15 +590,19 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
-  // Skip DOM rebuild if the recycled td already shows the same checked state
-  // for the same (row,col). HOT reuses td elements across rows during vertical
-  // scroll; the click handler closes over row/col, so the sig must invalidate
-  // whenever row changes.
+  // Sig-cache + DOM verification. The click handler closes over row/col, so the
+  // sig includes both. But sig alone is unsafe — HOT may reuse a td across
+  // different columns during virtualization; the default text renderer for the
+  // other column clears our DOM while __cbSig still persists, then a later
+  // match would paint stale blank checkboxes over real text. We verify our
+  // marker class is still the td's first child before trusting the sig.
   const checked = value === true
   const sig = `${row}|${col}|${checked ? '1' : '0'}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyTd = td as any
-  if (anyTd.__cbSig === sig) return
+  const firstEl = td.firstElementChild as HTMLElement | null
+  const domIsOurs = !!firstEl && firstEl.classList.contains('checkbox-wrapper')
+  if (domIsOurs && anyTd.__cbSig === sig) return
   anyTd.__cbSig = sig
 
   td.innerHTML = ''
@@ -592,6 +621,7 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
   // Outer container: fills the td completely, flex-centers the hit target.
   // height:100% tracks --grid-row-h so the checkbox stays centered at any row height.
   const outer = document.createElement('div')
+  outer.className = 'checkbox-wrapper'
   outer.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;overflow:hidden;'
 
   // Hit target: fixed 24×24, shows hover background, contains the checkmark
