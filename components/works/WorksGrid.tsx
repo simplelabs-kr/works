@@ -1000,6 +1000,12 @@ export default function WorksGrid() {
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
       contextMenu: ['freeze_column', 'unfreeze_column'],
+      // Disable HOT native UndoRedo plugin — we implement a custom stack that
+      // survives loadData resets and syncs DB. With the skipNextLoadRef
+      // optimization HOT's internal stack is no longer reset per edit, so its
+      // Cmd+Z handler would otherwise race with our window listener and move
+      // the cell selection.
+      undo: false,
     })
 
     // Fix horizontal scroll misalignment:
