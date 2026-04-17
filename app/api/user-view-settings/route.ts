@@ -83,6 +83,10 @@ export async function POST(req: NextRequest) {
     filters: 'filters' in body ? body.filters ?? null : existing?.filters ?? null,
     sort: 'sort' in body ? body.sort ?? null : existing?.sort ?? null,
     view: 'view' in body ? body.view ?? null : existing?.view ?? null,
+    // Always bump updated_at client-side — the table may not have a trigger
+    // to update it automatically, and without a change the upsert is a no-op
+    // when the jsonb blob happens to match the existing row.
+    updated_at: new Date().toISOString(),
   }
 
   const { error } = await supabaseAdmin
