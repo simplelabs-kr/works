@@ -679,9 +679,11 @@ export default function WorksGrid() {
   const lastCheckedRowRef = useRef<number | null>(null)
 
   // Custom undo/redo stacks (HOT native undo resets whenever loadData() runs).
-  // Keyed by rowId so replay survives sort/infinite-scroll row reordering.
-  const undoStackRef = useRef<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>([])
-  const redoStackRef = useRef<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>([])
+  // Each entry is a batch — all cell changes from a single afterChange invocation
+  // (e.g. multi-cell Delete) collapse into one undo step. Items are keyed by rowId
+  // so replay survives sort/infinite-scroll row reordering.
+  const undoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
+  const redoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
   const UNDO_LIMIT = 20
 
   // Set to true by cell-edit flows to skip the full `hot.loadData()` reload on the
@@ -1101,6 +1103,9 @@ export default function WorksGrid() {
       if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
 
       const isUndoRedo = (source as string) === 'undo' || (source as string) === 'redo'
+      // Collect all applicable changes from this single afterChange call into one
+      // batch entry so multi-cell edits (e.g. drag-select + Delete) undo together.
+      const batchItems: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> = []
 
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
@@ -1111,11 +1116,8 @@ export default function WorksGrid() {
         const field = EDITABLE_FIELD_MAP[prop as string]
         if (!field) continue
 
-        // Push to undo stack only for user-originated edits
         if (!isUndoRedo) {
-          undoStackRef.current.push({ rowId: rowData.id, prop: prop as string, oldVal, newVal })
-          if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift()
-          redoStackRef.current = []
+          batchItems.push({ rowId: rowData.id, prop: prop as string, oldVal, newVal })
         }
 
         // Optimistic local state update. Set skip flag so the [rows] effect
@@ -1179,6 +1181,13 @@ export default function WorksGrid() {
             setTimeout(() => setToast(null), 2000)
           }
         })()
+      }
+
+      // Commit the collected changes as a single batched undo entry.
+      if (batchItems.length > 0) {
+        undoStackRef.current.push({ items: batchItems })
+        if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift()
+        redoStackRef.current = []
       }
     })
     // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈, 사출_방식 → 드롭다운 전체 표시
@@ -1352,22 +1361,32 @@ export default function WorksGrid() {
   // so DB sync and rollback behavior are unified with normal edits.
   useEffect(() => {
     const replay = (
-      fromStack: React.MutableRefObject<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>,
-      toStack: React.MutableRefObject<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>,
-      pickValue: (entry: { oldVal: unknown; newVal: unknown }) => unknown,
+      fromStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
+      toStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
+      pickValue: (item: { oldVal: unknown; newVal: unknown }) => unknown,
       hotSource: 'undo' | 'redo',
     ) => {
       const hot = hotRef.current
       if (!hot) return
-      // Skip entries whose row is no longer in the current view (e.g. soft-deleted or unloaded).
+      // Pop entries until one has at least one item whose row is still in the
+      // current view (items for soft-deleted/unloaded rows are dropped).
       while (fromStack.current.length > 0) {
         const entry = fromStack.current.pop()!
-        const rowIdx = rowsRef.current.findIndex(r => r.id === entry.rowId)
-        if (rowIdx === -1) continue
-        const col = hot.propToCol(entry.prop) as number
-        if (col == null || col < 0) continue
-        hot.setDataAtCell(rowIdx, col, pickValue(entry), hotSource)
-        toStack.current.push(entry)
+        const tuples: Array<[number, number, unknown]> = []
+        const validItems: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> = []
+        for (const item of entry.items) {
+          const rowIdx = rowsRef.current.findIndex(r => r.id === item.rowId)
+          if (rowIdx === -1) continue
+          const col = hot.propToCol(item.prop) as number
+          if (col == null || col < 0) continue
+          tuples.push([rowIdx, col, pickValue(item)])
+          validItems.push(item)
+        }
+        if (tuples.length === 0) continue
+        // Array form → single afterChange with all changes, keeps batch semantics.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        hot.setDataAtCell(tuples as any, hotSource)
+        toStack.current.push({ items: validItems })
         if (toStack.current.length > UNDO_LIMIT) toStack.current.shift()
         return
       }
