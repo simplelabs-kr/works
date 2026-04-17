@@ -26,6 +26,10 @@ body {
   --works-row-focus: #ecf2f9;
   --works-range: #e2ebf6;
   --works-focus-ring: #2d7ff9;
+  /* Dynamic row height — updated by WorksGrid when user picks Short/Medium/Tall/Extra Tall.
+     Default 32px matches the original static sizing. All renderer heights must use
+     100% or this var; never hardcode row-height values inline on td. */
+  --grid-row-h: 32px;
 }
 
 .handsontable thead th {
@@ -63,9 +67,9 @@ body {
   font-size: 13px !important;
   color: #0f172a !important;
   padding: 0 8px !important;
-  height: 32px !important;
-  max-height: 32px !important;
-  line-height: 32px !important;
+  height: var(--grid-row-h) !important;
+  max-height: var(--grid-row-h) !important;
+  line-height: var(--grid-row-h) !important;
   border-right: 1px solid #eceef2 !important;
   border-bottom: 1px solid #eceef2 !important;
   vertical-align: middle !important;
@@ -93,8 +97,8 @@ body {
 }
 
 .handsontable tr {
-  height: 32px !important;
-  max-height: 32px !important;
+  height: var(--grid-row-h) !important;
+  max-height: var(--grid-row-h) !important;
 }
 
 /* dropdown 옵션 텍스트 크기 */
@@ -321,7 +325,9 @@ body {
   gap: 4px;
   margin: 0;
   padding: 0 4px;
-  max-height: 28px;
+  /* No max-height — inset:0 anchors the wrapper to the td's current height so
+     content stays centered across any --grid-row-h. Children (chips/empty/add-btn)
+     keep their own small max-heights so they don't grow on tall rows. */
   box-sizing: border-box;
   overflow: hidden;
   flex-wrap: nowrap;

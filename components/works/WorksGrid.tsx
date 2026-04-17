@@ -12,6 +12,26 @@ import { countAllConditions } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 import ImageModal from '@/components/works/ImageModal'
+import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
+import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
+import ShortcutsModal from '@/components/works/ShortcutsModal'
+
+// Row height presets. Values are the actual row px height used for both the CSS
+// var (--grid-row-h) and HOT's rowHeights option. Keeping them in lockstep is
+// critical — divergence is what caused the earlier "fixed No. column drift" bug.
+type RowHeight = 'short' | 'medium' | 'tall' | 'extra-tall'
+const ROW_HEIGHT_PX: Record<RowHeight, number> = {
+  'short': 32,
+  'medium': 48,
+  'tall': 64,
+  'extra-tall': 96,
+}
+const ROW_HEIGHT_LABEL: Record<RowHeight, string> = {
+  'short': 'Short',
+  'medium': 'Medium',
+  'tall': 'Tall',
+  'extra-tall': 'Extra Tall',
+}
 
 type ImageItem = { url: string; name: string }
 type AttachmentItem = { url: string; name: string }
@@ -308,8 +328,8 @@ const COLUMNS = [
       td.style.backgroundColor = '#F8FAFC'
       td.style.borderRight = '1px solid #E2E8F0'
       td.style.padding = '0'
-      td.style.height = '32px'
-      td.style.maxHeight = '32px'
+      // No hardcoded height — global CSS (.handsontable td) drives height via --grid-row-h.
+      // Setting explicit height here was the root cause of the "fixed No. column drift" bug.
       td.style.overflow = 'hidden'
 
       const wrapper = document.createElement('div')
@@ -510,9 +530,10 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
 
   const checked = value === true
 
-  // Outer container: fills the td completely, flex-centers the hit target
+  // Outer container: fills the td completely, flex-centers the hit target.
+  // height:100% tracks --grid-row-h so the checkbox stays centered at any row height.
   const outer = document.createElement('div')
-  outer.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:33px;overflow:hidden;'
+  outer.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;overflow:hidden;'
 
   // Hit target: fixed 24×24, shows hover background, contains the checkmark
   const box = document.createElement('span')
@@ -854,6 +875,18 @@ export default function WorksGrid() {
   const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSortModal, setShowSortModal] = useState(false)
+
+  // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
+  const [rowHeight, setRowHeight] = useState<RowHeight>('short')
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set())
+  const [frozenColumns, setFrozenColumns] = useState<Set<string>>(new Set())
+  const [showColumnManager, setShowColumnManager] = useState(false)
+  const [showRowHeightMenu, setShowRowHeightMenu] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+  const columnManagerRef = useRef<HTMLDivElement>(null)
+  const rowHeightMenuRef = useRef<HTMLDivElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const filterStateRef = useRef<RootFilterState>({ logic: 'AND', conditions: [] })
   const sortConditionsRef = useRef<SortCondition[]>([])
 
@@ -1042,8 +1075,11 @@ export default function WorksGrid() {
       manualColumnResize: true,
       manualColumnMove: true,
       manualColumnFreeze: true,
+      // HiddenColumns plugin — driven via updateSettings in the effect below.
+      // indicators:false keeps the header visually stable; our own "컬럼 관리" dropdown is the UX.
+      hiddenColumns: { columns: [], indicators: false },
       columnHeaderHeight: 33,
-      rowHeights: 32,
+      rowHeights: ROW_HEIGHT_PX[rowHeight],
       fixedColumnsStart: 0,
       outsideClickDeselects: (target: HTMLElement) => {
         if (selectMenuRef.current?.contains(target)) return false
@@ -1368,6 +1404,26 @@ export default function WorksGrid() {
         return next
       })
     })
+    // Column freeze/unfreeze (via context menu or programmatic) → recompute frozen set.
+    // fixedColumnsStart is the authoritative count; we derive which data props are
+    // currently frozen from the first N visual columns.
+    const syncFrozenSet = () => {
+      const hot = hotRef.current
+      if (!hot) return
+      const count = (hot.getSettings().fixedColumnsStart as number) ?? 0
+      const set = new Set<string>()
+      for (let vi = 0; vi < count; vi++) {
+        const pi = hot.toPhysicalColumn(vi)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const prop = (COLUMNS as any[])[pi]?.data
+        if (typeof prop === 'string' && prop) set.add(prop)
+      }
+      setFrozenColumns(set)
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterColumnFreeze' as any, syncFrozenSet)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('afterColumnUnfreeze' as any, syncFrozenSet)
     // Selection → update selectedRowIndices for summary bar
     hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
       if (r1 < 0) { setSelectedRowIndices(null); return }
@@ -1406,6 +1462,188 @@ export default function WorksGrid() {
       hotRef.current = null
     }
   }, [])
+
+  // Row height change → update CSS var AND HOT rowHeights option in lockstep.
+  // CSS alone is not enough: HOT uses rowHeights for scroll/virtualization math.
+  useEffect(() => {
+    const px = ROW_HEIGHT_PX[rowHeight]
+    document.documentElement.style.setProperty('--grid-row-h', `${px}px`)
+    const hot = hotRef.current
+    if (!hot) return
+    hot.updateSettings({ rowHeights: px })
+    hot.render()
+  }, [rowHeight])
+
+  // Hidden columns change → sync with HOT's HiddenColumns plugin.
+  // Diff-style: show everything currently hidden, then hide the target set.
+  useEffect(() => {
+    const hot = hotRef.current
+    if (!hot) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const plugin = hot.getPlugin('hiddenColumns') as any
+    if (!plugin) return
+    const prevHidden: number[] = plugin.getHiddenColumns?.() ?? []
+    if (prevHidden.length > 0) plugin.showColumns(prevHidden)
+    const targetIdx: number[] = []
+    hiddenColumns.forEach(prop => {
+      const pi = PROP_TO_COL[prop]
+      if (typeof pi === 'number') targetIdx.push(pi)
+    })
+    if (targetIdx.length > 0) plugin.hideColumns(targetIdx)
+    hot.render()
+  }, [hiddenColumns])
+
+  // Close toolbar dropdowns on outside click.
+  useEffect(() => {
+    if (!showColumnManager && !showRowHeightMenu && !showExportMenu) return
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (showColumnManager && !columnManagerRef.current?.contains(t)) setShowColumnManager(false)
+      if (showRowHeightMenu && !rowHeightMenuRef.current?.contains(t)) setShowRowHeightMenu(false)
+      if (showExportMenu && !exportMenuRef.current?.contains(t)) setShowExportMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showColumnManager, showRowHeightMenu, showExportMenu])
+
+  // Cmd/Ctrl+Enter inside the filter modal → apply filter.
+  // Kept in its own effect so it rebinds when showFilterModal flips without disturbing the undo listener.
+  useEffect(() => {
+    if (!showFilterModal) return
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleLoad()
+        setShowFilterModal(false)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [showFilterModal]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Column hide toggle (by data prop key).
+  const handleToggleHidden = useCallback((prop: string) => {
+    setHiddenColumns(prev => {
+      const next = new Set(prev)
+      if (next.has(prop)) next.delete(prop)
+      else next.add(prop)
+      return next
+    })
+  }, [])
+
+  // Column freeze toggle. Uses the manualColumnFreeze plugin; afterColumnFreeze/Unfreeze
+  // hooks recompute frozenColumns via syncFrozenSet.
+  const handleToggleFrozen = useCallback((prop: string) => {
+    const hot = hotRef.current
+    if (!hot) return
+    const pi = PROP_TO_COL[prop]
+    if (typeof pi !== 'number') return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const plugin = hot.getPlugin('manualColumnFreeze') as any
+    if (!plugin) return
+    if (frozenColumns.has(prop)) {
+      // For unfreeze, the plugin wants the visual column index of the frozen column
+      const vi = hot.toVisualColumn(pi)
+      plugin.unfreezeColumn(vi)
+    } else {
+      plugin.freezeColumn(pi)
+    }
+  }, [frozenColumns])
+
+  // Reset view — restores column widths, unhides everything, unfreezes everything,
+  // and returns rowHeight to Short. Does NOT reset column order (Phase 2).
+  const handleResetView = useCallback(() => {
+    const hot = hotRef.current
+    if (!hot) return
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hiddenPlugin = hot.getPlugin('hiddenColumns') as any
+    const prevHidden: number[] = hiddenPlugin?.getHiddenColumns?.() ?? []
+    if (prevHidden.length > 0) hiddenPlugin.showColumns(prevHidden)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const freezePlugin = hot.getPlugin('manualColumnFreeze') as any
+    let curFixed = (hot.getSettings().fixedColumnsStart as number) ?? 0
+    while (curFixed > 0) {
+      freezePlugin?.unfreezeColumn(0)
+      const next = (hot.getSettings().fixedColumnsStart as number) ?? 0
+      if (next >= curFixed) break // safety — avoid infinite loop if plugin no-ops
+      curFixed = next
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const defaultWidths = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
+    hot.updateSettings({ colWidths: defaultWidths })
+    setColWidths(defaultWidths)
+
+    setHiddenColumns(new Set())
+    setFrozenColumns(new Set())
+    setRowHeight('short')
+    setShowColumnManager(false)
+    hot.render()
+  }, [])
+
+  // CSV export. Skips the No. column, any currently-hidden columns, and image/attachment
+  // columns (binary). Checkbox values become 예/아니오. UTF-8 BOM prepended so Excel
+  // opens Korean text correctly.
+  const handleExportCSV = useCallback((onlySelected: boolean) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const exportCols = (COLUMNS as any[]).filter((c: any, i: number) => {
+      if (i === 0) return false
+      if (typeof c.data !== 'string' || !c.data) return false
+      if (c.fieldType === 'image' || c.fieldType === 'attachment') return false
+      if (hiddenColumns.has(c.data)) return false
+      return true
+    })
+
+    const source = onlySelected
+      ? rowsRef.current.filter(r => selectedRowIds.has(r.id))
+      : rowsRef.current
+
+    if (source.length === 0) {
+      showToast({ message: '내보낼 데이터가 없습니다', type: 'error' }, 2000)
+      return
+    }
+
+    const escape = (v: unknown): string => {
+      if (v == null) return ''
+      if (typeof v === 'boolean') return v ? '예' : '아니오'
+      const s = String(v)
+      if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+      return s
+    }
+    const readPath = (row: Row, path: string): unknown => {
+      let val: unknown = row
+      for (const part of path.split('.')) {
+        if (val == null || typeof val !== 'object') return undefined
+        val = (val as Record<string, unknown>)[part]
+      }
+      return val
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const header = exportCols.map((c: any) => escape(c.title)).join(',')
+    const body = source.map(row =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      exportCols.map((c: any) => escape(readPath(row, c.data))).join(','),
+    ).join('\n')
+    const csv = '\uFEFF' + header + '\n' + body
+
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `works_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    setShowExportMenu(false)
+  }, [hiddenColumns, selectedRowIds, showToast])
+
+  // Manageable columns (for the column manager dropdown) — excludes the No. column.
+  const managedColumns: ManagedColumn[] = (COLUMNS as unknown as Array<{ data: unknown; title: unknown }>)
+    .filter((c, i): c is { data: string; title: string } =>
+      i > 0 && typeof c.data === 'string' && !!c.data && typeof c.title === 'string',
+    )
+    .map(c => ({ data: c.data, title: c.title }))
 
   // Update grid data
   useEffect(() => {
@@ -1646,7 +1884,7 @@ export default function WorksGrid() {
         <div className="flex-1" />
 
         {/* Count — right side */}
-        <div className="flex items-center text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0">
+        <div className="flex items-center text-[12px] text-[#6B7280] whitespace-nowrap flex-shrink-0 mr-2">
           {filterCount !== null && searchCount === null && (
             <span>{filterCount.toLocaleString()}건</span>
           )}
@@ -1655,6 +1893,103 @@ export default function WorksGrid() {
           )}
           {apiError && <span className="text-red-500 ml-2">{apiError}</span>}
         </div>
+
+        {/* Row height selector */}
+        <div className="relative flex-shrink-0" ref={rowHeightMenuRef}>
+          <button
+            type="button"
+            onClick={() => { setShowRowHeightMenu(v => !v); setShowColumnManager(false); setShowExportMenu(false) }}
+            title="행 높이"
+            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3h10M2 7h10M2 11h10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+            {ROW_HEIGHT_LABEL[rowHeight]}
+          </button>
+          {showRowHeightMenu && (
+            <div className="absolute right-0 top-[34px] z-50 w-[140px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+              {(['short', 'medium', 'tall', 'extra-tall'] as const).map(h => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => { setRowHeight(h); setShowRowHeightMenu(false) }}
+                  className={`flex w-full items-center justify-between px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${rowHeight === h ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                >
+                  <span>{ROW_HEIGHT_LABEL[h]}</span>
+                  <span className="text-[11px] text-[#9CA3AF]">{ROW_HEIGHT_PX[h]}px</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Column manager */}
+        <div className="relative flex-shrink-0" ref={columnManagerRef}>
+          <button
+            type="button"
+            onClick={() => { setShowColumnManager(v => !v); setShowRowHeightMenu(false); setShowExportMenu(false) }}
+            title="컬럼 관리"
+            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2h10v10H2z M5.5 2v10 M8.5 2v10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            컬럼
+            {(hiddenColumns.size > 0 || frozenColumns.size > 0) && (
+              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{hiddenColumns.size + frozenColumns.size}</span>
+            )}
+          </button>
+          {showColumnManager && (
+            <ColumnManagerDropdown
+              columns={managedColumns}
+              hiddenColumns={hiddenColumns}
+              frozenColumns={frozenColumns}
+              onToggleHidden={handleToggleHidden}
+              onToggleFrozen={handleToggleFrozen}
+              onResetView={handleResetView}
+              onClose={() => setShowColumnManager(false)}
+            />
+          )}
+        </div>
+
+        {/* Export */}
+        <div className="relative flex-shrink-0" ref={exportMenuRef}>
+          <button
+            type="button"
+            onClick={() => { setShowExportMenu(v => !v); setShowRowHeightMenu(false); setShowColumnManager(false) }}
+            title="내보내기"
+            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v7m0 0l-2.5-2.5M7 9l2.5-2.5M2.5 11.5h9" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            내보내기
+          </button>
+          {showExportMenu && (
+            <div className="absolute right-0 top-[34px] z-50 w-[160px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+              <button
+                type="button"
+                onClick={() => { handleExportCSV(false); setShowExportMenu(false) }}
+                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[#374151] hover:bg-[#F8FAFC]"
+              >
+                전체 내보내기 (CSV)
+              </button>
+              <button
+                type="button"
+                onClick={() => { handleExportCSV(true); setShowExportMenu(false) }}
+                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[#374151] hover:bg-[#F8FAFC]"
+              >
+                선택 행만 (CSV)
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Keyboard shortcuts */}
+        <button
+          type="button"
+          onClick={() => setShowShortcuts(true)}
+          title="키보드 단축키"
+          aria-label="키보드 단축키"
+          className="h-[28px] w-[28px] flex-shrink-0 rounded-[4px] border border-[#E2E8F0] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center justify-center"
+        >
+          ?
+        </button>
       </div>
 
       {/* Empty state */}
@@ -1764,6 +2099,9 @@ export default function WorksGrid() {
           ))}
         </div>
       )}
+
+      {/* Keyboard shortcuts modal */}
+      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
 
       {/* Toast */}
       {toast && (
