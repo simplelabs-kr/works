@@ -118,11 +118,12 @@ body {
 .handsontable .ht_clone_top_inline_start_corner thead th {
   background: #f1f5fb !important;
 }
-.handsontable .ht_clone_inline_start,
-.handsontable .ht_clone_top_inline_start_corner {
-  /* Keep above master table body so the shadow renders over cell backgrounds. */
-  z-index: 102;
-}
+/* Do NOT override z-index on the frozen clones. HOT's defaults are carefully
+   stacked (inline_start: 120, top: 160, top_inline_start_corner: 180) so the
+   frozen header corner paints above the sticky top clone. Overriding either
+   clone to a lower z-index causes ht_clone_top to cover the corner, making
+   the header freeze appear to scroll with the rest. */
+
 /* Only show the right-edge shadow when horizontally scrolled. The
    is-scrolled-x class is toggled by the master scroll handler. */
 .handsontable.is-scrolled-x .ht_clone_inline_start,
