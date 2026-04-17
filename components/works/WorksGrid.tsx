@@ -678,6 +678,12 @@ export default function WorksGrid() {
   const checkedRowsRef = useRef<Set<string>>(new Set())
   const lastCheckedRowRef = useRef<number | null>(null)
 
+  // Custom undo/redo stacks (HOT native undo resets whenever loadData() runs).
+  // Keyed by rowId so replay survives sort/infinite-scroll row reordering.
+  const undoStackRef = useRef<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>([])
+  const redoStackRef = useRef<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>([])
+  const UNDO_LIMIT = 20
+
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
 
@@ -848,14 +854,12 @@ export default function WorksGrid() {
   }, [searchTerm]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
-    const rowData = rowsRef.current[rowIdx]
-    if (!rowData?.id) return
-    setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [column]: value } : r))
-    void fetch(`/api/order-items/${rowData.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field: column, value }),
-    })
+    const hot = hotRef.current
+    if (!hot) return
+    const col = hot.propToCol(column) as number
+    if (col == null || col < 0) return
+    // Route through setDataAtCell so afterChange handles PATCH, local state, and undo-stack tracking.
+    hot.setDataAtCell(rowIdx, col, value)
     setSelectMenu(null)
   }
 
@@ -1079,45 +1083,12 @@ export default function WorksGrid() {
         else if (['false', '0', 'no'].includes(v)) change[3] = false
       }
     })
-    // Cell edit → PATCH API + local state sync
+    // Cell edit → PATCH API + local state sync (shared path for user edits and undo/redo)
     hotRef.current.addHook('afterChange', (changes, source) => {
       if (source === 'loadData' || (source as string) === 'rollback' || !changes) return
 
-      // Handle Undo/Redo: sync DB with reverted value
-      if ((source as string) === 'UndoRedo.undo' || (source as string) === 'UndoRedo.redo') {
-        for (const [row, prop, , newVal] of changes) {
-          const rowIdx = row as number
-          const rowData = rowsRef.current[rowIdx]
-          if (!rowData?.id) continue
-          if (prop === 'reference_files') continue
-          const field = EDITABLE_FIELD_MAP[prop as string]
-          if (!field) continue
+      const isUndoRedo = (source as string) === 'undo' || (source as string) === 'redo'
 
-          // Optimistic local state update
-          if (field === '데드라인') {
-            const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
-            setRows(prev => prev.map((r, i) => {
-              if (i !== rowIdx) return r
-              const updated = { ...r, 데드라인: newDeadline }
-              return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
-            }))
-          } else {
-            setRows(prev => prev.map((r, i) =>
-              i === rowIdx ? { ...r, [prop as string]: newVal } : r
-            ))
-          }
-
-          // PATCH DB with reverted value (newVal is the undone/redone value)
-          void fetch(`/api/order-items/${rowData.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ field, value: newVal }),
-          })
-        }
-        return
-      }
-
-      // Normal edit flow
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
         const rowIdx = row as number
@@ -1126,6 +1097,13 @@ export default function WorksGrid() {
         if (prop === 'reference_files') continue
         const field = EDITABLE_FIELD_MAP[prop as string]
         if (!field) continue
+
+        // Push to undo stack only for user-originated edits
+        if (!isUndoRedo) {
+          undoStackRef.current.push({ rowId: rowData.id, prop: prop as string, oldVal, newVal })
+          if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift()
+          redoStackRef.current = []
+        }
 
         // Optimistic local state update
         if (field === '데드라인') {
@@ -1141,12 +1119,17 @@ export default function WorksGrid() {
           ))
         }
 
+        // Date columns: Postgres rejects '' — normalize empty/whitespace to null.
+        const patchValue = field === '데드라인' && (newVal === '' || newVal == null || (typeof newVal === 'string' && newVal.trim() === ''))
+          ? null
+          : newVal
+
         // PATCH → rollback on failure
         void (async () => {
           const res = await fetch(`/api/order-items/${rowData.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ field, value: newVal }),
+            body: JSON.stringify({ field, value: patchValue }),
           })
           if (!res.ok) {
             // Rollback HOT cell
@@ -1330,6 +1313,50 @@ export default function WorksGrid() {
     hotRef.current.loadData(rows)
     if (rows.length > 0) hotRef.current.refreshDimensions()
   }, [rows])
+
+  // Custom Cmd+Z / Cmd+Shift+Z undo/redo.
+  // Drives the same afterChange PATCH pipeline via setDataAtCell with a custom source,
+  // so DB sync and rollback behavior are unified with normal edits.
+  useEffect(() => {
+    const replay = (
+      fromStack: React.MutableRefObject<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>,
+      toStack: React.MutableRefObject<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>,
+      pickValue: (entry: { oldVal: unknown; newVal: unknown }) => unknown,
+      hotSource: 'undo' | 'redo',
+    ) => {
+      const hot = hotRef.current
+      if (!hot) return
+      // Skip entries whose row is no longer in the current view (e.g. soft-deleted or unloaded).
+      while (fromStack.current.length > 0) {
+        const entry = fromStack.current.pop()!
+        const rowIdx = rowsRef.current.findIndex(r => r.id === entry.rowId)
+        if (rowIdx === -1) continue
+        const col = hot.propToCol(entry.prop) as number
+        if (col == null || col < 0) continue
+        hot.setDataAtCell(rowIdx, col, pickValue(entry), hotSource)
+        toStack.current.push(entry)
+        if (toStack.current.length > UNDO_LIMIT) toStack.current.shift()
+        return
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey
+      if (!isMod || e.key.toLowerCase() !== 'z') return
+      // Let the native browser undo handle text editing inside an open HOT editor.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const editor = hotRef.current?.getActiveEditor() as any
+      if (editor?.isOpened?.()) return
+      e.preventDefault()
+      if (e.shiftKey) {
+        replay(redoStackRef, undoStackRef, entry => entry.newVal, 'redo')
+      } else {
+        replay(undoStackRef, redoStackRef, entry => entry.oldVal, 'undo')
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   // Realtime subscription — sync editable fields from other clients
   useEffect(() => {
