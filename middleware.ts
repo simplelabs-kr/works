@@ -4,6 +4,12 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 const ALLOWED_EMAIL_DOMAIN = "@simplelabs.kr";
 
 export async function middleware(req: NextRequest) {
+  // Local development bypass — no Supabase session cookie exists
+  // when running `next dev`, so the guard would otherwise loop to /login.
+  if (process.env.NODE_ENV === "development") {
+    return NextResponse.next();
+  }
+
   const res = NextResponse.next();
 
   const supabase = createServerClient(
