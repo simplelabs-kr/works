@@ -684,6 +684,13 @@ export default function WorksGrid() {
   const redoStackRef = useRef<Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>>([])
   const UNDO_LIMIT = 20
 
+  // Set to true by cell-edit flows to skip the full `hot.loadData()` reload on the
+  // following `setRows` — HOT's internal data is already up to date via setDataAtCell,
+  // so we avoid the O(visible_rows × columns) re-render. Structural changes
+  // (initial load, infinite-scroll, filter/sort, soft delete, realtime) leave this
+  // false so loadData still runs.
+  const skipNextLoadRef = useRef(false)
+
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
 
@@ -1105,15 +1112,23 @@ export default function WorksGrid() {
           redoStackRef.current = []
         }
 
-        // Optimistic local state update
+        // Optimistic local state update. Set skip flag so the [rows] effect
+        // doesn't trigger a full loadData — HOT already has the change via setDataAtCell.
         if (field === '데드라인') {
           const newDeadline = newVal ? String(newVal).slice(0, 10) : ''
-          setRows(prev => prev.map((r, i) => {
-            if (i !== rowIdx) return r
-            const updated = { ...r, 데드라인: newDeadline }
-            return { ...updated, 출고예정일: calcShipDateFromRow(updated, holidaySetRef.current) }
-          }))
+          const current = rowsRef.current[rowIdx]
+          const newShipDate = calcShipDateFromRow({ ...current, 데드라인: newDeadline }, holidaySetRef.current)
+          // Propagate derived 출고예정일 to HOT directly (readonly formula column).
+          const shipCol = hotRef.current?.propToCol('출고예정일') as number | undefined
+          if (shipCol != null && shipCol >= 0) {
+            hotRef.current?.setDataAtCell(rowIdx, shipCol, newShipDate, 'derived')
+          }
+          skipNextLoadRef.current = true
+          setRows(prev => prev.map((r, i) =>
+            i === rowIdx ? { ...r, 데드라인: newDeadline, 출고예정일: newShipDate } : r
+          ))
         } else {
+          skipNextLoadRef.current = true
           setRows(prev => prev.map((r, i) =>
             i === rowIdx ? { ...r, [prop as string]: newVal } : r
           ))
@@ -1134,15 +1149,21 @@ export default function WorksGrid() {
           if (!res.ok) {
             // Rollback HOT cell
             hotRef.current?.setDataAtCell(rowIdx, hotRef.current.propToCol(prop as string), oldVal, 'rollback')
-            // Rollback rows state
+            // Rollback rows state (HOT already reverted via setDataAtCell — skip full reload)
             if (field === '데드라인') {
               const oldDeadline = oldVal ? String(oldVal).slice(0, 10) : ''
-              setRows(prev => prev.map((r, i) => {
-                if (i !== rowIdx) return r
-                const reverted = { ...r, 데드라인: oldDeadline }
-                return { ...reverted, 출고예정일: calcShipDateFromRow(reverted, holidaySetRef.current) }
-              }))
+              const current = rowsRef.current[rowIdx]
+              const oldShipDate = calcShipDateFromRow({ ...current, 데드라인: oldDeadline }, holidaySetRef.current)
+              const shipCol = hotRef.current?.propToCol('출고예정일') as number | undefined
+              if (shipCol != null && shipCol >= 0) {
+                hotRef.current?.setDataAtCell(rowIdx, shipCol, oldShipDate, 'derived')
+              }
+              skipNextLoadRef.current = true
+              setRows(prev => prev.map((r, i) =>
+                i === rowIdx ? { ...r, 데드라인: oldDeadline, 출고예정일: oldShipDate } : r
+              ))
             } else {
+              skipNextLoadRef.current = true
               setRows(prev => prev.map((r, i) =>
                 i === rowIdx ? { ...r, [prop as string]: oldVal } : r
               ))
@@ -1310,6 +1331,12 @@ export default function WorksGrid() {
   // Update grid data
   useEffect(() => {
     if (!hotRef.current) return
+    if (skipNextLoadRef.current) {
+      // Cell-edit path: HOT already applied the change via setDataAtCell.
+      // Skip the expensive full reload and dimension refresh.
+      skipNextLoadRef.current = false
+      return
+    }
     hotRef.current.loadData(rows)
     if (rows.length > 0) hotRef.current.refreshDimensions()
   }, [rows])
