@@ -1130,6 +1130,24 @@ export default function WorksGrid() {
     return () => ro.disconnect()
   }, [])
 
+  // Block browser back/forward swipe gesture on macOS trackpads.
+  // When the user scrolls the grid horizontally (deltaX dominant), Safari/Chrome
+  // interpret it as a navigation swipe. We preventDefault on those wheel events
+  // so the event reaches HOT's scroll handling instead of the history API.
+  // passive:false is required — the browser ignores preventDefault on passive
+  // listeners. Vertical-dominant wheel events pass through untouched.
+  useEffect(() => {
+    const el = hotContainerRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault()
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
   // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
