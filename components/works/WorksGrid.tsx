@@ -1187,22 +1187,38 @@ export default function WorksGrid() {
       const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
       if (!masterEl || !topEl) return
       let syncing = false
+      // The 'scroll' event fires for BOTH axes on masterEl (it has a vertical
+      // AND horizontal scrollbar). Track lastCapped so we can early-return on
+      // vertical-only scrolls — otherwise every vertical tick triggers three
+      // scrollLeft writes, a classList toggle, a transform write, and a timer
+      // reset, which thrashes layout and makes vertical scrolling stutter.
+      let lastCapped = -1
+      let lastShadowOn: boolean | null = null
       masterEl.addEventListener('scroll', () => {
         if (syncing) return
-        syncing = true
         const maxScroll = topEl.scrollWidth - topEl.clientWidth
         const capped = Math.min(masterEl.scrollLeft, maxScroll)
-        masterEl.scrollLeft = capped
-        topEl.scrollLeft = capped
+        if (capped === lastCapped) return // vertical-only scroll — nothing to sync
+        syncing = true
+        lastCapped = capped
+        // Only write scrollLeft when it actually changed (writing the same
+        // value still costs a style recalc on some browsers).
+        if (masterEl.scrollLeft !== capped) masterEl.scrollLeft = capped
+        if (topEl.scrollLeft !== capped) topEl.scrollLeft = capped
         // Toggle class driving the frozen-columns right-edge shadow so it
-        // only appears while horizontally scrolled.
-        const rootEl = hotRef.current?.rootElement as HTMLElement | undefined
-        if (rootEl) rootEl.classList.toggle('is-scrolled-x', capped > 0)
+        // only appears while horizontally scrolled. Only call when state flips.
+        const shadowOn = capped > 0
+        if (shadowOn !== lastShadowOn) {
+          const rootEl = hotRef.current?.rootElement as HTMLElement | undefined
+          if (rootEl) rootEl.classList.toggle('is-scrolled-x', shadowOn)
+          lastShadowOn = shadowOn
+        }
         if (summaryInnerRef.current) {
           summaryInnerRef.current.style.transform = `translateX(-${capped}px)`
         }
         // Sync custom scrollbar position
-        if (!syncingCustomScrollRef.current && customScrollbarRef.current) {
+        if (!syncingCustomScrollRef.current && customScrollbarRef.current
+            && customScrollbarRef.current.scrollLeft !== capped) {
           syncingCustomScrollRef.current = true
           customScrollbarRef.current.scrollLeft = capped
           syncingCustomScrollRef.current = false
@@ -1216,7 +1232,7 @@ export default function WorksGrid() {
           if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '0'
         }, 1000)
         syncing = false
-      })
+      }, { passive: true })
     }, 100)
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
