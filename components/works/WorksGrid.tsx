@@ -167,19 +167,38 @@ const EDITABLE_FIELD_MAP: Record<string, string> = {
   'reference_files': 'reference_files',
 }
 
+// ── Renderer signature cache ──────────────────────────────────────────────────
+// HOT virtualizes rendering: tds are recycled across (row, col) positions as the
+// viewport scrolls. A pure value-based sig cache is unsafe because:
+//   1. The same td may be reassigned to a different column whose default text
+//      renderer overwrites innerHTML without touching our dataset marker.
+//   2. The td may later be recycled back to our column with the *same* (row,
+//      value) — our stored sig would match but the DOM content is whatever the
+//      intermediate renderer left behind.
+// Fix: key by the td element (WeakMap, auto-cleaned on GC) and verify that
+// td.firstElementChild is still the element we rendered. If another renderer
+// replaced the children, firstChild identity changes → cache miss → rebuild.
+// Row/col are folded into the sig so moves within a column also invalidate.
+const rendererCache = new WeakMap<HTMLElement, { sig: string; firstChild: Element | null }>()
+
+function hitRenderCache(td: HTMLElement, sig: string): boolean {
+  const cached = rendererCache.get(td)
+  return !!cached && cached.sig === sig && cached.firstChild === td.firstElementChild
+}
+function setRenderCache(td: HTMLElement, sig: string): void {
+  rendererCache.set(td, { sig, firstChild: td.firstElementChild })
+}
+
 // ── Attachment upload/delete helpers ──────────────────────────────────────────
 let onAttachmentUpload: ((rowIdx: number, files: FileList) => void) | null = null
 let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: any) {
   const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
 
-  // Signature cache: HOT re-runs renderers on scroll/selection even when data is unchanged.
-  // Skip the full DOM rebuild when row + file list identity is the same as the previous render.
-  const sig = `${row}|${items.length}|` + items.map(i => `${i.name}\u0001${i.url}`).join('\u0002')
-  if (td.dataset.attSig === sig) return
-  td.dataset.attSig = sig
+  const sig = `att|${row}|${col}|${items.length}|` + items.map(i => `${i.name}\u0001${i.url}`).join('\u0002')
+  if (hitRenderCache(td, sig)) return
 
   td.innerHTML = ''
   td.style.padding = '0'
@@ -256,6 +275,7 @@ function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _c
   }
 
   td.appendChild(wrapper)
+  setRenderCache(td, sig)
 }
 
 // ── Image gallery callback (set by WorksGrid component) ──────────────────────
@@ -266,21 +286,23 @@ let setSelectedRowIdsGlobal: React.Dispatch<React.SetStateAction<Set<string>>> |
 let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
+function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: any) {
   const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
 
-  const sig = `${row}|${imgs.length}|` + imgs.map(i => i.url).join('\u0001')
-  if (td.dataset.imgSig === sig) {
+  const sig = `img|${row}|${col}|${imgs.length}|` + imgs.map(i => i.url).join('\u0001')
+  if (hitRenderCache(td, sig)) {
     td.classList.add('htDimmed')
     return
   }
-  td.dataset.imgSig = sig
 
   td.innerHTML = ''
   td.classList.add('htDimmed')
   td.style.padding = '0'
 
-  if (imgs.length === 0) return
+  if (imgs.length === 0) {
+    setRenderCache(td, sig)
+    return
+  }
 
   const wrapper = document.createElement('div')
   wrapper.className = 'image-popout-wrapper'
@@ -301,6 +323,7 @@ function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: n
   })
 
   td.appendChild(wrapper)
+  setRenderCache(td, sig)
 }
 
 const COLUMNS = [
@@ -311,16 +334,15 @@ const COLUMNS = [
     width: 50,
     readOnly: true,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
+    renderer: function (_hot: any, td: HTMLTableCellElement, row: number, col: number) {
       // Get row data to determine checked state
       const data = (_hot as any).getSourceData?.() ?? []
       const rowData = data[row] as Row | undefined
       const rowId = rowData?.id
       const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
 
-      const sig = `${row}|${rowId ?? ''}|${isChecked ? 1 : 0}`
-      if (td.dataset.rsSig === sig) return
-      td.dataset.rsSig = sig
+      const sig = `rs|${row}|${col}|${rowId ?? ''}|${isChecked ? 1 : 0}`
+      if (hitRenderCache(td, sig)) return
 
       td.innerHTML = ''
       td.style.backgroundColor = '#F8FAFC'
@@ -369,6 +391,7 @@ const COLUMNS = [
       wrapper.appendChild(checkbox)
       wrapper.appendChild(num)
       td.appendChild(wrapper)
+      setRenderCache(td, sig)
     },
   },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
@@ -466,10 +489,9 @@ function getFieldTypeIcon(type: FieldType): string {
 
 // ── Common select badge renderer ──────────────────────────────────────────────
 
-function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, editable = false) {
-  const sig = `${value ?? ''}|${bg ?? ''}|${editable ? 1 : 0}`
-  if (td.dataset.sbSig === sig) return
-  td.dataset.sbSig = sig
+function renderSelectBadge(td: HTMLTableCellElement, row: number, col: number, value: string, bg: string, editable = false) {
+  const sig = `sb|${row}|${col}|${value ?? ''}|${bg ?? ''}|${editable ? 1 : 0}`
+  if (hitRenderCache(td, sig)) return
 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
@@ -480,36 +502,45 @@ function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, 
   } else {
     delete td.dataset.selectCol
   }
-  if (!value) return
+  if (!value) {
+    setRenderCache(td, sig)
+    return
+  }
   const badge = document.createElement('span')
   badge.textContent = value
   badge.style.cssText = `display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:2px 8px;border-radius:9999px;font-size:13px;font-weight:500;line-height:normal;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
   td.appendChild(badge)
+  setRenderCache(td, sig)
 }
 
 // ── Purchase status renderer ──────────────────────────────────────────────────
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  const sig = value ?? ''
-  if (td.dataset.psSig === sig) {
+function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: string) {
+  const sig = `ps|${row}|${col}|${value ?? ''}`
+  if (hitRenderCache(td, sig)) {
     td.classList.add('htDimmed')
     return
   }
-  td.dataset.psSig = sig
 
   td.innerHTML = ''
   td.style.verticalAlign = 'middle'
   td.style.padding = '0 8px'
   td.classList.add('htDimmed')
-  if (!value) return
+  if (!value) {
+    setRenderCache(td, sig)
+    return
+  }
   const dotColor: Record<string, string> = {
     '발주 필요': '#EF4444',
     '수령 필요': '#F97316',
     '수령 완료': '#22C55E',
   }
   const color = dotColor[value]
-  if (!color) return
+  if (!color) {
+    setRenderCache(td, sig)
+    return
+  }
   const wrap = document.createElement('span')
   wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;line-height:normal;'
   const dot = document.createElement('span')
@@ -520,6 +551,7 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
   wrap.appendChild(dot)
   wrap.appendChild(text)
   td.appendChild(wrap)
+  setRenderCache(td, sig)
 }
 
 // ── Custom checkbox renderer ──────────────────────────────────────────────────
@@ -527,9 +559,8 @@ function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
   const checked = value === true
-  const sig = `${row}|${col}|${checked ? 1 : 0}`
-  if (td.dataset.cbSig === sig) return
-  td.dataset.cbSig = sig
+  const sig = `cb|${row}|${col}|${checked ? 1 : 0}`
+  if (hitRenderCache(td, sig)) return
 
   td.innerHTML = ''
   // td must not add extra height — use flex to center content
@@ -565,18 +596,19 @@ function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: 
 
   outer.appendChild(box)
   td.appendChild(outer)
+  setRenderCache(td, sig)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: string) {
   const bg = SELECT_COLUMN_OPTIONS['사출_방식']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg, true)
+  renderSelectBadge(td, row, col, value, bg, true)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
+function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: string) {
   const bg = SELECT_COLUMN_OPTIONS['작업_위치']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg, true)
+  renderSelectBadge(td, row, col, value, bg, true)
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
