@@ -826,8 +826,11 @@ export default function WorksGrid() {
   const summaryInnerRef = useRef<HTMLDivElement>(null)
   const customScrollbarRef = useRef<HTMLDivElement>(null)
   const customScrollbarInnerRef = useRef<HTMLDivElement>(null)
+  const customVScrollbarRef = useRef<HTMLDivElement>(null)
+  const customVScrollbarInnerRef = useRef<HTMLDivElement>(null)
   const scrollFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const syncingCustomScrollRef = useRef(false)
+  const syncingCustomVScrollRef = useRef(false)
   const [colWidths, setColWidths] = useState<number[]>((COLUMNS as any[]).map((c: any) => c.width ?? 100)) // eslint-disable-line @typescript-eslint/no-explicit-any
   const [selectedRowIndices, setSelectedRowIndices] = useState<number[] | null>(null)
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set())
@@ -1165,24 +1168,25 @@ export default function WorksGrid() {
     return () => ro.disconnect()
   }, [])
 
-  // Intercept horizontal-dominant wheel events before HOT sees them and
-  // redirect them to the custom scrollbar. Rationale:
-  //   * Blocks macOS trackpad back/forward swipe (deltaX without
-  //     preventDefault triggers browser history navigation).
-  //   * HOT's master wtHolder has a vertical scrollbar, so its scrollable
-  //     width is larger than ht_clone_top's — letting HOT's own wheel path
-  //     drive master.scrollLeft causes master to overshoot past topMax for
-  //     one frame before the sync handler caps it, producing a visible
-  //     header-vs-body misalignment at the right edge and flicker during
-  //     rapid scroll.
-  //   * Custom scrollbar's clientWidth matches top's (no vertical
-  //     scrollbar), so its natural max == topMax. Driving master/top via
-  //     customBar.scrollLeft keeps them in lock-step with no overshoot.
+  // Horizontal wheel handler — drives master.scrollLeft directly.
   //
-  // stopPropagation in the CAPTURE phase prevents HOT's internal wheel
-  // listeners (on descendant wtHolder) from firing for horizontal wheels.
-  // Vertical wheels pass through untouched so HOT's vertical virtualization
-  // and infinite-scroll hook keep working.
+  // With master's native scrollbars hidden (see globals.css), the default
+  // browser scroll behavior on wtHolder still works for vertical wheels
+  // (deltaY-dominant) — those fall through to HOT's native scroll path.
+  //
+  // For horizontal-dominant wheels we:
+  //   1. preventDefault, which ALSO prevents macOS trackpad's back/forward
+  //      swipe navigation (deltaX without preventDefault triggers it).
+  //   2. manually write master.scrollLeft += deltaX. HOT's Overlays plugin
+  //      syncs ht_clone_top.scrollLeft = master.scrollLeft. Because
+  //      master.clientWidth === top.clientWidth (no vertical scrollbar
+  //      gutter), master.max === top.max, so the sync is exact at every
+  //      value. No clamp needed, no header/body drift possible.
+  //
+  // Capture phase + stopPropagation ensures no double-scroll if a HOT
+  // plugin ever adds a wheel listener of its own. A vertical wheel
+  // dispatched together with a small deltaX still counts as vertical here
+  // (early-return), so row-scrolling behavior is unchanged.
   useEffect(() => {
     const el = hotContainerRef.current
     if (!el) return
@@ -1190,23 +1194,15 @@ export default function WorksGrid() {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
       e.preventDefault()
       e.stopPropagation()
-      const customBar = customScrollbarRef.current
-      if (!customBar) return
-      // Clamp to topEl's actual scrollable range (which equals the visible
-      // columns' table width — no vertical scrollbar on the header clone).
-      // Using customBar.scrollWidth here would overshoot whenever its inner
-      // div is still sized from stale colWidths (afterRender syncs it, but
-      // wheels can arrive between a hide/show and the next render).
-      const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-      const maxScroll = topEl
-        ? Math.max(0, topEl.scrollWidth - topEl.clientWidth)
-        : customBar.scrollWidth - customBar.clientWidth
+      const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+      if (!masterEl) return
+      const maxScroll = masterEl.scrollWidth - masterEl.clientWidth
       if (maxScroll <= 0) return
-      const next = Math.max(0, Math.min(customBar.scrollLeft + e.deltaX, maxScroll))
-      if (customBar.scrollLeft !== next) customBar.scrollLeft = next
+      const next = Math.max(0, Math.min(masterEl.scrollLeft + e.deltaX, maxScroll))
+      if (masterEl.scrollLeft !== next) masterEl.scrollLeft = next
+      // master.scroll fires → our master listener syncs customBar + summary
+      // + the is-scrolled-x shadow class. No need to touch them here.
     }
-    // capture:true so we see the event before HOT's descendant listeners
-    // and can stop propagation.
     el.addEventListener('wheel', onWheel, { passive: false, capture: true })
     return () => el.removeEventListener('wheel', onWheel, { capture: true })
   }, [])
@@ -1242,6 +1238,7 @@ export default function WorksGrid() {
       outsideClickDeselects: (target: HTMLElement) => {
         if (selectMenuRef.current?.contains(target)) return false
         if (customScrollbarRef.current?.contains(target)) return false
+        if (customVScrollbarRef.current?.contains(target)) return false
         return true
       },
       enterBeginsEditing: true,
@@ -1326,86 +1323,107 @@ export default function WorksGrid() {
       undo: false,
     })
 
-    // Fix horizontal scroll misalignment:
-    // ht_master has a vertical scrollbar (~17px) that reduces clientWidth,
-    // making its max scrollLeft larger than ht_clone_top's max scrollLeft.
-    // Cap master.scrollLeft to top's max to keep them aligned.
+    // Master-viewport scroll listener — observes only, never writes
+    // master/top scrollLeft. With the native vertical scrollbar removed
+    // from master (globals.css), master.clientWidth === top.clientWidth,
+    // and HOT's internal Overlays sync keeps top.scrollLeft locked to
+    // master.scrollLeft at the exact pixel — no drift, no clamp needed.
+    //
+    // This listener's only job is to reflect the master's scroll state
+    // into our visual adjuncts:
+    //   - custom horizontal scrollbar thumb (read-only mirror)
+    //   - custom vertical scrollbar thumb (read-only mirror)
+    //   - summary bar translateX
+    //   - is-scrolled-x class that drives the frozen-columns shadow
+    //   - fade-in timer for both overlay scrollbars
+    //
+    // Equality guards on each write prevent a write→scroll→write feedback
+    // loop with the custom bars' own onScroll handlers.
     setTimeout(() => {
       if (!hotRef.current) return
       const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
-      const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-      if (!masterEl || !topEl) return
-      let syncing = false
-      // The 'scroll' event fires for BOTH axes on masterEl (it has a vertical
-      // AND horizontal scrollbar). Track lastCapped so we can early-return on
-      // vertical-only scrolls — otherwise every vertical tick triggers three
-      // scrollLeft writes, a classList toggle, a transform write, and a timer
-      // reset, which thrashes layout and makes vertical scrolling stutter.
-      let lastCapped = -1
+      if (!masterEl) return
+      let lastX = -1
+      let lastY = -1
       let lastShadowOn: boolean | null = null
-      masterEl.addEventListener('scroll', () => {
-        if (syncing) return
-        const maxScroll = topEl.scrollWidth - topEl.clientWidth
-        const capped = Math.min(masterEl.scrollLeft, maxScroll)
-        if (capped === lastCapped) return // vertical-only scroll — nothing to sync
-        syncing = true
-        lastCapped = capped
-        // Only write scrollLeft when it actually changed (writing the same
-        // value still costs a style recalc on some browsers).
-        if (masterEl.scrollLeft !== capped) masterEl.scrollLeft = capped
-        if (topEl.scrollLeft !== capped) topEl.scrollLeft = capped
-        // Toggle class driving the frozen-columns right-edge shadow so it
-        // only appears while horizontally scrolled. Only call when state flips.
-        const shadowOn = capped > 0
-        if (shadowOn !== lastShadowOn) {
-          const rootEl = hotRef.current?.rootElement as HTMLElement | undefined
-          if (rootEl) rootEl.classList.toggle('is-scrolled-x', shadowOn)
-          lastShadowOn = shadowOn
-        }
-        if (summaryInnerRef.current) {
-          summaryInnerRef.current.style.transform = `translateX(-${capped}px)`
-        }
-        // Sync custom scrollbar position
-        if (!syncingCustomScrollRef.current && customScrollbarRef.current
-            && customScrollbarRef.current.scrollLeft !== capped) {
-          syncingCustomScrollRef.current = true
-          customScrollbarRef.current.scrollLeft = capped
-          syncingCustomScrollRef.current = false
-        }
-        // Fade in scrollbar
-        if (customScrollbarRef.current) {
-          customScrollbarRef.current.style.opacity = '1'
-        }
+      const showBars = () => {
+        if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '1'
+        if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '1'
         if (scrollFadeTimerRef.current) clearTimeout(scrollFadeTimerRef.current)
         scrollFadeTimerRef.current = setTimeout(() => {
           if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '0'
+          if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '0'
         }, 1000)
-        syncing = false
+      }
+      masterEl.addEventListener('scroll', () => {
+        const x = masterEl.scrollLeft
+        const y = masterEl.scrollTop
+        const xChanged = x !== lastX
+        const yChanged = y !== lastY
+        if (!xChanged && !yChanged) return
+        if (xChanged) {
+          lastX = x
+          // Frozen-column shadow — only toggle when state flips.
+          const shadowOn = x > 0
+          if (shadowOn !== lastShadowOn) {
+            const rootEl = hotRef.current?.rootElement as HTMLElement | undefined
+            if (rootEl) rootEl.classList.toggle('is-scrolled-x', shadowOn)
+            lastShadowOn = shadowOn
+          }
+          if (summaryInnerRef.current) {
+            summaryInnerRef.current.style.transform = `translateX(-${x}px)`
+          }
+          // Mirror into custom horizontal bar (guarded against feedback).
+          if (!syncingCustomScrollRef.current && customScrollbarRef.current
+              && customScrollbarRef.current.scrollLeft !== x) {
+            syncingCustomScrollRef.current = true
+            customScrollbarRef.current.scrollLeft = x
+            syncingCustomScrollRef.current = false
+          }
+        }
+        if (yChanged) {
+          lastY = y
+          if (!syncingCustomVScrollRef.current && customVScrollbarRef.current
+              && customVScrollbarRef.current.scrollTop !== y) {
+            syncingCustomVScrollRef.current = true
+            customVScrollbarRef.current.scrollTop = y
+            syncingCustomVScrollRef.current = false
+          }
+        }
+        showBars()
       }, { passive: true })
     }, 100)
 
-    // Keep the custom scrollbar's inner width aligned to HOT's ACTUAL
-    // scrollable width (ht_clone_top has no vertical scrollbar and renders
-    // only visible — non-hidden — columns, so its scrollWidth is the source
-    // of truth for horizontal scrollable range).
+    // After every HOT render, align the custom overlay bars' inner sizes
+    // to the master viewport's actual scrollable dimensions. HOT's render
+    // is where hide/show/resize/move/data-load ultimately show up, so
+    // this is the single, reliable place to keep the bars honest.
     //
-    // Rationale: the JSX renders the inner with `width = sum(colWidths)`,
-    // but colWidths is a physical-indexed array of ALL columns — including
-    // those hidden via HiddenColumns plugin. When any column is hidden the
-    // inner width exceeds topEl.scrollWidth, making the custom scrollbar's
-    // max larger than topEl's max. Scrolling to the right edge then pushes
-    // master/customBar past topEl's reachable range, leaving the header and
-    // body misaligned at the right edge. Syncing after every HOT render
-    // keeps customBar.max === topEl.max through hide/show/resize/move.
+    // Horizontal: use master.scrollWidth (HOT's Overlays sync guarantees
+    // master.scrollWidth === top.scrollWidth, and master is what drives
+    // scroll now, so reading master is correct). Horizontal inner width
+    // must exactly match master.scrollWidth — otherwise customBar.max
+    // can drift from master.max and the thumb position becomes
+    // visually incorrect at the right edge.
+    //
+    // Vertical: use master.scrollHeight so the vertical bar's max
+    // matches master's vertical scroll range.
     hotRef.current.addHook('afterRender', () => {
-      const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-      const inner = customScrollbarInnerRef.current
-      if (!topEl || !inner) return
-      const target = topEl.scrollWidth
-      // Only write when changed — writing the same value still triggers
-      // style recalc on some browsers, adding scroll-time overhead.
-      if (parseFloat(inner.style.width) !== target) {
-        inner.style.width = `${target}px`
+      const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+      if (!masterEl) return
+      const hInner = customScrollbarInnerRef.current
+      if (hInner) {
+        const target = masterEl.scrollWidth
+        if (parseFloat(hInner.style.width) !== target) {
+          hInner.style.width = `${target}px`
+        }
+      }
+      const vInner = customVScrollbarInnerRef.current
+      if (vInner) {
+        const target = masterEl.scrollHeight
+        if (parseFloat(vInner.style.height) !== target) {
+          vInner.style.height = `${target}px`
+        }
       }
     })
 
@@ -2637,14 +2655,18 @@ export default function WorksGrid() {
           </div>
         )}
 
-        {/* Custom horizontal scrollbar — overlaps SummaryBar, fades in on scroll */}
+        {/* Custom horizontal scrollbar — overlaps SummaryBar, fades in on
+            scroll. Single responsibility: mirror master's scrollLeft.
+            Writing master.scrollLeft is enough because HOT's Overlays
+            plugin propagates it to ht_clone_top, and master.clientWidth
+            now equals top.clientWidth so the sync is exact. */}
         <div
           ref={customScrollbarRef}
           style={{
             position: 'absolute',
             bottom: 0,
             left: 0,
-            right: 0,
+            right: 6, // leave room for the vertical bar at the corner
             height: 6,
             overflowX: 'scroll',
             overflowY: 'hidden',
@@ -2654,32 +2676,55 @@ export default function WorksGrid() {
           }}
           onScroll={() => {
             if (syncingCustomScrollRef.current || !customScrollbarRef.current) return
-            // topEl (header clone) is the source of truth for horizontal
-            // scrollable range — it has no vertical scrollbar, so its max
-            // scrollLeft matches the visible-columns table width. Clamp
-            // here so masterEl (wider max due to its vertical scrollbar)
-            // and topEl stay locked to the same value at the right edge.
-            const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
             const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
-            const raw = customScrollbarRef.current.scrollLeft
-            const maxScroll = topEl ? Math.max(0, topEl.scrollWidth - topEl.clientWidth) : raw
-            const scrollLeft = Math.min(raw, maxScroll)
+            if (!masterEl) return
+            const x = customScrollbarRef.current.scrollLeft
+            if (masterEl.scrollLeft === x) return
             syncingCustomScrollRef.current = true
-            if (masterEl) masterEl.scrollLeft = scrollLeft
-            if (topEl) topEl.scrollLeft = scrollLeft
-            if (summaryInnerRef.current) {
-              summaryInnerRef.current.style.transform = `translateX(-${scrollLeft}px)`
-            }
-            // If the user's drag overshot the true max (can happen briefly
-            // if afterRender hasn't yet shrunk the inner div), snap the
-            // customBar back so it can't drift past topEl's reach.
-            if (raw !== scrollLeft) customScrollbarRef.current.scrollLeft = scrollLeft
+            masterEl.scrollLeft = x
             syncingCustomScrollRef.current = false
+            // master.scroll fires async; the listener there handles
+            // summary transform, shadow class, and mirror-back guard.
           }}
         >
           <div
             ref={customScrollbarInnerRef}
             style={{ height: 1, width: colWidths.reduce((s, w) => s + w, 0) }}
+          />
+        </div>
+
+        {/* Custom vertical scrollbar — overlay on the right edge. Mirrors
+            master.scrollTop. Replaces the native scrollbar we disabled
+            (see globals.css for the rationale — master.clientWidth must
+            equal top.clientWidth to prevent right-edge header/body drift). */}
+        <div
+          ref={customVScrollbarRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            bottom: 6, // leave room for the horizontal bar at the corner
+            width: 6,
+            overflowX: 'hidden',
+            overflowY: 'scroll',
+            opacity: 0,
+            transition: 'opacity 0.4s ease',
+            zIndex: 20,
+          }}
+          onScroll={() => {
+            if (syncingCustomVScrollRef.current || !customVScrollbarRef.current) return
+            const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+            if (!masterEl) return
+            const y = customVScrollbarRef.current.scrollTop
+            if (masterEl.scrollTop === y) return
+            syncingCustomVScrollRef.current = true
+            masterEl.scrollTop = y
+            syncingCustomVScrollRef.current = false
+          }}
+        >
+          <div
+            ref={customVScrollbarInnerRef}
+            style={{ width: 1, height: 1 }}
           />
         </div>
 

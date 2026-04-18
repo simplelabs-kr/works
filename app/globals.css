@@ -488,15 +488,32 @@ body {
   display: inline-flex;
 }
 
-/* scrollbar */
+/* ── Scrollbars ──────────────────────────────────────────────────
+   ht_master's native scrollbars are hidden entirely (both axes) and
+   replaced by our custom overlay bars.
+
+   Why the vertical bar must go too: ht_master.wtHolder has
+   overflow:auto, so a visible vertical scrollbar consumes ~6px of
+   clientWidth, making master.clientWidth < ht_clone_top.clientWidth.
+   That makes master's max scrollLeft 6px LARGER than top's. HOT's
+   own keyboard/programmatic scrolls (scrollViewportTo, move-selection-
+   into-view, last-column Tab) can push master.scrollLeft past top's
+   max; HOT's Overlays sync then copies that value to
+   top.scrollLeft, but the browser clamps top to its own max, leaving
+   the header 6px to the left of the body columns. Eliminating the
+   gutter eliminates the mismatch structurally — master.max now
+   equals top.max on every frame, so HOT's sync is exact. */
 .handsontable .wtHolder::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
-
-/* Hide native horizontal scrollbar on ht_master — replaced by custom overlay scrollbar */
-.handsontable.ht_master .wtHolder::-webkit-scrollbar:horizontal {
+.handsontable.ht_master .wtHolder::-webkit-scrollbar {
+  width: 0 !important;
   height: 0 !important;
+}
+.handsontable.ht_master .wtHolder {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
 }
 .handsontable .wtHolder::-webkit-scrollbar-track {
   background: transparent;
