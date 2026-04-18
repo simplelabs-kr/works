@@ -730,6 +730,32 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     if (res) await refresh()
   }
 
+  // Scope toggle: private → collaborative (share with team) or
+  // collaborative → private (unshare). Owner-only. The PATCH endpoint
+  // already supports scope; here we just surface the affordance and
+  // re-fetch so LNB relocates the row into the correct section.
+  const handleToggleScope = async (preset: ViewPreset) => {
+    const next: PresetScope = preset.scope === 'collaborative' ? 'private' : 'collaborative'
+    if (next === 'collaborative') {
+      if (!window.confirm(`'${preset.name}' 뷰를 팀에 공유할까요? 팀원 모두가 볼 수 있습니다.`)) return
+    } else {
+      if (!window.confirm(`'${preset.name}' 뷰를 개인 뷰로 전환할까요? 팀원에게 더 이상 보이지 않습니다.`)) return
+    }
+    // When moving out of a shared folder (or into private), we also
+    // detach from the folder if the folder scope no longer matches.
+    const folder = preset.folder_id ? folders.find(f => f.id === preset.folder_id) : null
+    const detachFolder = folder && folder.scope !== next
+    const res = await updatePreset(preset.id, {
+      scope: next,
+      ...(detachFolder ? { folder_id: null } : {}),
+    })
+    if (!res) {
+      window.alert('공개 범위 변경에 실패했습니다')
+      return
+    }
+    await refresh()
+  }
+
   const handleCopyToMine = async (preset: ViewPreset) => {
     if (!activePresetKey) return
     const created = await createPreset({
@@ -790,6 +816,16 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     e.dataTransfer.effectAllowed = 'move'
   }
 
+  // Hit-test rules (per UX spec):
+  //   preset (non-folder item): top 40% → line above, bottom 40% →
+  //     line below. Middle 20% is a quiet zone — we keep whichever
+  //     indicator was last set so the user's commit isn't ambiguous
+  //     but we also don't jitter mid-move.
+  //   folder row (preset being dragged): top 40% → line above folder
+  //     (drop as top-level sibling above), middle 20% → file INTO
+  //     folder (ring highlight), bottom 40% → line below.
+  //   folder row (folder being dragged = reorder): 50/50 above/below
+  //     since "into" isn't meaningful for folders-into-folders.
   const overPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!drag) return
     // Folders can't drop onto preset rows.
@@ -798,8 +834,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = e.currentTarget.getBoundingClientRect()
-    const isAbove = e.clientY < rect.top + rect.height / 2
-    const position: 'above' | 'below' = isAbove ? 'above' : 'below'
+    const y = e.clientY - rect.top
+    const h = rect.height
+    const topZone = h * 0.4
+    const bottomZone = h * 0.6
+    // Quiet 20% middle band: don't change the indicator — keeps the
+    // line from jittering while the cursor is mid-row.
+    if (y >= topZone && y <= bottomZone) return
+    const position: 'above' | 'below' = y < topZone ? 'above' : 'below'
     setDropTarget(prev =>
       prev && prev.kind === 'preset' && prev.id === target.id && prev.position === position
         ? prev
@@ -809,25 +851,43 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
   const overFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!drag) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const h = rect.height
+
     if (drag.kind === 'folder') {
-      // Folder-to-folder = reorder.
+      // Folder-to-folder = reorder, no "into".
       if (drag.id === folder.id) return
-      // Can only reorder within the same section.
       if (drag.section !== folder.scope) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
-      const rect = e.currentTarget.getBoundingClientRect()
-      const isAbove = e.clientY < rect.top + rect.height / 2
-      const position: 'above' | 'below' = isAbove ? 'above' : 'below'
+      const position: 'above' | 'below' = y < h / 2 ? 'above' : 'below'
       setDropTarget(prev =>
         prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === position
           ? prev
           : { kind: 'folder-row', id: folder.id, position }
       )
+      return
+    }
+
+    // Preset drag over a folder — 40/20/40 split.
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const topZone = h * 0.4
+    const bottomZone = h * 0.6
+    if (y < topZone) {
+      setDropTarget(prev =>
+        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === 'above'
+          ? prev
+          : { kind: 'folder-row', id: folder.id, position: 'above' }
+      )
+    } else if (y > bottomZone) {
+      setDropTarget(prev =>
+        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === 'below'
+          ? prev
+          : { kind: 'folder-row', id: folder.id, position: 'below' }
+      )
     } else {
-      // Preset-to-folder = drop INTO folder.
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
       setDropTarget(prev =>
         prev && prev.kind === 'folder-into' && prev.id === folder.id
           ? prev
@@ -924,18 +984,26 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       return
     }
 
-    // Preset → folder: move under this folder.
+    // Preset dropped on a folder row. Two cases, distinguished by the
+    // indicator position at drop time:
+    //   folder-into  → file preset inside the folder (folder_id = folder.id)
+    //   folder-row   → drop as a top-level sibling (folder_id = null).
+    //                  Positioning within top-level isn't tracked here;
+    //                  the row appears at its current sort_order after refresh.
     if (d.kind === 'preset') {
       const source = presets.find(p => p.id === d.id)
       if (!source) return
-      if (source.folder_id === folder.id) return
-      // Scope guard: a private preset may only move into a private folder (and vice versa).
+      // Scope guard: a private preset may only interact with a private
+      // folder (and vice versa). Keeps sort_order pools disjoint.
       if (source.scope !== folder.scope) {
         window.alert('공개 범위가 다른 폴더에는 이동할 수 없습니다')
         return
       }
+      const intoFolder = t?.kind === 'folder-into' && t.id === folder.id
+      const targetFolderId = intoFolder ? folder.id : null
+      if (source.folder_id === targetFolderId) return
       void (async () => {
-        await updatePreset(d.id, { folder_id: folder.id })
+        await updatePreset(d.id, { folder_id: targetFolderId })
         await refresh()
       })()
     }
@@ -983,6 +1051,12 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     if (mine) {
       items.push({ kind: 'action', label: '이름 바꾸기', onClick: () => setRenamingPresetId(preset.id) })
       items.push({ kind: 'action', label: preset.starred ? '즐겨찾기 해제' : '즐겨찾기', onClick: () => void handleToggleStar(preset) })
+      items.push({ kind: 'separator' })
+      items.push({
+        kind: 'action',
+        label: preset.scope === 'collaborative' ? '개인 뷰로 전환' : '팀에 공유하기',
+        onClick: () => void handleToggleScope(preset),
+      })
       items.push({ kind: 'separator' })
       items.push({ kind: 'action', label: '삭제', danger: true, onClick: () => void handleDeletePreset(preset) })
     } else {
@@ -1042,10 +1116,20 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
           {label}
         </SectionLabel>
         <div
-          className={`px-2 pb-1 ${dropTarget?.kind === 'section' && dropTarget.section === section ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
+          className={`relative px-2 pb-1 ${dropTarget?.kind === 'section' && dropTarget.section === section ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
           onDragOver={overSection(section)}
           onDrop={dropOnSection(section)}
         >
+          {/* Section-level drop indicator: a 2px blue line flush with
+              the bottom edge of this section's content area. Signals
+              "drop here → preset becomes a top-level row in this
+              section" when the user drags out of a folder. */}
+          {dropTarget?.kind === 'section' && dropTarget.section === section && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2 right-2 bottom-0 h-[2px] bg-[#2D7FF9]"
+            />
+          )}
           {!activePresetKey && (
             <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
               뷰를 지원하지 않는 페이지입니다
