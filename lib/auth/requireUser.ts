@@ -8,9 +8,14 @@ import { createServerSupabase } from "@/lib/supabase/server";
 export async function requireUser() {
   // Local development bypass — matches middleware.ts behavior so API routes
   // are reachable without a Supabase session during `next dev`.
+  //
+  // DEV_USER_KEY in .env.local lets you impersonate a different user for
+  // collaborative view / ownership testing without needing a real session.
+  // Change the env var and restart the dev server to switch identity.
   if (process.env.NODE_ENV === "development") {
+    const email = process.env.DEV_USER_KEY || "dev@simplelabs.kr";
     return {
-      user: { id: "dev-user", email: "dev@simplelabs.kr" } as unknown as User,
+      user: { id: `dev-${email}`, email } as unknown as User,
     };
   }
 
