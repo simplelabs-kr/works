@@ -121,12 +121,6 @@ function PresetRow({
   onDrop,
   onDragEnd,
 }: PresetRowProps) {
-  const dropLineClass =
-    dropLinePosition === 'above'
-      ? 'shadow-[inset_0_2px_0_0_#2D7FF9]'
-      : dropLinePosition === 'below'
-      ? 'shadow-[inset_0_-2px_0_0_#2D7FF9]'
-      : ''
   return (
     <div
       draggable={draggable}
@@ -135,10 +129,24 @@ function PresetRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      className={`group flex items-center gap-1 rounded-[6px] px-1 py-1 ${
+      // position:relative so the drop-line child below can span the
+      // row's full width via absolute positioning. An earlier attempt
+      // used inset box-shadow, but border-radius clips inset shadows
+      // to the rounded corners — producing a curved, incomplete line.
+      // An absolutely-positioned 2px rectangle renders as a true
+      // straight line regardless of the row's border-radius.
+      className={`group relative flex items-center gap-1 rounded-[6px] px-1 py-1 ${
         active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
-      } ${isDragging ? 'opacity-40' : ''} ${dropLineClass}`}
+      } ${isDragging ? 'opacity-40' : ''}`}
     >
+      {dropLinePosition && (
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-0 right-0 h-[2px] bg-[#2D7FF9] ${
+            dropLinePosition === 'above' ? 'top-0' : 'bottom-0'
+          }`}
+        />
+      )}
       {draggable && (
         <span
           aria-label="순서 변경"
