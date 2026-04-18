@@ -269,7 +269,7 @@ function PresetRow({
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu}
       onDoubleClick={() => { if (ownedByMe && onRequestRename) onRequestRename() }}
-      className={`group relative flex items-center gap-1.5 rounded-[6px] px-1.5 py-1.5 ${
+      className={`group relative flex items-center gap-1.5 rounded-[6px] px-1.5 py-2 my-0.5 ${
         active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
       } ${isDragging ? 'opacity-40' : ''}`}
     >
