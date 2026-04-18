@@ -1,11 +1,18 @@
-// 휴지통 placeholder. Commit 6 wires this up to DataGrid with a
-// trashed-only variant of the works page config (복구 / 영구삭제
-// controls, no editing).
+import dynamic from 'next/dynamic'
+
+// 휴지통 — soft-deleted order_items viewed through the same DataGrid
+// plumbing as /works/production, with trashedMode flipped on.
+const WorksTrashGrid = dynamic(() => import('@/components/works/WorksTrashGrid'), {
+  ssr: false,
+  loading: () => (
+    <p className="py-8 text-center text-sm text-gray-400">로딩 중…</p>
+  ),
+})
 
 export default function TrashPage() {
   return (
-    <div className="flex h-full items-center justify-center text-[13px] text-[#94A3B8]">
-      휴지통 — 구현 예정
+    <div className="h-full min-h-0 overflow-hidden">
+      <WorksTrashGrid />
     </div>
   )
 }

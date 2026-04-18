@@ -410,3 +410,19 @@ export const worksPageConfig: PageConfig = {
     createEmptyRow: worksCreateEmptyRow,
   },
 }
+
+// Trash variant — same columns, same fetch endpoint, but switched into
+// `trashedMode` so DataGrid reads deleted rows, disables every cell,
+// and swaps the bottom action bar to 복구 / 영구삭제. pageKey is
+// namespaced separately so the trash view persists its own column
+// order / filter / sort independently of the primary grid.
+export const worksTrashPageConfig: PageConfig = {
+  ...worksPageConfig,
+  pageKey: `${VIEW_PAGE_KEY}-trash`,
+  trashedMode: true,
+  // No editable fields — the map is informational elsewhere (e.g. to
+  // drive the add-row focus target), but trashedMode forces every cell
+  // readOnly regardless.
+  editableFields: {},
+  addRow: undefined,
+}

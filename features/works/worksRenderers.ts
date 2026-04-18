@@ -462,6 +462,11 @@ export function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number
 
   box.onclick = (e) => {
     e.stopPropagation()
+    // Respect readOnly (e.g. trash view sets every cell readOnly). The
+    // cells hook overrides per-column `readOnly:false` in that case, so
+    // checking cell meta is the authoritative gate.
+    const meta = hot.getCellMeta(row, col)
+    if (meta?.readOnly) return
     const currentVal = hot.getDataAtCell(row, col)
     hot.setDataAtCell(row, col, currentVal !== true, 'checkboxClick')
   }

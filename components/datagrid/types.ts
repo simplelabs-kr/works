@@ -89,6 +89,16 @@ export type PageConfig = {
   // DataGrid keep React state stable when the page has no such fields.
   recomputeDerivedOnHolidayChange?: (row: Row, holidays: Set<string>) => Row
 
+  // When true, DataGrid renders a trash-only variant:
+  //   - fetch endpoint receives `trashed_only: true`
+  //   - every cell is readOnly (no editor, no checkbox toggle)
+  //   - the bottom selection bar swaps 삭제 for 복구 / 영구삭제
+  //   - "+ 추가" is suppressed even if addRow.enabled is true
+  // Pages wanting this flip it on a variant PageConfig (e.g. works →
+  // worksTrashConfig) so the trash page reuses the same column catalog,
+  // view persistence, and fetch plumbing as the primary grid.
+  trashedMode?: boolean
+
   // Opt-in "+ 추가" (add row) support.
   //
   // When `enabled`, DataGrid renders a "+ 추가" toolbar button and binds

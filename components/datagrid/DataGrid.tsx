@@ -92,7 +92,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     recomputeDerivedAfterEdit,
     recomputeDerivedOnHolidayChange,
     addRow,
+    trashedMode,
   } = pageConfig
+  // "+ 추가" is always suppressed in the trash view — you can't create
+  // rows into a soft-deleted bucket.
+  const addRowEnabled = !!addRow?.enabled && !trashedMode
 
   // Prop → column index cache. Derived from pageConfig.columns; recomputes
   // only when the catalog itself changes. Hot path — HOT's propToCol() does
@@ -476,6 +480,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         filters: apiFilters,
         sorts: apiSorts,
         search_term: searchTermRef.current || null,
+        trashed_only: !!trashedMode,
       }),
     })
       .then(res => res.json())
@@ -611,6 +616,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
+      // Trash view is read-only across every cell. Override per-column
+      // `readOnly: false` (e.g. works 데드라인, 중량) and disable their
+      // editors so checkbox/select renderers also stop responding to
+      // toggles. Non-trash pages leave cell meta untouched.
+      cells: trashedMode ? () => ({ readOnly: true, editor: false }) : undefined,
       // Custom context menu: Airtable-style freeze semantics.
       // - "여기까지 고정": set fixedColumnsStart = clickedVisualCol + 1
       //   (freezes columns 1..N, where N is the clicked column, 1-indexed).
@@ -1090,6 +1100,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (effectiveColumnsRef.current as any[])[coords.col]
       if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
+      if (trashedMode) return // trash view has every cell readOnly
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
       const column = colDef.data as string
       const options = getSelectColumnOptions()[column] ?? []
@@ -1806,7 +1817,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   // which point the fetch-replace dedupe removes it from the optimistic
   // set and keeps only the server copy).
   const handleAddRow = useCallback(async () => {
-    if (!addRow?.enabled) return
+    if (!addRowEnabled || !addRow) return
     if (addingRowRef.current) return
     addingRowRef.current = true
     try {
@@ -1846,11 +1857,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     } finally {
       addingRowRef.current = false
     }
-  }, [addRow, apiBase, firstEditableColIdx, showToast])
+  }, [addRow, addRowEnabled, apiBase, firstEditableColIdx, showToast])
 
   // Shift+Enter anywhere outside an open editor / input triggers add-row.
   useEffect(() => {
-    if (!addRow?.enabled) return
+    if (!addRowEnabled) return
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Enter' || !e.shiftKey) return
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -1868,7 +1879,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [addRow?.enabled, handleAddRow])
+  }, [addRowEnabled, handleAddRow])
 
   // Handle row deletion
   const handleDeleteSelected = async () => {
@@ -1938,12 +1949,88 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     hotRef.current?.render()
   }
 
+  // Trash-only: restore the selection (flip deleted_at → null). The
+  // restored rows leave the trash view immediately (they no longer
+  // match trashed_only), so we drop them from local state rather than
+  // refetching for snappy feedback. Undo revives by re-soft-deleting.
+  const handleRestoreSelected = async () => {
+    const ids = Array.from(selectedRowIds)
+    if (ids.length === 0) return
+    try {
+      const res = await fetch(`${apiBase}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) {
+        showToast({ message: '복구에 실패했습니다', type: 'error' }, 3000)
+        return
+      }
+      setRows(prev => prev.filter(r => !ids.includes(r.id)))
+      checkedRowsRef.current.clear()
+      setSelectedRowIds(new Set())
+      lastCheckedRowRef.current = null
+      showToast({
+        message: `${ids.length}개 복구됨`,
+        type: 'success',
+        undoAction: async () => {
+          try {
+            const redeleteRes = await fetch(`${apiBase}/bulk-delete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids }),
+            })
+            if (!redeleteRes.ok) {
+              showToast({ message: '되돌리기에 실패했습니다', type: 'error' }, 3000)
+              return
+            }
+            setOffset(0)
+            setFetchTrigger(prev => prev + 1)
+            showToast({ message: '복구를 취소했습니다', type: 'success' }, 2000)
+          } catch {
+            showToast({ message: '되돌리기에 실패했습니다', type: 'error' }, 3000)
+          }
+        },
+      }, 5000)
+    } catch {
+      showToast({ message: '복구에 실패했습니다', type: 'error' }, 3000)
+    }
+  }
+
+  // Trash-only: irreversible DELETE FROM order_items. Confirmed via
+  // window.confirm — no undo path because the data is gone at the DB
+  // level (flat_order_details row also disappears via cascade).
+  const handlePermanentDeleteSelected = async () => {
+    const ids = Array.from(selectedRowIds)
+    if (ids.length === 0) return
+    const ok = window.confirm(`${ids.length}개 행을 영구 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`)
+    if (!ok) return
+    try {
+      const res = await fetch(`${apiBase}/permanent-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (!res.ok) {
+        showToast({ message: '영구삭제에 실패했습니다', type: 'error' }, 3000)
+        return
+      }
+      setRows(prev => prev.filter(r => !ids.includes(r.id)))
+      checkedRowsRef.current.clear()
+      setSelectedRowIds(new Set())
+      lastCheckedRowRef.current = null
+      showToast({ message: `${ids.length}개 영구 삭제됨`, type: 'success' }, 3000)
+    } catch {
+      showToast({ message: '영구삭제에 실패했습니다', type: 'error' }, 3000)
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Top bar: (좌) 필터 / 검색 / 정렬  (우) count */}
       <div className="flex-shrink-0 flex items-center gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
-        {/* Add row (opt-in per page) */}
-        {addRow?.enabled && (
+        {/* Add row (opt-in per page, suppressed in trash view) */}
+        {addRowEnabled && (
           <button
             type="button"
             onClick={() => { void handleAddRow() }}
@@ -2348,20 +2435,53 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           >
             선택 해제
           </button>
-          <button
-            onClick={handleDeleteSelected}
-            style={{
-              background: '#EF4444',
-              border: 'none',
-              color: '#fff',
-              padding: '4px 12px',
-              borderRadius: 4,
-              fontSize: 12,
-              cursor: 'pointer',
-            }}
-          >
-            삭제
-          </button>
+          {trashedMode ? (
+            <>
+              <button
+                onClick={handleRestoreSelected}
+                style={{
+                  background: '#2D7FF9',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '4px 12px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                복구
+              </button>
+              <button
+                onClick={handlePermanentDeleteSelected}
+                style={{
+                  background: '#EF4444',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '4px 12px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                영구삭제
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleDeleteSelected}
+              style={{
+                background: '#EF4444',
+                border: 'none',
+                color: '#fff',
+                padding: '4px 12px',
+                borderRadius: 4,
+                fontSize: 12,
+                cursor: 'pointer',
+              }}
+            >
+              삭제
+            </button>
+          )}
         </div>
       )}
 

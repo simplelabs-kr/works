@@ -21,6 +21,11 @@ export async function POST(request: NextRequest) {
   const sorts       = Array.isArray(body.sorts) ? body.sorts : [];
   const searchRaw   = typeof body.search_term === 'string' ? body.search_term : '';
   const searchTerm  = searchRaw ? searchRaw.slice(0, MAX_SEARCH_LENGTH) : null;
+  // Trash view — fetches soft-deleted rows (deleted_at IS NOT NULL)
+  // instead of the default active rows. Requires matching RPC support
+  // (search_flat_order_details / count_flat_order_details both gain a
+  // `trashed_only boolean DEFAULT false` param).
+  const trashedOnly = body.trashed_only === true;
 
   const noopResult = Promise.resolve({ data: null, error: null } as { data: null; error: null });
 
@@ -32,14 +37,15 @@ export async function POST(request: NextRequest) {
       search_term:   searchTerm,
       result_offset: offset,
       result_limit:  100,
+      trashed_only:  trashedOnly,
     }),
     // 2) filterCount (filters only, no search) — count RPC has no sorts_json param
     offset === 0
-      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: null })
+      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: null, trashed_only: trashedOnly })
       : noopResult,
     // 3) searchCount (filters + search) — offset===0 and search active
     offset === 0 && searchTerm
-      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: searchTerm })
+      ? supabaseAdmin.rpc("count_flat_order_details", { filters_json: filters, search_term: searchTerm, trashed_only: trashedOnly })
       : noopResult,
   ]);
 
