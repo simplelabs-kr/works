@@ -1464,6 +1464,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
 
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload)
+      // Flush any pending debounced save so SPA navigation away from this
+      // grid (e.g. clicking the 휴지통 link) doesn't drop the last resize
+      // or column-move. beforeunload only fires on hard reload/close, not
+      // on Next.js soft nav — if the user resizes and navigates within the
+      // 400ms debounce window, the write would otherwise be lost and the
+      // next mount would restore stale widths.
+      if (saveTimerRef.current) {
+        entry.flush()
+      }
       if (registry[VIEW_PAGE_KEY] === entry) delete registry[VIEW_PAGE_KEY]
     }
   }, [VIEW_PAGE_KEY])

@@ -60,17 +60,13 @@ export default function WorksShell({ children }: { children: React.ReactNode }) 
   return (
     <PresetsProvider>
       <div className="flex flex-col h-screen overflow-hidden bg-white">
-        <GNB
-          onOpenPalette={() => setPaletteOpen(true)}
-          lnbCollapsed={lnbCollapsed}
-          onToggleLnb={toggleLnb}
-        />
+        <GNB onOpenPalette={() => setPaletteOpen(true)} />
         <div className="flex flex-1 min-h-0">
           {/* Suppress the first-paint flash of the wrong width: until
               localStorage has been read we leave lnbCollapsed=false which
               matches the server render. `hydrated` just gates whether
               transitions kick in — they'd be distracting on first paint. */}
-          <LNB collapsed={lnbCollapsed} animated={hydrated} />
+          <LNB collapsed={lnbCollapsed} animated={hydrated} onToggle={toggleLnb} />
           <div className="flex-1 min-w-0 min-h-0">
             {children}
           </div>

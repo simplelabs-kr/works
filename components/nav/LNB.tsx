@@ -116,9 +116,38 @@ type Props = {
   // Controls whether width transitions run. False on the very first paint
   // so users don't see an animation during hydration; true afterwards.
   animated: boolean
+  onToggle: () => void
 }
 
-export default function LNB({ collapsed, animated }: Props) {
+// Chevron glyph pointing toward the direction the LNB will move on click:
+// «  when expanded (will collapse → slide left), »  when collapsed.
+function ToggleIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      {collapsed ? (
+        <path d="M5 3.5L8.5 7L5 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      ) : (
+        <path d="M9 3.5L5.5 7L9 10.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
+  )
+}
+
+function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+      title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
+      className="flex items-center justify-center w-[26px] h-[26px] rounded-[4px] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-colors"
+    >
+      <ToggleIcon collapsed={collapsed} />
+    </button>
+  )
+}
+
+export default function LNB({ collapsed, animated, onToggle }: Props) {
   const pathname = usePathname()
   const activePage = resolveActivePage(pathname ?? '')
   const activeKey = activePage?.key ?? null
@@ -216,20 +245,28 @@ export default function LNB({ collapsed, animated }: Props) {
   const transitionClass = animated ? 'transition-[width] duration-200 ease-out' : ''
 
   if (collapsed) {
-    // Collapsed rail: 36px wide, no section content — toggle lives in
-    // GNB so there's nothing actionable here. Keeping the rail (rather
-    // than removing the element) preserves the horizontal layout and
-    // avoids a content-area reflow while the transition animates.
+    // Collapsed rail: 36px wide. Only content is the toggle button so
+    // the user always has a way back. Keeping the rail (rather than
+    // removing the element) preserves the horizontal layout and avoids
+    // a content-area reflow while the transition animates.
     return (
       <aside
         aria-label="사이드바 (접힘)"
-        className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] overflow-hidden`}
-      />
+        className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col items-center pt-2 overflow-hidden`}
+      >
+        <ToggleButton collapsed={collapsed} onToggle={onToggle} />
+      </aside>
     )
   }
 
   return (
     <aside className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto`}>
+      {/* Top row: collapse toggle, flush-right so it sits on the edge
+          nearest the content area (the side it'll slide toward). */}
+      <div className="flex items-center justify-end px-2 pt-2 pb-1">
+        <ToggleButton collapsed={collapsed} onToggle={onToggle} />
+      </div>
+
       {/* 즐겨찾기 */}
       <SectionLabel>즐겨찾기</SectionLabel>
       <div className="px-2 pb-1">
