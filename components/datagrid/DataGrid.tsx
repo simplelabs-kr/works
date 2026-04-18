@@ -1287,10 +1287,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   //                  use hot.getColWidth(vi) because it returns 0 for
   //                  hidden columns and can reflect stretch-to-fit,
   //                  neither of which represents the user's intent.
-  //   hiddenColumns← hot.getPlugin('hiddenColumns').getHiddenColumns()
-  //                  as visual indices → resolved back to prop names.
-  //                  Plugin state is authoritative — toggling via the
-  //                  ColumnManager modal writes through this plugin.
+  //   hiddenColumns← hiddenColumnsRef.current (Set<prop>). React state is
+  //                  authoritative, not the HOT plugin: the plugin is
+  //                  driven by a separate effect that runs AFTER the save
+  //                  effect in declaration order. Reading the plugin here
+  //                  would return pre-sync state and persist [] for the
+  //                  very edit that triggered the save. The ref mirror is
+  //                  updated by an earlier effect (line ~395), so by the
+  //                  time the save effect runs it already reflects the
+  //                  new set.
   //   frozenCount  ← hot.getSettings().fixedColumnsStart. Our freeze
   //                  controls flow through setFrozenCount → effect →
   //                  updateSettings({fixedColumnsStart}), so HOT is the
@@ -1314,22 +1319,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const total = (effectiveColumnsRef.current as any[]).length
 
-      // Hidden columns — pull authoritative visual indices from the
-      // plugin and resolve back to prop names.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const hp = hot.getPlugin('hiddenColumns') as any
-      const hiddenVisualsArr: unknown = hp?.getHiddenColumns?.()
-      const hiddenVisualSet = new Set<number>(
-        Array.isArray(hiddenVisualsArr)
-          ? hiddenVisualsArr.filter((x): x is number => typeof x === 'number')
-          : []
-      )
+      // Hidden columns — read from React-state mirror (Set<prop>). See
+      // comment above for why we don't query the HOT plugin here.
+      const hiddenPropSet = hiddenColumnsRef.current
 
       // Walk HOT's visual order. vi=0 is the pinned No. column — skip.
       // hiddenColumns in HOT 14 uses a hidingMap (not a trimmingMap),
-      // so hidden columns still occupy visual indices and getHiddenColumns
-      // returns their visual positions. Iterating up to total (physical
-      // count) therefore includes both visible and hidden slots.
+      // so hidden columns still occupy visual indices. Iterating up to
+      // total (physical count) therefore includes both visible and
+      // hidden slots.
       for (let vi = 1; vi < total; vi++) {
         const pi = hot.toPhysicalColumn(vi)
         if (typeof pi !== 'number' || pi < 0) continue
@@ -1348,7 +1346,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           columnWidths[c.data] = c.width
         }
 
-        if (hiddenVisualSet.has(vi)) hiddenProps.push(c.data)
+        if (hiddenPropSet.has(c.data)) hiddenProps.push(c.data)
       }
 
       const fcs = hot.getSettings().fixedColumnsStart
