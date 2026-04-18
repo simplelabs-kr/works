@@ -3,40 +3,22 @@
 // Left Nav Bar — per-workspace navigation. 220px column on the left
 // edge of every /works route, collapsible to a 36px rail.
 //
-// Section layout (top → bottom):
-//   1. 즐겨찾기 — starred presets (cross-page pins)
-//   2. 공유 뷰  — collaborative presets + folders for active page.
-//                TOP-LEVEL presets render FIRST (above folders) so
-//                that dropping a preset "above a folder row" lands
-//                it at a slot that actually exists in the layout.
-//   3. 내 뷰    — private presets + folders for active page
-//   4. 페이지   — static page list from WORKS_PAGES
-//   5. 휴지통   — pinned to the bottom with a trash icon; a divider
-//                above it separates it from the scrolling content.
+// ── Ordering model ─────────────────────────────────────────────────
+// sort_order is a SINGLE global number space shared by folders and
+// presets within a section (scope × page_key). Conventionally:
+//   - folders sit at coarse positions (100, 200, 300, ...)
+//   - a folder's members sit immediately after it (+10, +20, ...)
+//   - top-level presets (folder_id = null) occupy gaps between folders
 //
-// ── Drag-and-drop model ────────────────────────────────────────────
-// A section is modeled as a FLAT ordered list of rows:
-//   [ top-level preset, ... ][ folder, member, member, ... folder, ... ]
+// Rendering: sort all folders+presets together by sort_order, then
+// walk in order. A preset's indent is driven by folder_id. Folder
+// members naturally follow their folder because the DB invariant
+// keeps member.sort_order in the range (folder.sort_order, next_folder).
 //
-// On drop we:
-//   1. Compute an `insertAt` index into this flat list from the drop
-//      target (row + above/below, or "into folder", or end-of-section).
-//   2. Splice the dragged row (or folder block) into the new index.
-//   3. Walk the spliced flat list and assign each preset a new
-//      (folder_id, sort_order) based on the folder row that most
-//      recently preceded it, and each folder a new sort_order. This
-//      deterministically encodes the visual order as DB state.
-//   4. Apply the derived state as a LOCAL OVERRIDE (optimistic) so
-//      the UI shifts immediately, then fire PATCHes for every changed
-//      row in parallel, then refresh() and clear the override.
-//
-// If any PATCH fails, we alert the user and fall back to the
-// server-confirmed state from refresh().
-//
-// Ownership: only the owner can drag/star/rename/delete a row.
-// Non-owners see a "내 뷰로 복사" option in the right-click menu on
-// collaborative rows. The server enforces ownership via
-// owner_user_key equality on every update.
+// Drop: we compute a NEW sort_order for the dragged row as the
+// integer midpoint between its new neighbors. folder_id is derived
+// from the drop context. Optimistic override applies the new values
+// immediately; API calls run in the background.
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -229,15 +211,17 @@ type DragData =
   | { kind: 'preset'; id: string; section: PresetScope }
   | { kind: 'folder'; id: string; section: PresetScope }
 
+// Drop indicator target (what the UI shows). Converted at drop-time
+// into a concrete {sort_order, folder_id} via resolveInsertContext.
 type DropTarget =
-  | { kind: 'preset'; id: string; position: 'above' | 'below' }
-  | { kind: 'folder-row'; id: string; position: 'above' | 'below' }
-  | { kind: 'folder-into'; id: string }
-  | { kind: 'section'; section: PresetScope }
+  | { kind: 'above-row'; rowId: string }
+  | { kind: 'below-row'; rowId: string }
+  | { kind: 'into-folder'; folderId: string }
+  | { kind: 'section-bottom'; section: PresetScope }
 
-type FlatRow =
-  | { kind: 'folder'; id: string; folder: ViewFolder }
-  | { kind: 'preset'; id: string; preset: ViewPreset; inFolder: string | null }
+type UnifiedRow =
+  | { kind: 'folder'; id: string; folder: ViewFolder; sortOrder: number }
+  | { kind: 'preset'; id: string; preset: ViewPreset; folderId: string | null; sortOrder: number }
 
 // ── Preset / folder rows ────────────────────────────────────────────
 type PresetRowProps = {
@@ -247,7 +231,6 @@ type PresetRowProps = {
   indented?: boolean
   onApply: () => void
   onToggleStar?: () => void
-  onDelete?: () => void
   onCopyToMine?: () => void
   onRename?: (next: string) => void
   renaming?: boolean
@@ -258,7 +241,6 @@ type PresetRowProps = {
   dropLinePosition?: 'above' | 'below' | null
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
-  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
   onDrop?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
   onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void
@@ -266,15 +248,14 @@ type PresetRowProps = {
 
 function PresetRow({
   preset, active, ownedByMe, indented,
-  onApply, onToggleStar, onDelete, onCopyToMine,
+  onApply, onToggleStar, onCopyToMine,
   onRename, renaming, onRequestRename, onCancelRename,
   draggable, isDragging, dropLinePosition,
-  onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onContextMenu,
+  onDragStart, onDragOver, onDrop, onDragEnd, onContextMenu,
 }: PresetRowProps) {
   const [editName, setEditName] = useState(preset.name)
   useEffect(() => { if (renaming) setEditName(preset.name) }, [renaming, preset.name])
   const showStar = ownedByMe && onToggleStar != null
-  const showDelete = ownedByMe && onDelete != null
   const showShareTag = preset.scope === 'collaborative'
 
   return (
@@ -282,7 +263,6 @@ function PresetRow({
       draggable={draggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu}
@@ -300,17 +280,6 @@ function PresetRow({
             dropLinePosition === 'above' ? 'top-0' : 'bottom-0'
           }`}
         />
-      )}
-      {draggable ? (
-        <span
-          aria-label="순서 변경"
-          title="드래그하여 이동"
-          className="flex-shrink-0 flex items-center justify-center w-[12px] h-[16px] text-[#CBD5E1] group-hover:text-[#64748B] cursor-grab active:cursor-grabbing"
-        >
-          <DragHandleIcon />
-        </span>
-      ) : (
-        <span className="flex-shrink-0 w-[12px] h-[16px]" aria-hidden="true" />
       )}
 
       {showStar ? (
@@ -377,19 +346,19 @@ function PresetRow({
         </span>
       )}
 
-      {showDelete && !renaming && (
-        <button
-          type="button"
-          onClick={e => { e.stopPropagation(); onDelete?.() }}
-          aria-label="뷰 삭제"
-          className="flex-shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#CBD5E1] text-[#94A3B8] hover:text-[#EF4444]"
+      {/* Drag handle — right side, hover-only. */}
+      {draggable ? (
+        <span
+          aria-label="순서 변경"
+          title="드래그하여 이동"
+          className="flex-shrink-0 flex items-center justify-center w-[14px] h-[16px] text-[#CBD5E1] opacity-0 group-hover:opacity-100 hover:text-[#64748B] cursor-grab active:cursor-grabbing transition-opacity"
         >
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-            <path d="M3 3l6 6M9 3l-6 6"/>
-          </svg>
-        </button>
+          <DragHandleIcon />
+        </span>
+      ) : (
+        <span className="flex-shrink-0 w-[14px] h-[16px]" aria-hidden="true" />
       )}
-      {/* unused prop to silence lints; copy flow is exposed via right-click menu */}
+      {/* onCopyToMine exposed via right-click menu; keep prop for typing */}
       {onCopyToMine ? null : null}
     </div>
   )
@@ -410,7 +379,6 @@ type FolderRowProps = {
   dropInto?: boolean
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
-  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
   onDrop?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
   onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void
@@ -420,7 +388,7 @@ function FolderRow({
   folder, ownedByMe, open, onToggle,
   onRename, renaming, onRequestRename, onCancelRename,
   draggable, isDragging, dropLinePosition, dropInto,
-  onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onContextMenu,
+  onDragStart, onDragOver, onDrop, onDragEnd, onContextMenu,
 }: FolderRowProps) {
   const [editName, setEditName] = useState(folder.name)
   useEffect(() => { if (renaming) setEditName(folder.name) }, [renaming, folder.name])
@@ -430,7 +398,6 @@ function FolderRow({
       draggable={draggable}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu}
@@ -446,17 +413,6 @@ function FolderRow({
             dropLinePosition === 'above' ? 'top-0' : 'bottom-0'
           }`}
         />
-      )}
-      {draggable ? (
-        <span
-          aria-label="폴더 순서 변경"
-          title="드래그하여 폴더 순서 변경"
-          className="flex-shrink-0 flex items-center justify-center w-[12px] h-[16px] text-[#CBD5E1] group-hover:text-[#64748B] cursor-grab active:cursor-grabbing"
-        >
-          <DragHandleIcon />
-        </span>
-      ) : (
-        <span className="flex-shrink-0 w-[12px] h-[16px]" aria-hidden="true" />
       )}
 
       <button
@@ -507,6 +463,19 @@ function FolderRow({
           {folder.name}
         </button>
       )}
+
+      {/* Drag handle — right side, hover-only. */}
+      {draggable ? (
+        <span
+          aria-label="폴더 순서 변경"
+          title="드래그하여 폴더 순서 변경"
+          className="flex-shrink-0 flex items-center justify-center w-[14px] h-[16px] text-[#CBD5E1] opacity-0 group-hover:opacity-100 hover:text-[#64748B] cursor-grab active:cursor-grabbing transition-opacity"
+        >
+          <DragHandleIcon />
+        </span>
+      ) : (
+        <span className="flex-shrink-0 w-[14px] h-[16px]" aria-hidden="true" />
+      )}
     </div>
   )
 }
@@ -544,59 +513,97 @@ function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
   )
 }
 
-// ── Helpers ────────────────────────────────────────────────────────
-type OrderableRow = { sort_order: number | null; created_at: string }
-function byOrder<T extends OrderableRow>(a: T, b: T): number {
-  const ao = a.sort_order ?? Number.POSITIVE_INFINITY
-  const bo = b.sort_order ?? Number.POSITIVE_INFINITY
-  if (ao !== bo) return ao - bo
-  return a.created_at.localeCompare(b.created_at)
+// ── Ordering helpers ───────────────────────────────────────────────
+// Build a unified visual list (folders + presets) sorted by global
+// sort_order. Members follow their folder because the DB invariant
+// places member.sort_order immediately after folder.sort_order.
+function buildVisualRows(presets: ViewPreset[], folders: ViewFolder[]): UnifiedRow[] {
+  const rows: UnifiedRow[] = []
+  for (const f of folders) {
+    rows.push({
+      kind: 'folder',
+      id: f.id,
+      folder: f,
+      sortOrder: f.sort_order ?? Number.POSITIVE_INFINITY,
+    })
+  }
+  for (const p of presets) {
+    rows.push({
+      kind: 'preset',
+      id: p.id,
+      preset: p,
+      folderId: p.folder_id ?? null,
+      sortOrder: p.sort_order ?? Number.POSITIVE_INFINITY,
+    })
+  }
+  rows.sort((a, b) => {
+    if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+    // Tiebreak: folders before presets (so folder row opens the group),
+    // then by created_at for determinism.
+    if (a.kind !== b.kind) return a.kind === 'folder' ? -1 : 1
+    const aCreated = a.kind === 'folder' ? a.folder.created_at : a.preset.created_at
+    const bCreated = b.kind === 'folder' ? b.folder.created_at : b.preset.created_at
+    return aCreated.localeCompare(bCreated)
+  })
+  return rows
 }
 
-// Build the flat row list for a section: top-level presets first,
-// then folders with their members. Indices in this list are the
-// insertion slots the drop handlers use.
-function buildFlat(
-  sectionPresets: ViewPreset[],
-  sectionFolders: ViewFolder[],
-): FlatRow[] {
-  const sortedPresets = [...sectionPresets].sort(byOrder)
-  const sortedFolders = [...sectionFolders].sort(byOrder)
-  const flat: FlatRow[] = []
-  for (const p of sortedPresets.filter(p => !p.folder_id)) {
-    flat.push({ kind: 'preset', id: p.id, preset: p, inFolder: null })
+// Given visual rows with a row REMOVED (the dragged one), plus a drop
+// target indicator, return where to insert (as index in the filtered
+// list) along with the folder_id context for that slot.
+function resolveInsertContext(
+  filtered: UnifiedRow[],
+  target: DropTarget,
+): { insertAt: number; folderId: string | null } | null {
+  if (target.kind === 'section-bottom') {
+    return { insertAt: filtered.length, folderId: null }
   }
-  for (const f of sortedFolders) {
-    flat.push({ kind: 'folder', id: f.id, folder: f })
-    for (const m of sortedPresets.filter(p => p.folder_id === f.id)) {
-      flat.push({ kind: 'preset', id: m.id, preset: m, inFolder: f.id })
-    }
+  if (target.kind === 'into-folder') {
+    const folderIdx = filtered.findIndex(r => r.kind === 'folder' && r.id === target.folderId)
+    if (folderIdx < 0) return null
+    // End of folder's member block.
+    let end = folderIdx + 1
+    while (
+      end < filtered.length &&
+      filtered[end].kind === 'preset' &&
+      (filtered[end] as Extract<UnifiedRow, { kind: 'preset' }>).folderId === target.folderId
+    ) end++
+    return { insertAt: end, folderId: target.folderId }
   }
-  return flat
+  const idx = filtered.findIndex(r => r.id === target.rowId)
+  if (idx < 0) return null
+  const row = filtered[idx]
+  if (target.kind === 'above-row') {
+    const folderId = row.kind === 'folder' ? null : row.folderId
+    return { insertAt: idx, folderId }
+  }
+  // below-row
+  if (row.kind === 'folder') {
+    // Past the whole folder block (top-level slot after folder).
+    let end = idx + 1
+    while (
+      end < filtered.length &&
+      filtered[end].kind === 'preset' &&
+      (filtered[end] as Extract<UnifiedRow, { kind: 'preset' }>).folderId === row.id
+    ) end++
+    return { insertAt: end, folderId: null }
+  }
+  return { insertAt: idx + 1, folderId: row.folderId }
 }
 
-// Walk the flat list and derive each row's (folder_id, sort_order).
-// A preset's folder_id is the id of the most recent folder row that
-// precedes it; presets before any folder row are top-level (null).
-type DerivedState = {
-  presets: Map<string, { folder_id: string | null; sort_order: number }>
-  folders: Map<string, { sort_order: number }>
-}
-function deriveState(flat: FlatRow[]): DerivedState {
-  let currentFolder: string | null = null
-  let presetIdx = 0
-  let folderIdx = 0
-  const presets = new Map<string, { folder_id: string | null; sort_order: number }>()
-  const folders = new Map<string, { sort_order: number }>()
-  for (const r of flat) {
-    if (r.kind === 'folder') {
-      currentFolder = r.folder.id
-      folders.set(r.folder.id, { sort_order: folderIdx++ })
-    } else {
-      presets.set(r.preset.id, { folder_id: currentFolder, sort_order: presetIdx++ })
-    }
-  }
-  return { presets, folders }
+// Integer midpoint with open ends. prev/next are the sort_orders of
+// the rows that will flank the dropped item after the drop commits.
+function midpointSort(prev: number | null, next: number | null): number {
+  if (prev == null && next == null) return 100
+  if (prev == null) return Math.max(1, Math.floor((next as number) / 2))
+  if (next == null) return prev + 100
+  const mid = Math.round((prev + next) / 2)
+  // Collision guard: if mid collides with a neighbor and there's no
+  // room, we still return something sensible. True rebalancing is
+  // deferred (the 100/10 gap design gives plenty of headroom).
+  if (mid <= prev) return prev + 1
+  if (mid >= next) return next - 1 > prev ? next - 1 : prev + 1
+  return mid
 }
 
 // ── Main ────────────────────────────────────────────────────────────
@@ -616,16 +623,20 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   )
 
   // ── Optimistic override ────────────────────────────────────────────
-  // When a drop commits we set this immediately; the visible list uses
-  // the override-merged data. Cleared after refresh() confirms the
-  // server has accepted the new state (or we roll back on failure).
-  const [override, setOverride] = useState<DerivedState | null>(null)
+  // Map from id → new sort_order (and folder_id for presets). Applied
+  // before render so a drop reflects instantly; cleared after the
+  // background PATCHes resolve via refresh().
+  type Override = {
+    presets: Map<string, { sort_order: number; folder_id: string | null }>
+    folders: Map<string, { sort_order: number }>
+  }
+  const [override, setOverride] = useState<Override | null>(null)
 
   const overriddenPresets = useMemo(() => {
     if (!override) return presets
     return presets.map(p => {
       const o = override.presets.get(p.id)
-      return o ? { ...p, folder_id: o.folder_id, sort_order: o.sort_order } : p
+      return o ? { ...p, sort_order: o.sort_order, folder_id: o.folder_id } : p
     })
   }, [presets, override])
 
@@ -658,8 +669,8 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     [pageFolders, isMine],
   )
 
-  const sharedFlat = useMemo(() => buildFlat(sharedPresets, sharedFolders), [sharedPresets, sharedFolders])
-  const privateFlat = useMemo(() => buildFlat(privatePresets, privateFolders), [privatePresets, privateFolders])
+  const sharedRows = useMemo(() => buildVisualRows(sharedPresets, sharedFolders), [sharedPresets, sharedFolders])
+  const privateRows = useMemo(() => buildVisualRows(privatePresets, privateFolders), [privatePresets, privateFolders])
 
   // ── Modal / rename / menu / collapse state ────────────────────────
   const [modalOpen, setModalOpen] = useState(false)
@@ -689,17 +700,11 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
-  // ── Drag state ────────────────────────────────────────────────────
-  // We keep both a React state (drives indicator rendering) AND a ref
-  // mirror (read during drop / bubbling to avoid stale-closure and
-  // double-fire bugs — React batches setState across bubbles, so the
-  // last setter wins; refs give us the authoritative latest value).
+  // ── Drag state (state drives indicators, refs for authoritative reads) ──
   const [drag, setDrag] = useState<DragData | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const dragRef = useRef<DragData | null>(null)
   const dropTargetRef = useRef<DropTarget | null>(null)
-  // Fires once per drop to prevent double-execution when a drop event
-  // bubbles from a row to the section (both have onDrop handlers).
   const droppedRef = useRef(false)
 
   const setDragBoth = useCallback((d: DragData | null) => {
@@ -707,14 +712,8 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     setDrag(d)
   }, [])
   const setDropTargetBoth = useCallback((t: DropTarget | null) => {
-    // Skip if identical to avoid needless re-renders.
     const prev = dropTargetRef.current
-    const same =
-      prev && t &&
-      prev.kind === t.kind &&
-      (('id' in prev && 'id' in t) ? prev.id === t.id : true) &&
-      (('position' in prev && 'position' in t) ? prev.position === t.position : true) &&
-      (('section' in prev && 'section' in t) ? prev.section === t.section : true)
+    const same = !!prev && !!t && JSON.stringify(prev) === JSON.stringify(t)
     if (prev === t || same) return
     dropTargetRef.current = t
     setDropTarget(t)
@@ -852,44 +851,18 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     await refresh()
   }
 
-  // ── Unified drop commit ───────────────────────────────────────────
-  // Splices the dragged row (or folder-block) into the flat list,
-  // derives the new (folder_id, sort_order) map, applies it as an
-  // optimistic override, and issues PATCHes only for rows whose
-  // state actually changed. After all PATCHes resolve (or any
-  // reject), we refresh from the server and clear the override.
-  const commitFlat = useCallback((section: PresetScope, newFlat: FlatRow[]) => {
-    const derived = deriveState(newFlat)
-    setOverride(derived)
-
-    const patches: Array<Promise<unknown>> = []
-    derived.presets.forEach((state, id) => {
-      const orig = presets.find(p => p.id === id)
-      if (!orig) return
-      const sameFolder = orig.folder_id === state.folder_id
-      const sameOrder = (orig.sort_order ?? -1) === state.sort_order
-      if (!sameFolder || !sameOrder) {
-        patches.push(updatePreset(id, {
-          folder_id: state.folder_id,
-          sort_order: state.sort_order,
-        }))
-      }
-    })
-    derived.folders.forEach((state, id) => {
-      const orig = folders.find(f => f.id === id)
-      if (!orig) return
-      if ((orig.sort_order ?? -1) !== state.sort_order) {
-        patches.push(updateFolder(id, { sort_order: state.sort_order }))
-      }
-    })
-    if (patches.length === 0) {
+  // ── Commit drop ────────────────────────────────────────────────────
+  // Apply an optimistic override then PATCH affected rows in parallel.
+  // After all PATCHes resolve we refresh() and clear the override.
+  const commitOverride = useCallback((patch: Override, calls: Array<Promise<unknown>>) => {
+    setOverride(patch)
+    if (calls.length === 0) {
       setOverride(null)
       return
     }
-
     void (async () => {
       try {
-        const results = await Promise.all(patches)
+        const results = await Promise.all(calls)
         const anyFailed = results.some(r => r == null)
         if (anyFailed) window.alert('일부 항목 저장에 실패했습니다. 원래 상태로 되돌립니다.')
       } catch {
@@ -899,43 +872,77 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         setOverride(null)
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presets, folders, refresh])
+  }, [refresh])
 
-  // Splice a preset into the flat list at a new insertion index.
-  const dropPreset = useCallback((section: PresetScope, presetId: string, insertAt: number) => {
-    const flat = section === 'collaborative' ? sharedFlat.slice() : privateFlat.slice()
-    const dragIdx = flat.findIndex(r => r.kind === 'preset' && r.id === presetId)
-    if (dragIdx < 0) return
-    const [dragged] = flat.splice(dragIdx, 1)
-    const adjusted = dragIdx < insertAt ? insertAt - 1 : insertAt
-    flat.splice(adjusted, 0, dragged)
-    // Compare adjusted flat to original — if identical AND folder_id
-    // assignment doesn't change (because target slot has same context),
-    // commitFlat will skip API calls anyway.
-    commitFlat(section, flat)
-  }, [sharedFlat, privateFlat, commitFlat])
+  // Drop a preset at the given target. Computes new (folder_id,
+  // sort_order) via midpoint between new neighbors.
+  const dropPresetAt = useCallback((section: PresetScope, presetId: string, target: DropTarget) => {
+    const rows = section === 'collaborative' ? sharedRows : privateRows
+    const filtered = rows.filter(r => r.id !== presetId)
+    const ctx = resolveInsertContext(filtered, target)
+    if (!ctx) return
+    const prev = ctx.insertAt > 0 ? filtered[ctx.insertAt - 1].sortOrder : null
+    const next = ctx.insertAt < filtered.length ? filtered[ctx.insertAt].sortOrder : null
+    const newSort = midpointSort(prev, next)
+    const orig = presets.find(p => p.id === presetId)
+    if (!orig) return
+    const patch: Override = { presets: new Map(), folders: new Map() }
+    patch.presets.set(presetId, { sort_order: newSort, folder_id: ctx.folderId })
+    // Skip the API call if nothing actually changed.
+    const unchanged =
+      orig.sort_order === newSort && (orig.folder_id ?? null) === ctx.folderId
+    const calls: Array<Promise<unknown>> = unchanged
+      ? []
+      : [updatePreset(presetId, { sort_order: newSort, folder_id: ctx.folderId })]
+    commitOverride(patch, calls)
+  }, [sharedRows, privateRows, presets, commitOverride])
 
-  // Splice a folder (plus its member block) to a new insertion index.
-  const dropFolder = useCallback((section: PresetScope, folderId: string, insertAt: number) => {
-    const flat = section === 'collaborative' ? sharedFlat.slice() : privateFlat.slice()
-    const dragIdx = flat.findIndex(r => r.kind === 'folder' && r.id === folderId)
-    if (dragIdx < 0) return
-    // Block = folder row plus all contiguous member rows immediately after it.
-    let blockEnd = dragIdx + 1
-    while (
-      blockEnd < flat.length &&
-      flat[blockEnd].kind === 'preset' &&
-      (flat[blockEnd] as Extract<FlatRow, { kind: 'preset' }>).inFolder === folderId
-    ) blockEnd++
-    // Cannot drop inside own block.
-    if (insertAt > dragIdx && insertAt <= blockEnd) return
-    const blockSize = blockEnd - dragIdx
-    const block = flat.splice(dragIdx, blockSize)
-    const adjusted = insertAt > dragIdx ? insertAt - blockSize : insertAt
-    flat.splice(adjusted, 0, ...block)
-    commitFlat(section, flat)
-  }, [sharedFlat, privateFlat, commitFlat])
+  // Drop a folder at the given target. Folders always land at
+  // top-level (folder_id is not applicable). Members are shifted to
+  // stay contiguous with the folder's new sort_order.
+  const dropFolderAt = useCallback((section: PresetScope, folderId: string, target: DropTarget) => {
+    const rows = section === 'collaborative' ? sharedRows : privateRows
+    // Exclude the dragged folder AND its members from the filtered
+    // list when choosing the insertion point.
+    const memberIds = new Set(
+      rows
+        .filter(r => r.kind === 'preset' && r.folderId === folderId)
+        .map(r => r.id),
+    )
+    const filtered = rows.filter(r => r.id !== folderId && !memberIds.has(r.id))
+    const ctx = resolveInsertContext(filtered, target)
+    if (!ctx) return
+    // Folder cannot land inside another folder — reject into-folder /
+    // below-row-of-preset-in-folder.
+    if (target.kind === 'into-folder') return
+    const prev = ctx.insertAt > 0 ? filtered[ctx.insertAt - 1].sortOrder : null
+    const next = ctx.insertAt < filtered.length ? filtered[ctx.insertAt].sortOrder : null
+    const newFolderSort = midpointSort(prev, next)
+    const origFolder = folders.find(f => f.id === folderId)
+    if (!origFolder) return
+    // Members: evenly distribute in the available space so they stay
+    // within (newFolderSort, nextSort). Preserves their relative order.
+    const memberRows = rows
+      .filter(r => r.kind === 'preset' && r.folderId === folderId)
+      .sort((a, b) => a.sortOrder - b.sortOrder) as Extract<UnifiedRow, { kind: 'preset' }>[]
+    const upperBound = next != null ? next : newFolderSort + (memberRows.length + 1) * 100
+    const available = Math.max(1, upperBound - newFolderSort)
+    const step = Math.max(1, Math.floor(available / (memberRows.length + 1)))
+    const patch: Override = { presets: new Map(), folders: new Map() }
+    patch.folders.set(folderId, { sort_order: newFolderSort })
+    const calls: Array<Promise<unknown>> = []
+    if (origFolder.sort_order !== newFolderSort) {
+      calls.push(updateFolder(folderId, { sort_order: newFolderSort }))
+    }
+    memberRows.forEach((m, i) => {
+      const newMemberSort = newFolderSort + (i + 1) * step
+      patch.presets.set(m.id, { sort_order: newMemberSort, folder_id: folderId })
+      if (m.preset.sort_order !== newMemberSort) {
+        calls.push(updatePreset(m.id, { sort_order: newMemberSort, folder_id: folderId }))
+      }
+    })
+    commitOverride(patch, calls)
+  }, [sharedRows, privateRows, folders, commitOverride])
 
   // ── Drag event handlers ───────────────────────────────────────────
   const startPresetDrag = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
@@ -952,33 +959,35 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  // Preset rows receive preset drags only; folder-drags ignore them.
-  // CRITICAL: stopPropagation on the active branch so the parent section
-  // handler doesn't clobber our drop target via bubbling.
-  const overPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+  // Preset row hover. 50/50 split: top = above, bottom = below.
+  // stopPropagation so the section container handler doesn't clobber.
+  const overPresetRow = (target: UnifiedRow & { kind: 'preset' }) => (e: React.DragEvent<HTMLDivElement>) => {
     const d = dragRef.current
-    if (!d || d.kind !== 'preset' || d.id === target.id || d.section !== target.scope) return
-    const rect = e.currentTarget.getBoundingClientRect()
-    const y = e.clientY - rect.top
-    const h = rect.height
-    // 40/20/40 — middle 20% is a quiet band; let the section handler
-    // fallback claim it (so the user gets "append to end of section").
-    const topZone = h * 0.4
-    const bottomZone = h * 0.6
-    if (y >= topZone && y <= bottomZone) return
+    if (!d || d.section !== target.preset.scope) return
+    if (d.kind === 'preset' && d.id === target.id) return
+    // Folder drag into a preset that's inside a folder: not allowed
+    // (folder can't be placed inside another folder).
+    if (d.kind === 'folder' && target.folderId !== null) return
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-    const position: 'above' | 'below' = y < topZone ? 'above' : 'below'
-    setDropTargetBoth({ kind: 'preset', id: target.id, position })
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const h = rect.height
+    const position: 'above' | 'below' = y < h / 2 ? 'above' : 'below'
+    setDropTargetBoth(
+      position === 'above'
+        ? { kind: 'above-row', rowId: target.id }
+        : { kind: 'below-row', rowId: target.id },
+    )
   }
 
-  // Folder rows accept both preset drags (above/into/below) and
-  // folder drags (reorder with above/below only).
+  // Folder row hover.
+  //   preset drag: 40% above / 60% into
+  //   folder drag: 50/50 above/below (top-level reorder)
   const overFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
     const d = dragRef.current
-    if (!d) return
-    if (d.section !== folder.scope) return
+    if (!d || d.section !== folder.scope) return
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
@@ -989,52 +998,59 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       e.stopPropagation()
       e.dataTransfer.dropEffect = 'move'
       const position: 'above' | 'below' = y < h / 2 ? 'above' : 'below'
-      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position })
+      setDropTargetBoth(
+        position === 'above'
+          ? { kind: 'above-row', rowId: folder.id }
+          : { kind: 'below-row', rowId: folder.id },
+      )
       return
     }
 
-    // Preset over folder row — 40/20/40.
+    // Preset drag
     e.preventDefault()
     e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-    const topZone = h * 0.4
-    const bottomZone = h * 0.6
-    if (y < topZone) {
-      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position: 'above' })
-    } else if (y > bottomZone) {
-      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position: 'below' })
+    if (y < h * 0.4) {
+      setDropTargetBoth({ kind: 'above-row', rowId: folder.id })
     } else {
-      setDropTargetBoth({ kind: 'folder-into', id: folder.id })
+      setDropTargetBoth({ kind: 'into-folder', folderId: folder.id })
     }
   }
 
-  // Section background — fallback when the cursor is NOT claimed by a
-  // row (row handlers stopPropagation when they accept). Preset drag
-  // appends to end of the flat list. Folder drags ignore the section
-  // background (they only reorder via folder-row targets).
-  const overSectionBg = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
+  // Section bottom zone — always valid for any drag in the same
+  // section (appends at the very end, top-level).
+  const overSectionBottom = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
     const d = dragRef.current
-    if (!d || d.kind !== 'preset' || d.section !== section) return
+    if (!d || d.section !== section) return
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-    setDropTargetBoth({ kind: 'section', section })
+    setDropTargetBoth({ kind: 'section-bottom', section })
   }
 
-  // Clear the indicator when the cursor leaves the section entirely.
+  // Section container — fallback when neither a row nor the bottom
+  // zone claims the cursor. Preset drag only; falls back to bottom.
+  const overSectionBg = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
+    const d = dragRef.current
+    if (!d || d.section !== section) return
+    if (d.kind !== 'preset') return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    // Only claim the section-bottom if no row has claimed a target
+    // within this event pass (row handlers stopPropagation; but if
+    // cursor is between rows, this runs).
+    if (!dropTargetRef.current || dropTargetRef.current.kind !== 'section-bottom') {
+      setDropTargetBoth({ kind: 'section-bottom', section })
+    }
+  }
+
   const leaveSectionBg = (e: React.DragEvent<HTMLDivElement>) => {
-    // dragleave fires when crossing INTO a child too — only clear when
-    // genuinely leaving the section container.
     const related = e.relatedTarget as Node | null
     if (related && e.currentTarget.contains(related)) return
     setDropTargetBoth(null)
   }
 
-  // Drop executors — translate current drop target into an insertAt
-  // index and call dropPreset / dropFolder. Reads refs (not state) so
-  // the value is always the latest even across bubble double-fires,
-  // and a droppedRef latch prevents double execution.
-  const flatFor = (section: PresetScope) => section === 'collaborative' ? sharedFlat : privateFlat
-
+  // ── Drop executor ─────────────────────────────────────────────────
   const executeDrop = useCallback((section: PresetScope) => {
     if (droppedRef.current) return
     const d = dragRef.current
@@ -1043,72 +1059,10 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       setDragBoth(null); setDropTargetBoth(null); return
     }
     droppedRef.current = true
-    // Clear UI indicator immediately; commitFlat will show the
-    // optimistic result.
     setDragBoth(null); setDropTargetBoth(null)
-    const flat = flatFor(section)
-
-    if (d.kind === 'preset') {
-      let insertAt = -1
-      if (t.kind === 'preset') {
-        const idx = flat.findIndex(r => r.kind === 'preset' && r.id === t.id)
-        if (idx < 0) return
-        insertAt = t.position === 'above' ? idx : idx + 1
-      } else if (t.kind === 'folder-row') {
-        const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
-        if (idx < 0) return
-        if (t.position === 'above') {
-          insertAt = idx
-        } else {
-          // Just below folder row = end of its member block.
-          let j = idx + 1
-          while (
-            j < flat.length &&
-            flat[j].kind === 'preset' &&
-            (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
-          ) j++
-          insertAt = j
-        }
-      } else if (t.kind === 'folder-into') {
-        const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
-        if (idx < 0) return
-        // End of members (appends to folder).
-        let j = idx + 1
-        while (
-          j < flat.length &&
-          flat[j].kind === 'preset' &&
-          (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
-        ) j++
-        insertAt = j
-      } else if (t.kind === 'section') {
-        insertAt = flat.length
-      }
-      if (insertAt < 0) return
-      dropPreset(section, d.id, insertAt)
-      return
-    }
-
-    // Folder drag — only folder-row targets apply.
-    if (d.kind === 'folder') {
-      if (t.kind !== 'folder-row') return
-      const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
-      if (idx < 0) return
-      let insertAt: number
-      if (t.position === 'above') {
-        insertAt = idx
-      } else {
-        // Just below the whole folder block.
-        let j = idx + 1
-        while (
-          j < flat.length &&
-          flat[j].kind === 'preset' &&
-          (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
-        ) j++
-        insertAt = j
-      }
-      dropFolder(section, d.id, insertAt)
-    }
-  }, [sharedFlat, privateFlat, dropPreset, dropFolder, setDragBoth, setDropTargetBoth])
+    if (d.kind === 'preset') dropPresetAt(section, d.id, t)
+    else dropFolderAt(section, d.id, t)
+  }, [dropPresetAt, dropFolderAt, setDragBoth, setDropTargetBoth])
 
   const endDrag = () => {
     setDragBoth(null)
@@ -1155,10 +1109,15 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   const renderPresetSection = (
     section: PresetScope,
     label: string,
-    flat: FlatRow[],
+    rows: UnifiedRow[],
   ) => {
     const canCreate = !!activePresetKey
-    const sectionHighlight = dropTarget?.kind === 'section' && dropTarget.section === section
+    const dragging = drag?.section === section
+    const bottomActive = dropTarget?.kind === 'section-bottom' && dropTarget.section === section
+    // When dragging a folder, dim its members too for a visual "block" cue.
+    const folderBlockBeingDragged =
+      drag?.kind === 'folder' && drag.section === section ? drag.id : null
+
     return (
       <>
         <SectionLabel
@@ -1188,44 +1147,34 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
           {label}
         </SectionLabel>
         <div
-          className={`relative px-2 pb-1 ${sectionHighlight ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
+          className="relative px-2 pb-1"
           onDragOver={overSectionBg(section)}
           onDragLeave={leaveSectionBg}
           onDrop={e => { e.preventDefault(); executeDrop(section) }}
         >
-          {/* Bottom-of-section drop indicator line. */}
-          {sectionHighlight && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2 right-2 bottom-0 h-[2px] bg-[#2D7FF9]"
-            />
-          )}
-
           {!activePresetKey && (
             <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
               뷰를 지원하지 않는 페이지입니다
             </div>
           )}
-          {activePresetKey && flat.length === 0 && (
+          {activePresetKey && rows.length === 0 && (
             <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
               {section === 'collaborative' ? '공유된 뷰가 없습니다' : '저장된 뷰가 없습니다'}
             </div>
           )}
 
-          {flat.map(row => {
+          {rows.map(row => {
             if (row.kind === 'folder') {
               const folder = row.folder
               const mine = isMine(folder.owner_user_key)
               const open = !collapsedFolders.has(folder.id)
-              const folderDropLine =
-                dropTarget?.kind === 'folder-row' && dropTarget.id === folder.id
-                  ? dropTarget.position
+              const dropLine =
+                dropTarget && (dropTarget.kind === 'above-row' || dropTarget.kind === 'below-row') &&
+                dropTarget.rowId === folder.id
+                  ? (dropTarget.kind === 'above-row' ? 'above' : 'below')
                   : null
-              const folderDropInto =
-                dropTarget?.kind === 'folder-into' && dropTarget.id === folder.id
-              // If this folder is collapsed, don't render its members
-              // — but members still exist in the flat list, so we skip
-              // them during render via the `open` gate below.
+              const dropInto =
+                dropTarget?.kind === 'into-folder' && dropTarget.folderId === folder.id
               return (
                 <FolderRow
                   key={folder.id}
@@ -1239,8 +1188,8 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                   onCancelRename={() => setRenamingFolderId(null)}
                   draggable={mine}
                   isDragging={drag?.kind === 'folder' && drag.id === folder.id}
-                  dropLinePosition={folderDropLine}
-                  dropInto={folderDropInto}
+                  dropLinePosition={dropLine}
+                  dropInto={dropInto}
                   onDragStart={mine ? startFolderDrag(folder) : undefined}
                   onDragOver={overFolderRow(folder)}
                   onDrop={e => { e.preventDefault(); e.stopPropagation(); executeDrop(section) }}
@@ -1250,53 +1199,61 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
               )
             }
 
-            // Preset row. If it's a folder member and the folder is
-            // collapsed, skip rendering.
             const preset = row.preset
-            if (row.inFolder && collapsedFolders.has(row.inFolder)) return null
+            // Skip members of a collapsed folder.
+            if (row.folderId && collapsedFolders.has(row.folderId)) return null
             const pMine = isMine(preset.owner_user_key)
             const dropLine =
-              dropTarget?.kind === 'preset' && dropTarget.id === preset.id
-                ? dropTarget.position
+              dropTarget && (dropTarget.kind === 'above-row' || dropTarget.kind === 'below-row') &&
+              dropTarget.rowId === preset.id
+                ? (dropTarget.kind === 'above-row' ? 'above' : 'below')
                 : null
+            const memberOfDraggedFolder =
+              folderBlockBeingDragged !== null && row.folderId === folderBlockBeingDragged
             return (
               <PresetRow
                 key={preset.id}
                 preset={preset}
                 active={activePresetId === preset.id}
                 ownedByMe={pMine}
-                indented={!!row.inFolder}
+                indented={!!row.folderId}
                 onApply={() => handleApplyPreset(preset)}
                 onToggleStar={pMine ? () => void handleToggleStar(preset) : undefined}
-                onDelete={pMine ? () => void handleDeletePreset(preset) : undefined}
                 onCopyToMine={!pMine ? () => void handleCopyToMine(preset) : undefined}
                 onRename={next => void handleRenamePreset(preset, next)}
                 renaming={renamingPresetId === preset.id}
                 onRequestRename={() => setRenamingPresetId(preset.id)}
                 onCancelRename={() => setRenamingPresetId(null)}
                 draggable={pMine}
-                isDragging={drag?.kind === 'preset' && drag.id === preset.id}
+                isDragging={
+                  (drag?.kind === 'preset' && drag.id === preset.id) || memberOfDraggedFolder
+                }
                 dropLinePosition={dropLine}
                 onDragStart={pMine ? startPresetDrag(preset) : undefined}
-                onDragOver={overPresetRow(preset)}
-                onDrop={e => {
-                  // If the row itself accepted the drop (it called
-                  // preventDefault during dragover), we handle it here
-                  // and stop the section handler from firing again.
-                  // If the row was in its quiet middle band, only the
-                  // section handler accepted — and section's onDrop
-                  // will fire on bubble; we still call executeDrop
-                  // here which is a no-op because dropTarget was
-                  // already consumed (droppedRef guard).
-                  e.preventDefault()
-                  e.stopPropagation()
-                  executeDrop(section)
-                }}
+                onDragOver={overPresetRow(row)}
+                onDrop={e => { e.preventDefault(); e.stopPropagation(); executeDrop(section) }}
                 onDragEnd={endDrag}
                 onContextMenu={e => openPresetMenu(preset, e)}
               />
             )
           })}
+
+          {/* Bottom drop zone — explicit landing pad to pull items out
+              of a folder to the section bottom. Visible only during a
+              drag in this section so it doesn't clutter the nav. */}
+          {dragging && (
+            <div
+              onDragOver={overSectionBottom(section)}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); executeDrop(section) }}
+              className={`mt-1 h-[28px] rounded-[6px] border-2 border-dashed flex items-center justify-center text-[10px] transition-colors ${
+                bottomActive
+                  ? 'border-[#2D7FF9] bg-[#EFF6FF] text-[#2D7FF9]'
+                  : 'border-[#CBD5E1] text-[#94A3B8]'
+              }`}
+            >
+              하단으로 이동
+            </div>
+          )}
         </div>
       </>
     )
@@ -1348,7 +1305,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                 ownedByMe={mine}
                 onApply={() => handleApplyPreset(p)}
                 onToggleStar={mine ? () => void handleToggleStar(p) : undefined}
-                onDelete={mine ? () => void handleDeletePreset(p) : undefined}
                 onCopyToMine={!mine ? () => void handleCopyToMine(p) : undefined}
                 onContextMenu={e => openPresetMenu(p, e)}
               />
@@ -1358,11 +1314,11 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
         <Divider />
 
-        {renderPresetSection('collaborative', '공유 뷰', sharedFlat)}
+        {renderPresetSection('collaborative', '공유 뷰', sharedRows)}
 
         <Divider />
 
-        {renderPresetSection('private', '내 뷰', privateFlat)}
+        {renderPresetSection('private', '내 뷰', privateRows)}
 
         <Divider />
 
