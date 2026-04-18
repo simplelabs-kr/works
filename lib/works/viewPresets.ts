@@ -9,8 +9,29 @@
 // change so the fresh read is guaranteed even when navigating within
 // the same route.
 
-import { saveSettings } from './viewSettings'
+import { saveSettings, type PersistedView } from './viewSettings'
 import { resolvePageHrefForKey } from '@/lib/nav/pages'
+
+// Live snapshot of the on-screen grid for a given pageKey. Populated by
+// DataGrid via `window.__worksGrid[pageKey]` while it is mounted. Returns
+// null if the grid for that page is not currently mounted (e.g. LNB on a
+// page that does not host a DataGrid).
+export function snapshotLiveView(pageKey: string): {
+  filters: unknown
+  sort: unknown
+  view: PersistedView | null
+} | null {
+  if (typeof window === 'undefined') return null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const entry = (window as any).__worksGrid?.[pageKey]
+  if (!entry || typeof entry.getSnapshot !== 'function') return null
+  try {
+    entry.flush?.()
+    return entry.getSnapshot()
+  } catch {
+    return null
+  }
+}
 
 export type ViewPreset = {
   id: string
@@ -95,6 +116,11 @@ export async function deletePreset(id: string): Promise<boolean> {
 // router.push) forces a full remount of the grid so the freshly-saved
 // settings are read on mount — we don't need a runtime-swap codepath
 // inside DataGrid for the MVP.
+//
+// Also writes the preset id to localStorage under
+// `works:active-preset:<page_key>` BEFORE navigating so the LNB on the
+// target page can highlight the row it came from on the very first
+// paint after the reload.
 export async function applyPreset(preset: ViewPreset): Promise<void> {
   await saveSettings(preset.page_key, {
     filters: preset.filters,
@@ -102,6 +128,11 @@ export async function applyPreset(preset: ViewPreset): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     view: preset.view as any,
   })
+  try {
+    window.localStorage.setItem(`works:active-preset:${preset.page_key}`, preset.id)
+  } catch {
+    /* storage disabled — LNB will just not highlight until next applyPreset */
+  }
   const href = resolvePageHrefForKey(preset.page_key)
   if (href) {
     window.location.href = href

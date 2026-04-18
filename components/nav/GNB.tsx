@@ -9,9 +9,11 @@ import { createBrowserClient } from '@supabase/ssr'
 
 type Props = {
   onOpenPalette: () => void
+  lnbCollapsed: boolean
+  onToggleLnb: () => void
 }
 
-export default function GNB({ onOpenPalette }: Props) {
+export default function GNB({ onOpenPalette, lnbCollapsed, onToggleLnb }: Props) {
   const handleLogout = async () => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
@@ -24,6 +26,25 @@ export default function GNB({ onOpenPalette }: Props) {
   return (
     <div className="flex-shrink-0 flex items-center justify-between border-b border-[#E2E8F0] bg-white px-4 h-[44px]">
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onToggleLnb}
+          aria-label={lnbCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          title={lnbCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+          className="flex items-center justify-center w-[26px] h-[26px] rounded-[4px] text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#0F172A] transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+            <rect x="1.5" y="2.5" width="11" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
+            <line
+              x1={lnbCollapsed ? '4.5' : '5'}
+              y1="2.5"
+              x2={lnbCollapsed ? '4.5' : '5'}
+              y2="11.5"
+              stroke="currentColor"
+              strokeWidth="1.2"
+            />
+          </svg>
+        </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo-simplelabs.png" alt="SimpleLabs" style={{ height: '18px' }} />
         <span className="h-[14px] w-px bg-[#E2E8F0]" aria-hidden="true" />

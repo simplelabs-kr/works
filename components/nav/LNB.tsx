@@ -1,12 +1,15 @@
 'use client'
 
-// Left Nav Bar — per-workspace navigation. Fixed 220px column on the
-// left edge of every /works route. Section order:
-//   1. 즐겨찾기 — starred presets (cross-page). Click applies the
-//      preset and navigates to its page. Star toggle removes it here.
-//   2. 현재 페이지 — presets scoped to the currently-active page,
-//      plus a "+ 새 뷰" button that saves the live settings under a
-//      user-supplied name.
+// Left Nav Bar — per-workspace navigation. 220px column on the left
+// edge of every /works route, collapsible to a 36px rail.
+//
+// Section order:
+//   1. 즐겨찾기 — starred presets (cross-page). Starred presets ALSO
+//      remain visible in their owning 현재 페이지 list — the star is a
+//      pinning affordance, not a move.
+//   2. 현재 페이지 — every preset scoped to the currently-active page,
+//      plus a "+ 새 뷰" button that opens NewPresetModal. The preset
+//      most recently applied/created is highlighted as "active".
 //   3. 페이지 목록 — static list from WORKS_PAGES. Coming-soon pages
 //      render muted; clicking them is a no-op.
 //   4. 휴지통 — separate section, navigates to /works/trash.
@@ -24,10 +27,12 @@ import {
   applyPreset,
   createPreset,
   deletePreset,
+  snapshotLiveView,
   updatePreset,
   type ViewPreset,
 } from '@/lib/works/viewPresets'
 import { loadSettings } from '@/lib/works/viewSettings'
+import NewPresetModal from './NewPresetModal'
 
 // Map from path-based active page → the pageKey stored on presets.
 // 생산관리 presets use pageKey 'works' (legacy, matches worksPageConfig),
@@ -61,14 +66,19 @@ function StarIcon({ filled }: { filled: boolean }) {
 
 type PresetRowProps = {
   preset: ViewPreset
+  active: boolean
   onApply: () => void
   onToggleStar: () => void
   onDelete: () => void
 }
 
-function PresetRow({ preset, onApply, onToggleStar, onDelete }: PresetRowProps) {
+function PresetRow({ preset, active, onApply, onToggleStar, onDelete }: PresetRowProps) {
   return (
-    <div className="group flex items-center gap-1 rounded-[6px] px-2 py-1 hover:bg-[#E2E8F0]">
+    <div
+      className={`group flex items-center gap-1 rounded-[6px] px-2 py-1 ${
+        active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
+      }`}
+    >
       <button
         type="button"
         onClick={onToggleStar}
@@ -80,7 +90,9 @@ function PresetRow({ preset, onApply, onToggleStar, onDelete }: PresetRowProps) 
       <button
         type="button"
         onClick={onApply}
-        className="flex-1 min-w-0 text-left text-[12px] text-[#334155] truncate"
+        className={`flex-1 min-w-0 text-left text-[12px] truncate ${
+          active ? 'text-[#1E3A8A] font-semibold' : 'text-[#334155]'
+        }`}
         title={preset.name}
       >
         {preset.name}
@@ -99,48 +111,89 @@ function PresetRow({ preset, onApply, onToggleStar, onDelete }: PresetRowProps) 
   )
 }
 
-export default function LNB() {
+type Props = {
+  collapsed: boolean
+  // Controls whether width transitions run. False on the very first paint
+  // so users don't see an animation during hydration; true afterwards.
+  animated: boolean
+}
+
+export default function LNB({ collapsed, animated }: Props) {
   const pathname = usePathname()
   const activePage = resolveActivePage(pathname ?? '')
   const activeKey = activePage?.key ?? null
   const activePresetKey = presetKeyForActivePage(activeKey)
 
-  const { presets, refresh } = usePresets()
+  const { presets, refresh, activeByPage, setActivePreset } = usePresets()
+  const activePresetId = activePresetKey ? (activeByPage[activePresetKey] ?? null) : null
 
   const starredPresets = useMemo(() => presets.filter(p => p.starred), [presets])
+  // Starred presets stay in their page list too — starring is a pin, not
+  // a move. The 즐겨찾기 section above just duplicates the pinned rows
+  // at the top of the LNB.
   const currentPagePresets = useMemo(
-    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey && !p.starred) : [],
+    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey) : [],
     [presets, activePresetKey]
   )
 
+  const [modalOpen, setModalOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Snapshot captured at the moment "+ 새 뷰" is pressed. Shown in the
+  // modal preview and used verbatim when the user clicks 저장. Captured
+  // up-front (not on submit) so the user sees exactly what they'll save.
+  const [snapshot, setSnapshot] = useState<{
+    filters: unknown
+    sort: unknown
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    view: any
+  } | null>(null)
 
-  const handleCreatePreset = async () => {
-    if (!activePresetKey) return
-    if (saving) return
-    const name = window.prompt('뷰 이름을 입력해주세요 (최대 80자)')?.trim()
-    if (!name) return
+  const openNewPresetModal = async () => {
+    if (!activePresetKey || saving) return
+    // Prefer the in-memory snapshot from the mounted DataGrid (always
+    // current). If the LNB opens on a page that doesn't host a grid,
+    // fall back to the last server-saved settings.
+    let snap = snapshotLiveView(activePresetKey)
+    if (!snap) {
+      const saved = await loadSettings(activePresetKey)
+      snap = saved
+        ? { filters: saved.filters, sort: saved.sort, view: saved.view }
+        : { filters: null, sort: null, view: null }
+    }
+    setSnapshot(snap)
+    setModalOpen(true)
+  }
+
+  const handleSubmitPreset = async (name: string) => {
+    if (!activePresetKey || !snapshot) return
     setSaving(true)
     try {
-      const live = await loadSettings(activePresetKey)
       const created = await createPreset({
         page_key: activePresetKey,
         name,
-        filters: live?.filters ?? null,
-        sort: live?.sort ?? null,
-        view: live?.view ?? null,
+        filters: snapshot.filters ?? null,
+        sort: snapshot.sort ?? null,
+        view: snapshot.view ?? null,
       })
       if (!created) {
         window.alert('뷰 저장에 실패했습니다')
         return
       }
+      // Newly created preset becomes the active one for this page — its
+      // settings match the current live state exactly.
+      setActivePreset(activePresetKey, created.id)
       await refresh()
+      setModalOpen(false)
+      setSnapshot(null)
     } finally {
       setSaving(false)
     }
   }
 
   const handleApplyPreset = async (preset: ViewPreset) => {
+    // applyPreset does a hard navigate, so no need to call setActivePreset
+    // here — it writes the localStorage entry that the next mount will
+    // pick up through PresetsProvider's readActiveMap.
     await applyPreset(preset)
   }
 
@@ -152,11 +205,31 @@ export default function LNB() {
   const handleDelete = async (preset: ViewPreset) => {
     if (!window.confirm(`'${preset.name}' 뷰를 삭제할까요?`)) return
     const ok = await deletePreset(preset.id)
-    if (ok) await refresh()
+    if (!ok) return
+    if (activePresetKey && activePresetId === preset.id) {
+      setActivePreset(activePresetKey, null)
+    }
+    await refresh()
+  }
+
+  const widthClass = collapsed ? 'w-[36px]' : 'w-[220px]'
+  const transitionClass = animated ? 'transition-[width] duration-200 ease-out' : ''
+
+  if (collapsed) {
+    // Collapsed rail: 36px wide, no section content — toggle lives in
+    // GNB so there's nothing actionable here. Keeping the rail (rather
+    // than removing the element) preserves the horizontal layout and
+    // avoids a content-area reflow while the transition animates.
+    return (
+      <aside
+        aria-label="사이드바 (접힘)"
+        className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] overflow-hidden`}
+      />
+    )
   }
 
   return (
-    <aside className="flex-shrink-0 w-[220px] h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto">
+    <aside className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto`}>
       {/* 즐겨찾기 */}
       <SectionLabel>즐겨찾기</SectionLabel>
       <div className="px-2 pb-1">
@@ -167,8 +240,9 @@ export default function LNB() {
         )}
         {starredPresets.map(p => (
           <PresetRow
-            key={p.id}
+            key={`fav-${p.id}`}
             preset={p}
+            active={p.page_key === activePresetKey && activePresetId === p.id}
             onApply={() => handleApplyPreset(p)}
             onToggleStar={() => handleToggleStar(p)}
             onDelete={() => handleDelete(p)}
@@ -195,6 +269,7 @@ export default function LNB() {
           <PresetRow
             key={p.id}
             preset={p}
+            active={activePresetId === p.id}
             onApply={() => handleApplyPreset(p)}
             onToggleStar={() => handleToggleStar(p)}
             onDelete={() => handleDelete(p)}
@@ -204,7 +279,7 @@ export default function LNB() {
       <div className="px-3 py-1.5">
         <button
           type="button"
-          onClick={handleCreatePreset}
+          onClick={openNewPresetModal}
           disabled={!activePresetKey || saving}
           title={activePresetKey ? '현재 설정을 새 뷰로 저장' : '뷰를 지원하지 않는 페이지'}
           className="w-full rounded-[6px] border border-dashed border-[#CBD5E1] bg-white px-2 py-1 text-[12px] text-[#64748B] hover:border-[#94A3B8] hover:text-[#334155] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -264,6 +339,14 @@ export default function LNB() {
           {TRASH_PAGE.label}
         </Link>
       </nav>
+
+      <NewPresetModal
+        open={modalOpen}
+        snapshot={snapshot}
+        saving={saving}
+        onCancel={() => { if (!saving) { setModalOpen(false); setSnapshot(null) } }}
+        onSubmit={handleSubmitPreset}
+      />
     </aside>
   )
 }

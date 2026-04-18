@@ -1229,6 +1229,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const restoredRef = useRef(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedViewRef = useRef<PersistedView | null>(null)
+  // Always-current view + filter + sort snapshot. Used by the LNB "+ 새 뷰"
+  // path to build a preset from the live HOT state without waiting for the
+  // debounced save → reload round-trip. Updated eagerly inside the save
+  // effect (pre-debounce).
+  const latestSnapshotRef = useRef<{
+    filters: RootFilterState
+    sort: SortCondition[]
+    view: PersistedView | null
+  }>({ filters: { logic: 'AND', conditions: [] }, sort: [], view: null })
 
   // HOT's current physical-column schema. Defaults to COLUMNS (original
   // definition order); swapped to a reordered array when a saved
@@ -1384,6 +1393,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     }
     savedViewRef.current = view
 
+    // Snapshot live view + filter/sort so anything reading
+    // `__worksGridSnapshot` (e.g. LNB "+ 새 뷰") gets the true current state,
+    // not whatever was last written to the DB. Keyed by VIEW_PAGE_KEY so
+    // both 생산관리 and 휴지통 grids can be active simultaneously without
+    // stepping on each other.
+    latestSnapshotRef.current = {
+      filters: filterState,
+      sort: sortConditions,
+      view,
+    }
+
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
@@ -1392,7 +1412,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         sort: sortConditions,
         view,
       })
-    }, 1000)
+    }, 400)
 
     return () => {
       if (saveTimerRef.current) {
@@ -1400,7 +1420,53 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         saveTimerRef.current = null
       }
     }
-  }, [rowHeight, hiddenColumns, frozenCount, colWidths, columnOrderVersion, filterState, sortConditions])
+  }, [rowHeight, hiddenColumns, frozenCount, colWidths, columnOrderVersion, filterState, sortConditions, VIEW_PAGE_KEY])
+
+  // Register a window-level snapshot hook so the LNB ("+ 새 뷰") can read
+  // the live view state synchronously, and a beforeunload flush so a
+  // pending debounced save isn't lost when the user closes the tab.
+  //
+  // The registry is keyed by VIEW_PAGE_KEY so /works/production and
+  // /works/trash can each own their own entry. Each grid instance keeps
+  // its own entry live only for the duration of its mount.
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = window as any
+    const registry: Record<string, {
+      getSnapshot: () => { filters: unknown; sort: unknown; view: PersistedView | null }
+      flush: () => void
+    }> = w.__worksGrid ?? (w.__worksGrid = {})
+    const entry = {
+      getSnapshot: () => ({
+        filters: latestSnapshotRef.current.filters,
+        sort: latestSnapshotRef.current.sort,
+        view: latestSnapshotRef.current.view,
+      }),
+      flush: () => {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current)
+          saveTimerRef.current = null
+        }
+        const snap = latestSnapshotRef.current
+        saveSettings(VIEW_PAGE_KEY, { filters: snap.filters, sort: snap.sort, view: snap.view })
+      },
+    }
+    registry[VIEW_PAGE_KEY] = entry
+
+    const onBeforeUnload = () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+        entry.flush()
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload)
+      if (registry[VIEW_PAGE_KEY] === entry) delete registry[VIEW_PAGE_KEY]
+    }
+  }, [VIEW_PAGE_KEY])
 
   // Row height change → update CSS var, ref (drives modifyRowHeight hook),
   // and force HOT to recompute viewport dimensions.
