@@ -27,7 +27,7 @@ function userKeyFromAuth(email: string | null | undefined): string {
 // affordances gate on ownership client-side; the server enforces the
 // same via PATCH/DELETE owner equality).
 const PRESET_SELECT =
-  'id, page_key, name, filters, sort, view, starred, sort_order, scope, owner_user_key, folder_id, created_at, updated_at'
+  'id, page_key, name, filters, sort, view, starred, sort_order, scope, owner_user_key, created_at, updated_at'
 
 export async function GET(req: NextRequest) {
   const auth = await requireUser()
@@ -60,8 +60,8 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — create a preset. Expected body: { page_key, name, scope?,
-// folder_id?, filters?, sort?, view? }. Filters/sort/view are opaque
-// jsonb blobs; validation happens client-side before submission.
+// filters?, sort?, view? }. Filters/sort/view are opaque jsonb blobs;
+// validation happens client-side before submission.
 export async function POST(req: NextRequest) {
   const auth = await requireUser()
   if (auth.response) return auth.response
@@ -72,7 +72,6 @@ export async function POST(req: NextRequest) {
     page_key?: string
     name?: string
     scope?: unknown
-    folder_id?: unknown
     filters?: unknown
     sort?: unknown
     view?: unknown
@@ -104,18 +103,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'invalid scope' }, { status: 400 })
   }
 
-  // folder_id is optional. The client is expected to only pass a
-  // folder_id it's allowed to see; the server trusts it because the
-  // DB FK will reject nonexistent ids and a future RLS policy can
-  // tighten further.
-  let folder_id: string | null = null
-  if (body.folder_id !== undefined && body.folder_id !== null) {
-    if (typeof body.folder_id !== 'string') {
-      return NextResponse.json({ error: 'invalid folder_id' }, { status: 400 })
-    }
-    folder_id = body.folder_id
-  }
-
   const { data, error } = await supabaseAdmin
     .from('user_view_presets')
     .insert({
@@ -124,7 +111,6 @@ export async function POST(req: NextRequest) {
       user_key,
       page_key,
       name,
-      folder_id,
       filters: body.filters ?? null,
       sort: body.sort ?? null,
       view: body.view ?? null,

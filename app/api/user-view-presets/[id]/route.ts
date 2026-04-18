@@ -5,14 +5,14 @@ import { requireUser } from '@/lib/auth/requireUser'
 export const maxDuration = 10
 
 const PRESET_SELECT =
-  'id, page_key, name, filters, sort, view, starred, sort_order, scope, owner_user_key, folder_id, created_at, updated_at'
+  'id, page_key, name, filters, sort, view, starred, sort_order, scope, owner_user_key, created_at, updated_at'
 
 function userKeyFromAuth(email: string | null | undefined): string {
   return (email ?? 'dev@simplelabs.kr').toLowerCase()
 }
 
 // PATCH — partial update of a preset (rename, toggle star, re-save
-// current filter/sort/view, move between folders, or reorder). The
+// current filter/sort/view, or reorder). The
 // owner_user_key equality on the update guards every write — even
 // collaborative rows can only be modified by their owner, so a
 // teammate's edits to a shared view never hit the DB. Clients that
@@ -35,7 +35,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     sort?: unknown
     view?: unknown
     sort_order?: unknown
-    folder_id?: unknown
     scope?: unknown
   }
   try {
@@ -66,15 +65,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       patch.sort_order = body.sort_order
     } else {
       return NextResponse.json({ error: 'invalid sort_order' }, { status: 400 })
-    }
-  }
-  if ('folder_id' in body) {
-    if (body.folder_id === null) {
-      patch.folder_id = null
-    } else if (typeof body.folder_id === 'string') {
-      patch.folder_id = body.folder_id
-    } else {
-      return NextResponse.json({ error: 'invalid folder_id' }, { status: 400 })
     }
   }
   if ('scope' in body) {

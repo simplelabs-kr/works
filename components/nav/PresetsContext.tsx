@@ -1,8 +1,8 @@
 'use client'
 
-// Shared presets + folders state for LNB + Command Palette. Fetched
-// once on mount (and refetched after every CRUD) so both consumers
-// see the same lists without each making their own request.
+// Shared presets state for LNB + Command Palette. Fetched once on
+// mount (and refetched after every CRUD) so both consumers see the
+// same list without each making their own request.
 //
 // Also tracks the "active" preset per page_key — the one the user most
 // recently applied (or created). Persisted in localStorage so a full
@@ -15,11 +15,10 @@
 // non-owners don't see buttons that would 404.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { listFolders, listPresets, type ViewFolder, type ViewPreset } from '@/lib/works/viewPresets'
+import { listPresets, type ViewPreset } from '@/lib/works/viewPresets'
 
 type Ctx = {
   presets: ViewPreset[]
-  folders: ViewFolder[]
   refresh: () => Promise<void>
   loading: boolean
   // pageKey → preset id currently considered "active" for that page
@@ -67,16 +66,14 @@ async function fetchCurrentUserKey(): Promise<string> {
 
 export function PresetsProvider({ children }: { children: React.ReactNode }) {
   const [presets, setPresets] = useState<ViewPreset[]>([])
-  const [folders, setFolders] = useState<ViewFolder[]>([])
   const [loading, setLoading] = useState(true)
   const [activeByPage, setActiveByPage] = useState<Record<string, string>>({})
   const [currentUserKey, setCurrentUserKey] = useState<string>(FALLBACK_USER_KEY)
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    const [p, f] = await Promise.all([listPresets(), listFolders()])
+    const p = await listPresets()
     setPresets(p)
-    setFolders(f)
     setLoading(false)
   }, [])
 
@@ -122,8 +119,8 @@ export function PresetsProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ presets, folders, refresh, loading, activeByPage, setActivePreset, currentUserKey }),
-    [presets, folders, refresh, loading, activeByPage, setActivePreset, currentUserKey],
+    () => ({ presets, refresh, loading, activeByPage, setActivePreset, currentUserKey }),
+    [presets, refresh, loading, activeByPage, setActivePreset, currentUserKey],
   )
   return <PresetsContext.Provider value={value}>{children}</PresetsContext.Provider>
 }

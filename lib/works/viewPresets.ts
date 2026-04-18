@@ -89,20 +89,6 @@ export type ViewPreset = {
   // to show owner-only affordances (star, rename, delete) on
   // collaborative rows.
   owner_user_key: string
-  // Optional FK into user_view_folders. null when the preset sits at
-  // the section top level rather than inside a folder.
-  folder_id: string | null
-  created_at: string
-  updated_at: string
-}
-
-export type ViewFolder = {
-  id: string
-  page_key: string
-  name: string
-  scope: PresetScope
-  owner_user_key: string
-  sort_order: number | null
   created_at: string
   updated_at: string
 }
@@ -130,7 +116,6 @@ export async function createPreset(input: {
   sort: unknown | null
   view: unknown | null
   scope?: PresetScope
-  folder_id?: string | null
 }): Promise<ViewPreset | null> {
   try {
     const res = await fetch(ENDPOINT, {
@@ -155,7 +140,6 @@ export async function updatePreset(
     sort?: unknown
     view?: unknown
     sort_order?: number | null
-    folder_id?: string | null
     scope?: PresetScope
   }
 ): Promise<ViewPreset | null> {
@@ -192,78 +176,6 @@ export async function deletePreset(id: string): Promise<boolean> {
 export async function reorderPresets(idsInOrder: string[]): Promise<void> {
   await Promise.all(
     idsInOrder.map((id, idx) => updatePreset(id, { sort_order: idx })),
-  )
-}
-
-// ── Folders ─────────────────────────────────────────────────────────
-
-const FOLDERS_ENDPOINT = '/api/user-view-folders'
-
-export async function listFolders(pageKey?: string): Promise<ViewFolder[]> {
-  try {
-    const url = pageKey
-      ? `${FOLDERS_ENDPOINT}?page_key=${encodeURIComponent(pageKey)}`
-      : FOLDERS_ENDPOINT
-    const res = await fetch(url, { cache: 'no-store' })
-    if (!res.ok) return []
-    const body = (await res.json()) as { data?: ViewFolder[] }
-    return body.data ?? []
-  } catch {
-    return []
-  }
-}
-
-export async function createFolder(input: {
-  page_key: string
-  name: string
-  scope: PresetScope
-}): Promise<ViewFolder | null> {
-  try {
-    const res = await fetch(FOLDERS_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as { data?: ViewFolder }
-    return body.data ?? null
-  } catch {
-    return null
-  }
-}
-
-export async function updateFolder(
-  id: string,
-  patch: { name?: string; sort_order?: number | null; scope?: PresetScope },
-): Promise<ViewFolder | null> {
-  try {
-    const res = await fetch(`${FOLDERS_ENDPOINT}/${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as { data?: ViewFolder }
-    return body.data ?? null
-  } catch {
-    return null
-  }
-}
-
-export async function deleteFolder(id: string): Promise<boolean> {
-  try {
-    const res = await fetch(`${FOLDERS_ENDPOINT}/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-export async function reorderFolders(idsInOrder: string[]): Promise<void> {
-  await Promise.all(
-    idsInOrder.map((id, idx) => updateFolder(id, { sort_order: idx })),
   )
 }
 
