@@ -93,7 +93,12 @@ type PresetRowProps = {
   // supported on the 현재 페이지 list; favorites inherit that order).
   draggable?: boolean
   isDragging?: boolean
-  isDragOver?: boolean
+  // Drop-position indicator: shows a 2px blue line between rows. 'above'
+  // renders the line flush with this row's top edge (i.e. between the
+  // previous row and this one); 'below' renders it flush with the
+  // bottom edge. Implemented via inset box-shadow so it doesn't shift
+  // layout. null hides the line on this row.
+  dropLinePosition?: 'above' | 'below' | null
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
@@ -109,13 +114,19 @@ function PresetRow({
   onDelete,
   draggable,
   isDragging,
-  isDragOver,
+  dropLinePosition,
   onDragStart,
   onDragOver,
   onDragLeave,
   onDrop,
   onDragEnd,
 }: PresetRowProps) {
+  const dropLineClass =
+    dropLinePosition === 'above'
+      ? 'shadow-[inset_0_2px_0_0_#2D7FF9]'
+      : dropLinePosition === 'below'
+      ? 'shadow-[inset_0_-2px_0_0_#2D7FF9]'
+      : ''
   return (
     <div
       draggable={draggable}
@@ -126,7 +137,7 @@ function PresetRow({
       onDragEnd={onDragEnd}
       className={`group flex items-center gap-1 rounded-[6px] px-1 py-1 ${
         active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
-      } ${isDragging ? 'opacity-40' : ''} ${isDragOver ? 'outline outline-2 outline-[#2D7FF9] outline-offset-[-2px]' : ''}`}
+      } ${isDragging ? 'opacity-40' : ''} ${dropLineClass}`}
     >
       {draggable && (
         <span
@@ -237,10 +248,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   } | null>(null)
 
   // Drag-reorder state — scoped to the 현재 페이지 list. `draggingId`
-  // is the row being dragged; `dragOverId` is the row the pointer is
-  // currently over (used to draw the drop indicator).
+  // is the row being dragged; `dropIndicator` is where a 2px blue
+  // horizontal line is rendered to show the insertion slot between
+  // rows ('above' vs 'below' a specific target, decided by whether
+  // the cursor is in the top or bottom half of that row).
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [dropIndicator, setDropIndicator] = useState<
+    { id: string; position: 'above' | 'below' } | null
+  >(null)
   // Optimistic override of the 현재 페이지 order during/after drop. On
   // drop we set this immediately so the UI reflects the new order
   // before refresh() completes; cleared once refresh() returns with
@@ -358,34 +373,56 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     if (!draggingId || draggingId === preset.id) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDragOverId(preset.id)
+    // Pick above/below by which half of the row the cursor is in.
+    // currentTarget is the row div (drag handlers are bound to it).
+    const rect = e.currentTarget.getBoundingClientRect()
+    const isAbove = e.clientY < rect.top + rect.height / 2
+    const position: 'above' | 'below' = isAbove ? 'above' : 'below'
+    setDropIndicator(prev =>
+      prev && prev.id === preset.id && prev.position === position
+        ? prev
+        : { id: preset.id, position },
+    )
   }
 
-  const handleDragLeave = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    // Only clear if we're leaving the row we last entered — prevents
-    // flicker when the cursor crosses between row and its buttons.
-    if (dragOverId === preset.id) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _ = e
-      setDragOverId(null)
-    }
+  const handleDragLeave = (preset: ViewPreset) => (_e: React.DragEvent<HTMLDivElement>) => {
+    // Only clear if we're leaving the row we last marked — prevents
+    // flicker when the cursor crosses between the row and its buttons
+    // (dragleave fires on child-enter in some browsers).
+    setDropIndicator(prev => (prev?.id === preset.id ? null : prev))
   }
 
   const handleDrop = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const sourceId = draggingId
+    // Snapshot the indicator before clearing — we need its position
+    // to decide whether to insert above or below `target`.
+    const indicator = dropIndicator
     setDraggingId(null)
-    setDragOverId(null)
+    setDropIndicator(null)
     if (!sourceId || sourceId === target.id) return
 
     const currentOrder = orderedCurrentPagePresets.map(p => p.id)
     const fromIdx = currentOrder.indexOf(sourceId)
-    const toIdx = currentOrder.indexOf(target.id)
-    if (fromIdx < 0 || toIdx < 0) return
+    const targetIdx = currentOrder.indexOf(target.id)
+    if (fromIdx < 0 || targetIdx < 0) return
+
+    // Translate the visual "above/below target" indicator into an
+    // insertion index in the pre-removal list:
+    //   above → slot at targetIdx  (source lands at target's spot,
+    //                               pushing target one down)
+    //   below → slot at targetIdx+1
+    const position = indicator?.id === target.id ? indicator.position : 'above'
+    let insertAt = position === 'above' ? targetIdx : targetIdx + 1
 
     const nextOrder = currentOrder.slice()
-    const [moved] = nextOrder.splice(fromIdx, 1)
-    nextOrder.splice(toIdx, 0, moved)
+    nextOrder.splice(fromIdx, 1)
+    // Removing source at fromIdx shifts every later index down by one.
+    if (fromIdx < insertAt) insertAt -= 1
+    nextOrder.splice(insertAt, 0, sourceId)
+
+    // No-op guard: order unchanged.
+    if (nextOrder.every((id, i) => id === currentOrder[i])) return
 
     // Optimistic: render the new order right away so the drop feels
     // instant. The server PATCH storm runs in the background; once
@@ -401,7 +438,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
   const handleDragEnd = () => {
     setDraggingId(null)
-    setDragOverId(null)
+    setDropIndicator(null)
   }
 
   const widthClass = collapsed ? 'w-[36px]' : 'w-[220px]'
@@ -481,7 +518,11 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
             onDelete={() => handleDelete(p)}
             draggable
             isDragging={draggingId === p.id}
-            isDragOver={dragOverId === p.id && draggingId !== p.id}
+            dropLinePosition={
+              dropIndicator?.id === p.id && draggingId !== p.id
+                ? dropIndicator.position
+                : null
+            }
             onDragStart={handleDragStart(p)}
             onDragOver={handleDragOver(p)}
             onDragLeave={handleDragLeave(p)}
