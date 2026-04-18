@@ -2110,13 +2110,39 @@ export default function WorksGrid() {
     for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
       if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
     }
+    // Guards: setIndexesSequence cascades through a 'change' hook that can
+    // reach selection.commit() and (in some transient states, e.g. StrictMode
+    // unmount/remount or before HOT finishes its first render) that path
+    // touches `instance.view` — which can be null and throws
+    // "TypeError: null is not an object (evaluating 'instance.view')".
+    // So: require the IndexMapper and a live `view` before writing, wrap
+    // the write in try/catch so a late failure doesn't break steps 3/4
+    // (hidden / freeze) below, and if HOT isn't ready yet defer the whole
+    // order-restore to the next tick.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cim = (hot as any).columnIndexMapper
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hotReady = !!(hot as any).view
     if (cim && newOrder.length > 0) {
-      cim.setIndexesSequence(newOrder)
-      // setIndexesSequence doesn't fire afterColumnMove, so bump the version
-      // manually to keep managedColumns (column manager dropdown) in sync.
-      setColumnOrderVersion(v => v + 1)
+      const applyOrder = () => {
+        const hotNow = hotRef.current
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cimNow = (hotNow as any)?.columnIndexMapper
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!hotNow || !cimNow || !(hotNow as any).view) return
+        try {
+          cimNow.setIndexesSequence(newOrder)
+          // setIndexesSequence doesn't fire afterColumnMove, so bump the
+          // version manually to keep managedColumns (column manager
+          // dropdown) in sync.
+          setColumnOrderVersion(v => v + 1)
+          hotNow.render()
+        } catch (err) {
+          console.warn('[view-restore] setIndexesSequence failed', err)
+        }
+      }
+      if (hotReady) applyOrder()
+      else setTimeout(applyOrder, 0)
     }
 
     // 3) Hidden columns — after the move so toVisualColumn reflects the
