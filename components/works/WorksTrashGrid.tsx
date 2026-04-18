@@ -6,7 +6,9 @@
 
 import DataGrid from '@/components/datagrid/DataGrid'
 import { worksTrashPageConfig } from '@/features/works/worksConfig'
+import { useRemountVersion } from '@/lib/works/remountBus'
 
 export default function WorksTrashGrid() {
-  return <DataGrid pageConfig={worksTrashPageConfig} />
+  const v = useRemountVersion(worksTrashPageConfig.pageKey)
+  return <DataGrid key={v} pageConfig={worksTrashPageConfig} />
 }

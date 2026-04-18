@@ -7,6 +7,13 @@
 //
 // This module is intentionally typed loosely for `filters`/`sort` so it
 // doesn't pull in UI-component types; the grid narrows them on read.
+//
+// In-session cache: loadSettings/saveSettings delegate to viewSettingsCache
+// to keep the "just-wrote this" value available for the next mount in the
+// same tab, without waiting for the POST round-trip. See that module for
+// the race condition it guards against.
+
+import { readCache, writeCache } from './viewSettingsCache'
 
 export type PersistedView = {
   columnOrder: string[]
@@ -31,6 +38,14 @@ export type SettingsPatch = {
 const ENDPOINT = '/api/user-view-settings'
 
 export async function loadSettings(pageKey: string): Promise<PersistedSettings | null> {
+  // In-session cache wins over the DB — if this tab has written a value
+  // since page load, that's the authoritative state. This short-circuits
+  // the POST-vs-GET race on SPA navigation: the write to cache happens
+  // synchronously inside saveSettings, so by the time any subsequent
+  // mount hits loadSettings the cache already has the post-resize value.
+  const cached = readCache(pageKey)
+  if (cached) return cached
+
   try {
     const res = await fetch(`${ENDPOINT}?page_key=${encodeURIComponent(pageKey)}`, {
       method: 'GET',
@@ -45,11 +60,15 @@ export async function loadSettings(pageKey: string): Promise<PersistedSettings |
     }
     const row = json?.data
     if (!row) return null
-    return {
+    const settings: PersistedSettings = {
       filters: row.filters ?? null,
       sort: row.sort ?? null,
       view: normalizeView(row.view),
     }
+    // Seed the cache from the DB so subsequent in-session loads skip
+    // the GET even before any local save has occurred.
+    writeCache(pageKey, settings)
+    return settings
   } catch (err) {
     console.warn('[viewSettings.loadSettings] error', err)
     return null
@@ -59,7 +78,21 @@ export async function loadSettings(pageKey: string): Promise<PersistedSettings |
 // Saves any subset of the three jsonb blobs. Logs failures to the console
 // so they are visible during local verification (the previous "silent fail"
 // behavior is what hid a broken save path from us).
+//
+// Writes the merged post-state to the in-session cache SYNCHRONOUSLY
+// before firing the network request, so a mount that happens before the
+// POST completes still sees the latest value.
 export async function saveSettings(pageKey: string, patch: SettingsPatch): Promise<void> {
+  // Merge with the current cache so `saveSettings(pageKey, {view})` doesn't
+  // clobber filters/sort — matches the server-side merge semantics.
+  const prev = readCache(pageKey)
+  const next: PersistedSettings = {
+    filters: 'filters' in patch ? patch.filters ?? null : prev?.filters ?? null,
+    sort: 'sort' in patch ? patch.sort ?? null : prev?.sort ?? null,
+    view: 'view' in patch ? patch.view ?? null : prev?.view ?? null,
+  }
+  writeCache(pageKey, next)
+
   try {
     const body: Record<string, unknown> = { page_key: pageKey }
     if ('filters' in patch) body.filters = patch.filters ?? null

@@ -2,15 +2,16 @@
 // a name + filters/sort/view blobs scoped to (user, page). Favorites
 // (`starred`) surface in the LNB 즐겨찾기 section and the Cmd+K palette.
 //
-// applyPreset overwrites the live user_view_settings row for the
-// preset's page, then navigates to that page. The DataGrid mount path
-// already reads user_view_settings on load, so the new chrome reflects
-// the preset as soon as the page (re-)mounts. We use a hard location
-// change so the fresh read is guaranteed even when navigating within
-// the same route.
+// applyPreset writes the preset into the in-session viewSettings cache
+// + DB, cancels any pending debounced save from the mounted grid, and
+// bumps the per-pageKey remount version so <DataGrid/> re-keys and its
+// mount-restore effect picks the preset up from cache. Navigation is
+// left to the caller (LNB) so cross-page applies can use Next.js soft
+// nav instead of tearing down WorksShell/LNB with location.href.
 
 import { saveSettings, type PersistedView } from './viewSettings'
-import { resolvePageHrefForKey } from '@/lib/nav/pages'
+import { writeCache } from './viewSettingsCache'
+import { bumpRemountVersion } from './remountBus'
 
 // Live snapshot of the on-screen grid for a given pageKey. Populated by
 // DataGrid via `window.__worksGrid[pageKey]` while it is mounted. Returns
@@ -111,33 +112,62 @@ export async function deletePreset(id: string): Promise<boolean> {
   }
 }
 
-// Apply a preset: overwrite the live user_view_settings row for its
-// page, then hard-navigate there. Using window.location.href (not
-// router.push) forces a full remount of the grid so the freshly-saved
-// settings are read on mount — we don't need a runtime-swap codepath
-// inside DataGrid for the MVP.
+// Apply a preset: write the preset into the in-session cache + DB,
+// cancel any pending debounced save from the mounted grid (so its
+// stale-live snapshot can't flush on top of the preset), then bump
+// the per-pageKey remount version so the grid wrapper re-keys
+// <DataGrid/> and the next mount reads the preset from cache.
+//
+// Navigation is left to the caller so the LNB can use Next.js soft
+// nav (router.push) instead of tearing down WorksShell with
+// window.location.href. For same-page applies, the remount bump is
+// sufficient on its own — no URL change needed.
 //
 // Also writes the preset id to localStorage under
-// `works:active-preset:<page_key>` BEFORE navigating so the LNB on the
-// target page can highlight the row it came from on the very first
-// paint after the reload.
+// `works:active-preset:<page_key>` so the LNB highlight survives a
+// subsequent hard reload.
 export async function applyPreset(preset: ViewPreset): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const viewCast = preset.view as any
+
+  // Cancel any pending debounced save on the mounted grid BEFORE the
+  // saveSettings call below. Otherwise a resize that was 400ms mid-
+  // debounce could still fire via its own timer and race against the
+  // preset write. cancelPending is a no-op if no grid is mounted for
+  // this pageKey (e.g. applying a preset for a page the user isn't on).
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const entry = (window as any).__worksGrid?.[preset.page_key]
+    entry?.cancelPending?.()
+  } catch {
+    /* registry missing — nothing to cancel */
+  }
+
+  // Writes through to the in-session cache synchronously, then POSTs
+  // to the server (awaited so a tab close right after this resolves
+  // with the DB already up to date).
   await saveSettings(preset.page_key, {
     filters: preset.filters,
     sort: preset.sort,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    view: preset.view as any,
+    view: viewCast,
   })
+
+  // Redundant with saveSettings' own cache write, but explicit — if
+  // saveSettings' POST failed, the local cache still reflects the
+  // preset so the next mount in this session restores correctly.
+  writeCache(preset.page_key, {
+    filters: preset.filters,
+    sort: preset.sort,
+    view: viewCast,
+  })
+
   try {
     window.localStorage.setItem(`works:active-preset:${preset.page_key}`, preset.id)
   } catch {
     /* storage disabled — LNB will just not highlight until next applyPreset */
   }
-  const href = resolvePageHrefForKey(preset.page_key)
-  if (href) {
-    window.location.href = href
-  } else {
-    // Same-page apply with unknown target — reload in place as a fallback.
-    window.location.reload()
-  }
+
+  // Force any DataGrid mounted for this pageKey to remount and rerun
+  // its mount-restore effect (which now hits the cache we just wrote).
+  bumpRemountVersion(preset.page_key)
 }

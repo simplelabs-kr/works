@@ -15,12 +15,13 @@
 //   4. 휴지통 — separate section, navigates to /works/trash.
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import {
   WORKS_PAGES,
   TRASH_PAGE,
   resolveActivePage,
+  resolvePageHrefForKey,
 } from '@/lib/nav/pages'
 import { usePresets } from './PresetsContext'
 import {
@@ -149,6 +150,7 @@ function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
 
 export default function LNB({ collapsed, animated, onToggle }: Props) {
   const pathname = usePathname()
+  const router = useRouter()
   const activePage = resolveActivePage(pathname ?? '')
   const activeKey = activePage?.key ?? null
   const activePresetKey = presetKeyForActivePage(activeKey)
@@ -220,10 +222,20 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   }
 
   const handleApplyPreset = async (preset: ViewPreset) => {
-    // applyPreset does a hard navigate, so no need to call setActivePreset
-    // here — it writes the localStorage entry that the next mount will
-    // pick up through PresetsProvider's readActiveMap.
+    // applyPreset caches the preset, cancels any pending grid save,
+    // and bumps the remount version for preset.page_key so a grid
+    // already mounted on that page re-keys and re-reads from cache.
+    // No hard reload — WorksShell/LNB stay mounted across the switch,
+    // which is what keeps the collapse state and avoids the flicker.
     await applyPreset(preset)
+    // Also update the context synchronously so the active-row highlight
+    // reflects the new preset without waiting for a storage event.
+    setActivePreset(preset.page_key, preset.id)
+
+    // Cross-page applies need a route change; same-page applies are
+    // handled entirely by the remount bump above.
+    const href = resolvePageHrefForKey(preset.page_key)
+    if (href && href !== pathname) router.push(href)
   }
 
   const handleToggleStar = async (preset: ViewPreset) => {

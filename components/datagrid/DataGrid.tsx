@@ -1435,6 +1435,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     const registry: Record<string, {
       getSnapshot: () => { filters: unknown; sort: unknown; view: PersistedView | null }
       flush: () => void
+      cancelPending: () => void
     }> = w.__worksGrid ?? (w.__worksGrid = {})
     const entry = {
       getSnapshot: () => ({
@@ -1449,6 +1450,18 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         }
         const snap = latestSnapshotRef.current
         saveSettings(VIEW_PAGE_KEY, { filters: snap.filters, sort: snap.sort, view: snap.view })
+      },
+      // applyPreset calls this before navigating so the beforeunload
+      // handler below doesn't overwrite the preset with whatever live
+      // grid state happened to still be in latestSnapshotRef. Without
+      // this, a pending debounced save (e.g. a resize made just before
+      // clicking the preset) would fire via keepalive after applyPreset's
+      // POST and clobber it on the server.
+      cancelPending: () => {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current)
+          saveTimerRef.current = null
+        }
       },
     }
     registry[VIEW_PAGE_KEY] = entry
