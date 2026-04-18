@@ -3,7 +3,8 @@
 // component itself stays close to pure DataGrid behavior; this file is the
 // single place where order-item-specific schema lives.
 
-import type { FieldType } from './worksTypes'
+import type { PageConfig } from '@/components/datagrid/types'
+import type { FieldType, Item, Row } from './worksTypes'
 import {
   attachmentRenderer,
   checkboxRenderer,
@@ -136,4 +137,216 @@ export function getFieldTypeIcon(type: FieldType): string {
     attachment: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M6.5 2L3.5 5a2.12 2.12 0 0 0 3 3l4-4a1.41 1.41 0 0 0-2-2L4.5 6a.71.71 0 0 0 1 1L8.5 4"/></svg>`,
   }
   return icons[type] ?? ''
+}
+
+// ── Workday helpers ──────────────────────────────────────────────────────────
+//
+// Business-calendar math for the 출고예정일 derived column. Skip weekends
+// and any holiday in the `hs` set; nextWorkday(d) returns the next working
+// day strictly after `d`, addWorkdays(start, n) returns the working day
+// `n` workdays after `start`. Pure functions — safe to call from transform
+// and merge hooks.
+
+function isWorkday(date: Date, hs: Set<string>): boolean {
+  const day = date.getDay()
+  const str = date.toISOString().slice(0, 10)
+  return day !== 0 && day !== 6 && !hs.has(str)
+}
+
+function nextWorkday(date: Date, hs: Set<string>): Date {
+  const next = new Date(date)
+  next.setDate(next.getDate() + 1)
+  while (!isWorkday(next, hs)) next.setDate(next.getDate() + 1)
+  return next
+}
+
+function addWorkdays(startDate: Date, days: number, hs: Set<string>): Date {
+  let count = 0
+  const current = new Date(startDate)
+  while (count < days) {
+    const str = current.toISOString().slice(0, 10)
+    const day = current.getDay()
+    if (day !== 0 && day !== 6 && !hs.has(str)) count++
+    if (count < days) current.setDate(current.getDate() + 1)
+  }
+  return nextWorkday(current, hs)
+}
+
+// ── Derived field helpers ────────────────────────────────────────────────────
+
+// Row-shape calculator for 출고예정일, reused by realtime merge and local
+// edit recompute. 데드라인 takes precedence (business rule: "ship date is
+// the first workday after 데드라인"); falls back to 생산시작일 + 제작_소요일.
+function calcShipDateFromRow(
+  row: Pick<Row, '데드라인' | '생산시작일' | '제작_소요일'>,
+  hs: Set<string>,
+): string {
+  if (row.데드라인) {
+    return nextWorkday(new Date(row.데드라인), hs).toISOString().slice(0, 10)
+  }
+  if (row.생산시작일 && row.제작_소요일) {
+    return addWorkdays(new Date(row.생산시작일), Number(row.제작_소요일), hs)
+      .toISOString()
+      .slice(0, 10)
+  }
+  return '-'
+}
+
+function calcShipDateFromItem(item: Item, hs: Set<string>): string {
+  if (item.데드라인) {
+    return nextWorkday(new Date(item.데드라인), hs).toISOString().slice(0, 10)
+  }
+  if (item.생산시작일 && item.제작_소요일) {
+    return addWorkdays(new Date(item.생산시작일), Number(item.제작_소요일), hs)
+      .toISOString()
+      .slice(0, 10)
+  }
+  return '-'
+}
+
+function formatDate(val: string | null | undefined): string {
+  if (!val) return ''
+  return String(val).slice(0, 10)
+}
+
+// ── Row transform (Item → Row) ───────────────────────────────────────────────
+
+// flat_order_details row → display Row. Derives 제품명_코드 (trimmed 고유_번호
+// tail, length depends on encoding), 출고예정일 (workday math), and 순금_중량
+// (mass × purity%). Everything else is a direct passthrough with a default
+// for null columns. Passed to DataGrid via `worksPageConfig.transformRow`.
+function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
+  const hs = ctx.holidays
+  const 제품명 = item.제품명 ?? ''
+  const 코드 = item.고유_번호?.length === 15
+    ? item.고유_번호.slice(-4)
+    : item.고유_번호?.slice(-6) ?? ''
+  const purity = Number(item.metal_purity ?? 0)
+  return {
+    id: item.id,
+    updated_at: item.updated_at ?? null,
+    고유_번호: item.고유_번호 ?? '',
+    제품명,
+    제품명_코드: 제품명 ? `${제품명}[${코드}]` : '',
+    metals: { name: item.metal_name ?? '', purity: item.metal_purity != null ? String(item.metal_purity) : null },
+    발주일: formatDate(item.발주일),
+    생산시작일: formatDate(item.생산시작일),
+    제작_소요일: item.제작_소요일 ?? null,
+    데드라인: formatDate(item.데드라인),
+    출고예정일: calcShipDateFromItem(item, hs),
+    시세_g당: '',
+    소재비: '',
+    발주_수량: item.수량 ?? null,
+    수량: item.수량 ?? null,
+    호수: item.호수 ?? null,
+    고객명: item.고객명 ?? '',
+    디자이너_노트: item.디자이너_노트 ?? '',
+    중량: item.중량 ?? null,
+    검수: item.검수 ?? false,
+    허용_중량_범위: '',
+    중량_검토: '',
+    기타_옵션: item.기타_옵션 ?? '',
+    각인_내용: item.각인_내용 ?? '',
+    각인_폰트: item.각인_폰트 ?? '',
+    기본_공임: item.기본_공임 ?? null,
+    공임_조정액: item.공임_조정액 ?? null,
+    확정_공임: item.확정_공임 ?? null,
+    번들_명칭: '',
+    원부자재: '',
+    발주_현황: '',
+    작업_위치: item.작업_위치 ?? '',
+    검수_유의: '',
+    도금_색상: item.도금_색상 ?? '',
+    사출_방식: item.사출_방식 ?? '',
+    가다번호: null,
+    가다_위치: null,
+    주물_후_수량: item.주물_후_수량 ?? null,
+    포장: item.포장 ?? false,
+    순금_중량: (item.중량 != null && purity > 0)
+      ? (item.중량 * (purity / 100)).toFixed(3)
+      : '',
+    rp_출력_시작: item.rp_출력_시작 ?? false,
+    왁스_파트_전달: item.왁스_파트_전달 ?? false,
+    images: item.images ?? [],
+    reference_files: item.reference_files ?? [],
+  }
+}
+
+// ── Realtime UPDATE merge ────────────────────────────────────────────────────
+
+// Given the previous row and `payload.new` from a Supabase realtime UPDATE,
+// produce the merged row. Only editable fields are synced across clients
+// (read-only joined columns stay untouched), and 출고예정일 is recomputed
+// when 데드라인 changes so derived columns stay consistent without a
+// server round-trip.
+function worksMergeRealtimeUpdate(
+  prev: Row,
+  payloadNew: Record<string, unknown>,
+  ctx: { holidays: Set<string> },
+): Row {
+  const n = payloadNew
+  const newDeadline = n.데드라인 !== undefined
+    ? (n.데드라인 ? String(n.데드라인).slice(0, 10) : '')
+    : prev.데드라인
+  return {
+    ...prev,
+    중량: (n.중량 as number | null) ?? prev.중량,
+    데드라인: newDeadline,
+    출고예정일: calcShipDateFromRow({ ...prev, 데드라인: newDeadline }, ctx.holidays),
+    작업_위치: (n.작업_위치 as string) ?? prev.작업_위치,
+    검수: (n.검수 as boolean) ?? prev.검수,
+    포장: (n.포장 as boolean) ?? prev.포장,
+    rp_출력_시작: (n.rp_출력_시작 as boolean) ?? prev.rp_출력_시작,
+    왁스_파트_전달: (n.왁스_파트_전달 as boolean) ?? prev.왁스_파트_전달,
+    주물_후_수량: (n.주물_후_수량 as number | null) ?? prev.주물_후_수량,
+    디자이너_노트: (n.디자이너_노트 as string) ?? prev.디자이너_노트,
+    사출_방식: (n.사출_방식 as string) ?? prev.사출_방식,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    reference_files: (n.reference_files as any) ?? prev.reference_files,
+    updated_at: (n.updated_at as string) ?? prev.updated_at,
+  }
+}
+
+// ── Derived-field hooks for local edits ──────────────────────────────────────
+
+// Called by DataGrid after a user edit (and on rollback). Only 데드라인
+// has a derived partner (출고예정일), so every other field returns `{}`.
+function worksRecomputeDerivedAfterEdit(
+  prev: Row,
+  field: string,
+  candidateValue: unknown,
+  ctx: { holidays: Set<string> },
+): Partial<Row> {
+  if (field !== '데드라인') return {}
+  const newDeadline = candidateValue ? String(candidateValue).slice(0, 10) : ''
+  return {
+    데드라인: newDeadline,
+    출고예정일: calcShipDateFromRow({ ...prev, 데드라인: newDeadline }, ctx.holidays),
+  }
+}
+
+function worksRecomputeDerivedOnHolidayChange(row: Row, holidays: Set<string>): Row {
+  const newShip = calcShipDateFromRow(row, holidays)
+  if (newShip === row.출고예정일) return row
+  return { ...row, 출고예정일: newShip }
+}
+
+// ── PageConfig factory ───────────────────────────────────────────────────────
+
+// The single object the works page passes into DataGrid. Adding a new page
+// (products, bundles, trash) means authoring another one of these — not
+// touching DataGrid itself.
+export const worksPageConfig: PageConfig = {
+  pageKey: VIEW_PAGE_KEY,
+  apiBase: '/api/order-items',
+  realtimeChannel: 'order_items_changes',
+  realtimeTable: 'order_items',
+  selectOptionsTable: 'order_items',
+  columns: COLUMNS,
+  colHeaders: COL_HEADERS,
+  editableFields: EDITABLE_FIELD_MAP,
+  transformRow: transformWorksRow,
+  mergeRealtimeUpdate: worksMergeRealtimeUpdate,
+  recomputeDerivedAfterEdit: worksRecomputeDerivedAfterEdit,
+  recomputeDerivedOnHolidayChange: worksRecomputeDerivedOnHolidayChange,
 }
