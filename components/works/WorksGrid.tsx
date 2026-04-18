@@ -16,10 +16,21 @@ import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
 import { loadSettings, saveSettings, type PersistedView } from '@/lib/works/viewSettings'
-
-// page_key stored in user_view_settings. Other grids (products, bundles, …)
-// will pick their own page_key when they come online.
-const VIEW_PAGE_KEY = 'works'
+import type { FieldType, ImageItem, AttachmentItem, Item, Row } from '@/features/works/worksTypes'
+import {
+  COLUMNS,
+  COL_HEADERS,
+  EDITABLE_FIELD_MAP,
+  VIEW_PAGE_KEY,
+  getFieldTypeIcon,
+} from '@/features/works/worksConfig'
+import {
+  getFilterSelectOptions,
+  getSelectColumnOptions,
+  rendererBridge,
+  resetRendererBridge,
+  setSelectColumnOptions,
+} from '@/features/works/worksRenderers'
 
 // Row height presets. Values are the actual row px height used for both the CSS
 // var (--grid-row-h) and HOT's rowHeights option. Keeping them in lockstep is
@@ -54,616 +65,13 @@ const ROW_THUMB_URL_W: Record<RowHeight, number> = {
   'extra-tall': 160,
 }
 
-type ImageItem = { url: string; name: string }
-type AttachmentItem = { url: string; name: string }
-
-// flat_order_details 테이블 구조 (비정규화된 단일 테이블)
-type Item = {
-  id: string
-  updated_at: string | null
-  고유_번호: string
-  수량: number | null
-  중량: number | null
-  디자이너_노트: string | null
-  데드라인: string | null
-  출고일: string | null
-  발송일: string | null
-  중단_취소: boolean | null
-  검수: boolean | null
-  포장: boolean | null
-  출고: boolean | null
-  작업_위치: string | null
-  사출_방식: string | null
-  주물_후_수량: number | null
-  rp_출력_시작: boolean | null
-  왁스_파트_전달: boolean | null
-  order_id: string | null
-  product_id: string | null
-  brand_id: string | null
-  metal_price_id: string | null
-  bundle_id: string | null
-  // orders 유래
-  소재: string | null
-  도금_색상: string | null
-  각인_여부: boolean | null
-  각인_내용: string | null
-  각인_폰트: string | null
-  기타_옵션: string | null
-  스톤_수동: string | null
-  호수: string | null
-  고객명: string | null
-  발주일: string | null
-  생산시작일: string | null
-  회차: number | null
-  확정_공임: number | null
-  공임_조정액: number | null
-  // products 유래
-  제품명: string | null
-  제작_소요일: number | null
-  기본_공임: number | null
-  // brands/metals 유래
-  brand_name: string | null
-  metal_name: string | null
-  metal_purity: number | null
-  images: ImageItem[]
-  reference_files: AttachmentItem[]
-}
-
-type Row = {
-  id: string
-  updated_at: string | null
-  고유_번호: string
-  제품명: string
-  제품명_코드: string
-  metals: { name: string; purity: string | null }
-  발주일: string
-  생산시작일: string
-  제작_소요일: number | null
-  데드라인: string
-  출고예정일: string
-  시세_g당: string
-  소재비: string
-  발주_수량: number | null
-  수량: number | null
-  호수: string | null
-  고객명: string
-  디자이너_노트: string
-  중량: number | null
-  검수: boolean
-  허용_중량_범위: string
-  중량_검토: string
-  기타_옵션: string
-  각인_내용: string
-  각인_폰트: string
-  기본_공임: number | null
-  공임_조정액: number | null
-  확정_공임: number | null
-  번들_명칭: string
-  원부자재: string
-  발주_현황: string
-  작업_위치: string
-  검수_유의: string
-  도금_색상: string
-  사출_방식: string
-  가다번호: string | null
-  가다_위치: string | null
-  주물_후_수량: number | null
-  포장: boolean
-  순금_중량: string
-  rp_출력_시작: boolean
-  왁스_파트_전달: boolean
-  images: ImageItem[]
-  reference_files: AttachmentItem[]
-}
-
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
 
+// Column definitions, select options, editable-field map, renderers,
+// getFieldTypeIcon, and related types all live in features/works now —
+// imported above. This file holds DataGrid/HOT wiring only.
 
-const SELECT_COLUMN_OPTIONS: Record<string, { value: string; bg: string }[]> = {
-  '사출_방식': [
-    { value: 'RP', bg: '#EDE9FE' },
-    { value: '왁스', bg: '#DBEAFE' },
-  ],
-  '작업_위치': [
-    { value: '현장', bg: '#DCFCE7' },
-    { value: '검수', bg: '#DBEAFE' },
-    { value: '조립', bg: '#EDE9FE' },
-    { value: '마무리 광', bg: '#FEF9C3' },
-    { value: '조각', bg: '#FFEDD5' },
-    { value: '도금', bg: '#FEF3C7' },
-    { value: '각인', bg: '#FCE7F3' },
-    { value: '광실', bg: '#F3F4F6' },
-    { value: '세척/검수후재작업', bg: '#CCFBF1' },
-    { value: '에폭시(연마)', bg: '#FEF2F2' },
-    { value: '에폭시(일반)', bg: '#FEF2F2' },
-    { value: '컷팅', bg: '#F3F4F6' },
-    { value: '외부', bg: '#F1F5F9' },
-    { value: '대기', bg: '#F9FAFB' },
-    { value: '취소', bg: '#FEE2E2' },
-    { value: '조립 대기 중', bg: '#EDE9FE' },
-    { value: '유화', bg: '#F3F4F6' },
-    { value: '초벌', bg: '#F3F4F6' },
-  ],
-}
-
-// Select column option values for FilterModal
-const FILTER_SELECT_OPTIONS: Record<string, string[]> = Object.fromEntries(
-  Object.entries(SELECT_COLUMN_OPTIONS).map(([k, v]) => [k, v.map(o => o.value)])
-)
-
-// 편집 가능 컬럼 → order_items 필드명 매핑
-const EDITABLE_FIELD_MAP: Record<string, string> = {
-  '중량': '중량',
-  '데드라인': '데드라인',
-  '검수': '검수',
-  '포장': '포장',
-  '출고': '출고',
-  'rp_출력_시작': 'rp_출력_시작',
-  '왁스_파트_전달': '왁스_파트_전달',
-  '주물_후_수량': '주물_후_수량',
-  '디자이너_노트': '디자이너_노트',
-  '작업_위치': '작업_위치',
-  '사출_방식': '사출_방식',
-  'reference_files': 'reference_files',
-}
-
-// ── Attachment upload/delete helpers ──────────────────────────────────────────
-let onAttachmentUpload: ((rowIdx: number, files: FileList) => void) | null = null
-let onAttachmentDelete: ((rowIdx: number, fileIdx: number) => void) | null = null
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function attachmentRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
-  const items: AttachmentItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
-  // Sig-cache: skip DOM rebuild when the cell's visible content would be identical.
-  // Click handlers close over `row` and the `fileIdx` of each chip, so the sig must
-  // include row + url+name of every item.
-  //
-  // DOM verification is CRITICAL: HOT reuses td elements across columns during
-  // virtualization. A td that was ours may later be used by the default text
-  // renderer for a different column — which clears our wrapper but leaves our
-  // __attSig intact. If we skipped rebuild on the next match, the user would
-  // see the other column's stale text in this cell. So before trusting the sig
-  // we require our `.attachment-popout-wrapper` to still be the first child.
-  const sig = `${row}|${row === 0 ? 1 : 0}|${items.map(i => `${i.url}\u0001${i.name}`).join('\u0002')}`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyTd = td as any
-  const firstEl = td.firstElementChild as HTMLElement | null
-  const domIsOurs = !!firstEl && firstEl.classList.contains('attachment-popout-wrapper')
-  if (domIsOurs && anyTd.__attSig === sig) return
-  anyTd.__attSig = sig
-
-  td.innerHTML = ''
-  td.style.padding = '0'
-
-  const wrapper = document.createElement('div')
-  wrapper.className = 'attachment-popout-wrapper'
-  if (row === 0) wrapper.classList.add('is-first-row')
-
-  if (items.length === 0) {
-    const empty = document.createElement('div')
-    empty.className = 'attachment-empty'
-    const clipIcon = document.createElement('span')
-    clipIcon.style.fontSize = '13px'
-    clipIcon.textContent = '\u{1F4CE}'
-    const label = document.createElement('span')
-    label.style.cssText = 'font-size:11px;color:#9CA3AF;'
-    label.textContent = '파일 추가'
-    empty.appendChild(clipIcon)
-    empty.appendChild(label)
-    empty.onclick = (e) => {
-      e.stopPropagation()
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.multiple = true
-      input.onchange = () => { if (input.files?.length) onAttachmentUpload?.(row, input.files) }
-      input.click()
-    }
-    wrapper.appendChild(empty)
-  } else {
-    items.forEach((item, i) => {
-      const chip = document.createElement('a')
-      chip.className = 'attachment-chip'
-      chip.href = item.url
-      chip.target = '_blank'
-      chip.rel = 'noopener noreferrer'
-      chip.title = item.name
-      chip.onclick = (e) => e.stopPropagation()
-      const clipSpan = document.createElement('span')
-      clipSpan.style.fontSize = '11px'
-      clipSpan.textContent = '\u{1F4CE}'
-      chip.appendChild(clipSpan)
-      const nameEl = document.createElement('span')
-      nameEl.className = 'attachment-name'
-      nameEl.textContent = item.name
-      chip.appendChild(nameEl)
-      // Delete button
-      const delBtn = document.createElement('span')
-      delBtn.className = 'attachment-del'
-      delBtn.textContent = '\u00D7'
-      delBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); onAttachmentDelete?.(row, i) }
-      chip.appendChild(delBtn)
-      wrapper.appendChild(chip)
-    })
-    const addBtn = document.createElement('div')
-    addBtn.className = 'attachment-add-btn'
-    addBtn.textContent = '+'
-    addBtn.onclick = (e) => {
-      e.stopPropagation()
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.multiple = true
-      input.onchange = () => { if (input.files?.length) onAttachmentUpload?.(row, input.files) }
-      input.click()
-    }
-    wrapper.appendChild(addBtn)
-  }
-
-  td.ondragover = (e) => { e.preventDefault(); wrapper.classList.add('drag-over') }
-  td.ondragleave = () => { wrapper.classList.remove('drag-over') }
-  td.ondrop = (e) => {
-    e.preventDefault()
-    wrapper.classList.remove('drag-over')
-    if (e.dataTransfer?.files?.length) onAttachmentUpload?.(row, e.dataTransfer.files)
-  }
-
-  td.appendChild(wrapper)
-}
-
-// ── Image gallery callback (set by WorksGrid component) ──────────────────────
-let onImageGallery: ((images: ImageItem[], startIdx: number) => void) | null = null
-// Current Supabase ?width= param used by imageRenderer. Updated from the
-// rowHeight effect so thumbnails fetch at an appropriate resolution per size.
-// Defaults to the Short-row value so initial renders (before first effect
-// flush) already get a sensible size.
-let imageThumbUrlWidth: number = 48
-let checkedRowsRefGlobal: React.MutableRefObject<Set<string>> | null = null
-let lastCheckedRowRefGlobal: React.MutableRefObject<number | null> | null = null
-let setSelectedRowIdsGlobal: React.Dispatch<React.SetStateAction<Set<string>>> | null = null
-let hotRefGlobal: React.MutableRefObject<Handsontable | null> | null = null
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function imageRenderer(_hot: any, td: HTMLTableCellElement, row: number, _col: number, _prop: any, value: any) {
-  const imgs: ImageItem[] = Array.isArray(value) ? value.filter((v: any) => v?.url) : [] // eslint-disable-line @typescript-eslint/no-explicit-any
-  // Sig-cache with DOM verification (see attachmentRenderer for rationale).
-  // HOT can reuse a td across different columns during virtualization — the
-  // sig alone is not enough; we also verify `.image-popout-wrapper` is still
-  // the td's first child. If it's gone, another renderer has touched this td
-  // and we must rebuild to avoid showing stale content from another column.
-  const sig = `${row === 0 ? 1 : 0}|${imageThumbUrlWidth}|${imgs.map(i => i.url).join('\u0001')}`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyTd = td as any
-  const firstEl = td.firstElementChild as HTMLElement | null
-  const domIsOurs = !!firstEl && firstEl.classList.contains('image-popout-wrapper')
-
-  if (imgs.length === 0) {
-    // Empty state: always clear. We cannot reliably detect stale text nodes
-    // (firstElementChild ignores them), and the work is trivial.
-    anyTd.__imgSig = ''
-    td.innerHTML = ''
-    td.classList.add('htDimmed')
-    td.style.padding = '0'
-    return
-  }
-
-  if (domIsOurs && anyTd.__imgSig === sig) return
-  anyTd.__imgSig = sig
-
-  td.innerHTML = ''
-  td.classList.add('htDimmed')
-  td.style.padding = '0'
-
-  const wrapper = document.createElement('div')
-  wrapper.className = 'image-popout-wrapper'
-  if (row === 0) wrapper.classList.add('is-first-row')
-
-  imgs.forEach((item, i) => {
-    const img = document.createElement('img')
-    img.className = 'image-thumb'
-    img.src = item.url.includes('supabase.co/storage')
-      ? item.url + `?width=${imageThumbUrlWidth}&quality=70`
-      : item.url
-    img.onclick = (e) => {
-      if (!td.classList.contains('current')) return
-      e.stopPropagation()
-      onImageGallery?.(imgs, i)
-    }
-    wrapper.appendChild(img)
-  })
-
-  td.appendChild(wrapper)
-}
-
-const COLUMNS = [
-  {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: (_row: any) => '',
-    title: '',
-    width: 50,
-    readOnly: true,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    renderer: function (_hot: any, td: HTMLTableCellElement, row: number) {
-      // Get row data to determine checked state. getSourceDataAtRow is O(1) —
-      // avoid getSourceData()[row] which would force the full array.
-      const rowData = (_hot as any).getSourceDataAtRow?.(row) as Row | undefined
-      const rowId = rowData?.id
-      const isChecked = rowId && checkedRowsRefGlobal?.current.has(rowId)
-
-      // Sig-cache + DOM verification. Sig alone is unsafe: HOT can reuse a td
-      // across different columns during virtualization, in which case another
-      // renderer overwrites our DOM while __noSig still persists. We require
-      // our marker class to still be the td's first child before trusting it.
-      const sig = `${row}|${rowId ?? ''}|${isChecked ? '1' : '0'}`
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const anyTd = td as any
-      const firstEl = td.firstElementChild as HTMLElement | null
-      const domIsOurs = !!firstEl && firstEl.classList.contains('no-col-wrapper')
-      if (domIsOurs && anyTd.__noSig === sig) return
-      anyTd.__noSig = sig
-
-      td.innerHTML = ''
-      td.style.backgroundColor = '#F8FAFC'
-      td.style.borderRight = '1px solid #E2E8F0'
-      td.style.padding = '0'
-      // No hardcoded height — global CSS (.handsontable td) drives height via --grid-row-h.
-      // Setting explicit height here was the root cause of the "fixed No. column drift" bug.
-      td.style.overflow = 'hidden'
-
-      const wrapper = document.createElement('div')
-      wrapper.className = 'no-col-wrapper'
-      wrapper.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;'
-
-      const checkbox = document.createElement('input')
-      checkbox.type = 'checkbox'
-      checkbox.className = 'row-select-checkbox'
-      checkbox.checked = !!isChecked
-      checkbox.style.cssText = 'width:13px;height:13px;margin:0;padding:0;cursor:pointer;flex-shrink:0;'
-      checkbox.addEventListener('click', (e) => {
-        e.stopPropagation()
-        if (!rowId) return
-
-        // 단일 선택/해제만 처리 (shift+클릭은 beforeOnCellMouseDown에서 처리)
-        if (checkbox.checked) {
-          checkedRowsRefGlobal?.current.add(rowId)
-        } else {
-          checkedRowsRefGlobal?.current.delete(rowId)
-          // 체크 해제 시 즉시 DOM 업데이트
-          checkbox.checked = false
-        }
-
-        // lastChecked 업데이트
-        if (lastCheckedRowRefGlobal) {
-          lastCheckedRowRefGlobal.current = row
-        }
-
-        // selectedRowIds state 동기화
-        if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
-          setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
-        }
-      })
-
-      const num = document.createElement('span')
-      num.textContent = String(row + 1)
-      num.style.cssText = 'font-size:11px;color:#94A3B8;flex-shrink:0;'
-
-      wrapper.appendChild(checkbox)
-      wrapper.appendChild(num)
-      td.appendChild(wrapper)
-    },
-  },
-  { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
-  { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
-  { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 220, fieldType: 'text'     as FieldType },
-  { data: 'metals.name',   title: '소재',    readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
-  { data: 'metals.purity', title: '함량비',  readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
-  { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'date'     as FieldType },
-  { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'date'    as FieldType },
-  { data: '데드라인',   title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    datePickerConfig: {
-      i18n: {
-        previousMonth: '이전 달',
-        nextMonth: '다음 달',
-        months: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
-        weekdays: ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'],
-        weekdaysShort: ['일','월','화','수','목','금','토'],
-      },
-      firstDay: 0,
-      showDaysInNextAndPreviousMonths: true,
-      toString(date: Date) {
-        const y = date.getFullYear()
-        const m = String(date.getMonth() + 1).padStart(2, '0')
-        const d = String(date.getDate()).padStart(2, '0')
-        return `${y}-${m}-${d}`
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onDraw(picker: any) {
-        const title = picker.el?.querySelector('.pika-title')
-        if (!title) return
-        const labels = title.querySelectorAll('.pika-label')
-        if (labels.length < 2) return
-        const monthLabel = labels[0]  // 첫 번째가 월
-        const yearLabel = labels[1]   // 두 번째가 년도
-        if (yearLabel && monthLabel && monthLabel.previousElementSibling !== yearLabel) {
-          title.insertBefore(yearLabel, monthLabel)
-        }
-      },
-    } as any,
-  },
-  { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'date' as const },
-  { data: '시세_g당',      title: '시세 (g당)', readOnly: true, width: 80, fieldType: 'number'  as FieldType },
-  { data: '소재비',        title: '소재비',  readOnly: true,  width: 90,  fieldType: 'number'   as FieldType },
-  { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
-  { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
-  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
-  { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
-  { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
-  { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType, outputType: 'text' as const },
-  { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 70, fieldType: 'formula'  as FieldType, outputType: 'text' as const },
-  { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
-  { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'text'    as FieldType },
-  { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'text'     as FieldType },
-  { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'number' as FieldType },
-  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
-  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'text'    as FieldType },
-  { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, outputType: 'text' as const, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
-  { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
-  { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
-  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
-  { data: '가다번호',      title: '가다번호',  readOnly: true, width: 90, fieldType: 'text'     as FieldType },
-  { data: '가다_위치',     title: '가다 위치', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
-  { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
-  { data: '포장',          title: '포장',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: '순금_중량',     title: '순금 중량', readOnly: true, width: 80, fieldType: 'formula'  as FieldType, outputType: 'number' as const },
-  { data: 'rp_출력_시작',  title: 'RP 출력 시작', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: false, width: 100, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-]
-
-// ── Field type icons ─────────────────────────────────────────────────────────
-
-type FieldType = 'text' | 'longtext' | 'number' | 'date' | 'checkbox' | 'select' | 'formula' | 'image' | 'attachment'
-
-function getFieldTypeIcon(type: FieldType): string {
-  const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
-  const icons: Record<FieldType, string> = {
-    text:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none">A</text></svg>`,
-    longtext: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
-    number:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
-    date:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
-    checkbox: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
-    select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
-    formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
-    image:    `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><circle cx="4" cy="4.5" r="1"/><polyline points="1,9.5 4,6.5 6,8.5 8,6 11,9.5"/></svg>`,
-    attachment: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M6.5 2L3.5 5a2.12 2.12 0 0 0 3 3l4-4a1.41 1.41 0 0 0-2-2L4.5 6a.71.71 0 0 0 1 1L8.5 4"/></svg>`,
-  }
-  return icons[type] ?? ''
-}
-
-// ── Common select badge renderer ──────────────────────────────────────────────
-
-function renderSelectBadge(td: HTMLTableCellElement, value: string, bg: string, editable = false) {
-  td.innerHTML = ''
-  td.style.verticalAlign = 'middle'
-  td.style.padding = '0 8px'
-  td.style.position = 'relative'
-  if (editable) {
-    td.dataset.selectCol = 'true'
-  } else {
-    delete td.dataset.selectCol
-  }
-  if (!value) return
-  const badge = document.createElement('span')
-  badge.textContent = value
-  badge.style.cssText = `display:inline-flex;align-items:center;justify-content:center;min-width:40px;padding:2px 8px;border-radius:9999px;font-size:13px;font-weight:500;line-height:normal;background:${bg || '#F3F4F6'};color:#111827;white-space:nowrap;`
-  td.appendChild(badge)
-}
-
-// ── Purchase status renderer ──────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function purchaseStatusRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  td.innerHTML = ''
-  td.style.verticalAlign = 'middle'
-  td.style.padding = '0 8px'
-  td.classList.add('htDimmed')
-  if (!value) return
-  const dotColor: Record<string, string> = {
-    '발주 필요': '#EF4444',
-    '수령 필요': '#F97316',
-    '수령 완료': '#22C55E',
-  }
-  const color = dotColor[value]
-  if (!color) return
-  const wrap = document.createElement('span')
-  wrap.style.cssText = 'display:inline-flex;align-items:center;gap:6px;line-height:normal;'
-  const dot = document.createElement('span')
-  dot.style.cssText = `display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;`
-  const text = document.createElement('span')
-  text.textContent = value
-  text.style.cssText = 'font-size:13px;color:#111827;white-space:nowrap;'
-  wrap.appendChild(dot)
-  wrap.appendChild(text)
-  td.appendChild(wrap)
-}
-
-// ── Custom checkbox renderer ──────────────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number, col: number, _prop: any, value: boolean) {
-  // Sig-cache + DOM verification. The click handler closes over row/col, so the
-  // sig includes both. But sig alone is unsafe — HOT may reuse a td across
-  // different columns during virtualization; the default text renderer for the
-  // other column clears our DOM while __cbSig still persists, then a later
-  // match would paint stale blank checkboxes over real text. We verify our
-  // marker class is still the td's first child before trusting the sig.
-  const checked = value === true
-  const sig = `${row}|${col}|${checked ? '1' : '0'}`
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const anyTd = td as any
-  const firstEl = td.firstElementChild as HTMLElement | null
-  const domIsOurs = !!firstEl && firstEl.classList.contains('checkbox-wrapper')
-  if (domIsOurs && anyTd.__cbSig === sig) return
-  anyTd.__cbSig = sig
-
-  td.innerHTML = ''
-  // CRITICAL: assign (not `+=`) — the `+=` operator grew the style attribute
-  // unboundedly on every scroll-triggered re-render, which thrashed style recalc
-  // after a few seconds of scrolling.
-  td.style.cssText = 'padding:0;overflow:hidden;cursor:default;'
-  td.style.textAlign = 'center'
-  td.style.verticalAlign = 'middle'
-  td.style.lineHeight = '0'
-
-  td.onmouseenter = null
-  td.onmouseleave = null
-  td.onclick = null
-
-  // Outer container: fills the td completely, flex-centers the hit target.
-  // height:100% tracks --grid-row-h so the checkbox stays centered at any row height.
-  const outer = document.createElement('div')
-  outer.className = 'checkbox-wrapper'
-  outer.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;overflow:hidden;'
-
-  // Hit target: fixed 24×24, shows hover background, contains the checkmark
-  const box = document.createElement('span')
-  box.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0;border-radius:4px;transition:background 0.1s;cursor:pointer;'
-
-  if (checked) {
-    box.innerHTML = `<svg width="14" height="12" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><polyline points="1.5,6 5.5,10 12.5,1.5" stroke="#2D7FF9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-  }
-
-  box.onmouseenter = () => { box.style.border = '1.5px solid #D1D5DB' }
-  box.onmouseleave = () => { box.style.border = 'none' }
-
-  box.onclick = (e) => {
-    e.stopPropagation()
-    const currentVal = hot.getDataAtCell(row, col)
-    hot.setDataAtCell(row, col, currentVal !== true, 'checkboxClick')
-  }
-
-  outer.appendChild(box)
-  td.appendChild(outer)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  const bg = SELECT_COLUMN_OPTIONS['사출_방식']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg, true)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  const bg = SELECT_COLUMN_OPTIONS['작업_위치']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg, true)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const COL_HEADERS: string[] = (COLUMNS as any[]).map((c) => c.title ?? '')
 
 // Prop → column index cache. COLUMNS is static, so this never needs to update.
 // HOT의 propToCol()이 편집 hot path(afterChange, undo/redo replay)에서
@@ -841,24 +249,49 @@ export default function WorksGrid() {
   // On unmount, null them out so stale references from a previous mount don't leak
   // into a subsequent one (StrictMode, route re-entry).
   useEffect(() => {
-    onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
-    checkedRowsRefGlobal = checkedRowsRef
-    lastCheckedRowRefGlobal = lastCheckedRowRef
-    setSelectedRowIdsGlobal = setSelectedRowIds
-    hotRefGlobal = hotRef
+    rendererBridge.onImageGallery = (imgs, startIdx) => { setGalleryImages(imgs); setGalleryStartIdx(startIdx) }
+    rendererBridge.checkedRowsRef = checkedRowsRef
+    rendererBridge.lastCheckedRowRef = lastCheckedRowRef
+    rendererBridge.setSelectedRowIds = setSelectedRowIds
+    rendererBridge.hotRef = hotRef
     return () => {
-      onImageGallery = null
-      onAttachmentUpload = null
-      onAttachmentDelete = null
-      checkedRowsRefGlobal = null
-      lastCheckedRowRefGlobal = null
-      setSelectedRowIdsGlobal = null
-      hotRefGlobal = null
+      resetRendererBridge()
     }
+  }, [])
+
+  // Hydrate select-column options from Supabase `field_options`. Renderers
+  // and the per-cell popup read from the module-level catalog, so we call
+  // the setter and then force a HOT re-render to recolor existing select
+  // cells. FilterModal reads from state (`filterSelectOptions`) so it
+  // picks up the new values on the next render. Failures are swallowed —
+  // the hardcoded fallback keeps the grid fully functional.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/field-options?table=order_items')
+        if (!res.ok) return
+        const body = (await res.json()) as { data?: Record<string, { value: string; bg: string }[]> }
+        if (cancelled || !body?.data) return
+        setSelectColumnOptions(body.data)
+        setFilterSelectOptions(getFilterSelectOptions())
+        hotRef.current?.render()
+      } catch {
+        // keep fallback silently
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
+  // FilterModal's selectOptions prop. Initial value mirrors the hardcoded
+  // fallback in worksRenderers; replaced on mount by the /api/field-options
+  // response so the filter dropdowns stay aligned with the grid's own
+  // dropdowns (both sources are the same catalog).
+  const [filterSelectOptions, setFilterSelectOptions] = useState<Record<string, string[]>>(
+    () => getFilterSelectOptions()
+  )
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [apiError, setApiError] = useState<string | null>(null)
@@ -891,7 +324,7 @@ export default function WorksGrid() {
   // render. The handlers only read stable refs/callbacks, so a single mount-time
   // assignment is equivalent and avoids per-render allocation.
   useEffect(() => {
-    onAttachmentUpload = async (rowIdx, files) => {
+    rendererBridge.onAttachmentUpload = async (rowIdx, files) => {
       const rowData = rowsRef.current[rowIdx]
       if (!rowData?.id) return
       const existing = rowData.reference_files ?? []
@@ -939,7 +372,7 @@ export default function WorksGrid() {
       }
     }
 
-    onAttachmentDelete = async (rowIdx, fileIdx) => {
+    rendererBridge.onAttachmentDelete = async (rowIdx, fileIdx) => {
       const rowData = rowsRef.current[rowIdx]
       if (!rowData?.id) return
       const existing = rowData.reference_files ?? []
@@ -1640,22 +1073,26 @@ export default function WorksGrid() {
     let selectAlreadySelected = false
     hotRef.current.addHook('beforeOnCellMouseDown', (e: MouseEvent, coords: { row: number; col: number }) => {
       // Shift+클릭 범위 선택 (No. 컬럼만)
-      if (coords.col === 0 && e.shiftKey && lastCheckedRowRefGlobal?.current !== null) {
-        if (!lastCheckedRowRefGlobal || !hotRefGlobal?.current) return
+      if (coords.col === 0 && e.shiftKey && rendererBridge.lastCheckedRowRef?.current !== null) {
+        const lastCheckedRef = rendererBridge.lastCheckedRowRef
+        const checkedRef = rendererBridge.checkedRowsRef
+        const setSelected = rendererBridge.setSelectedRowIds
+        const hot = rendererBridge.hotRef?.current
+        if (!lastCheckedRef || lastCheckedRef.current === null || !hot) return
 
         const currentRow = coords.row
-        const start = Math.min(lastCheckedRowRefGlobal.current, currentRow)
-        const end = Math.max(lastCheckedRowRefGlobal.current, currentRow)
-        const data = hotRefGlobal.current.getSourceData() as Row[]
+        const start = Math.min(lastCheckedRef.current, currentRow)
+        const end = Math.max(lastCheckedRef.current, currentRow)
+        const data = hot.getSourceData() as Row[]
 
         // 범위 내 모든 행의 id를 checkedRowsRef에 추가
         for (let i = start; i <= end; i++) {
           const id = data[i]?.id
           if (!id) continue
-          checkedRowsRefGlobal?.current.add(id)
+          checkedRef?.current.add(id)
 
           // viewport에 보이는 셀만 즉시 DOM 업데이트
-          const td = hotRefGlobal.current.getCell(i, 0)
+          const td = hot.getCell(i, 0)
           if (td) {
             const cb = td.querySelector('.row-select-checkbox') as HTMLInputElement
             if (cb) cb.checked = true
@@ -1663,11 +1100,11 @@ export default function WorksGrid() {
         }
 
         // lastChecked 업데이트
-        lastCheckedRowRefGlobal.current = currentRow
+        lastCheckedRef.current = currentRow
 
         // selectedRowIds state 동기화
-        if (checkedRowsRefGlobal && setSelectedRowIdsGlobal) {
-          setSelectedRowIdsGlobal(new Set(checkedRowsRefGlobal.current))
+        if (checkedRef && setSelected) {
+          setSelected(new Set(checkedRef.current))
         }
 
         return
@@ -1693,7 +1130,7 @@ export default function WorksGrid() {
       if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
       const column = colDef.data as string
-      const options = SELECT_COLUMN_OPTIONS[column] ?? []
+      const options = getSelectColumnOptions()[column] ?? []
       const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
       if (!td) return
       const rect = td.getBoundingClientRect()
@@ -2002,7 +1439,7 @@ export default function WorksGrid() {
     const px = ROW_HEIGHT_PX[rowHeight]
     const thumbPx = ROW_THUMB_PX[rowHeight]
     rowHeightPxRef.current = px
-    imageThumbUrlWidth = ROW_THUMB_URL_W[rowHeight]
+    rendererBridge.imageThumbUrlWidth = ROW_THUMB_URL_W[rowHeight]
     document.documentElement.style.setProperty('--grid-row-h', `${px}px`)
     document.documentElement.style.setProperty('--grid-thumb-size', `${thumbPx}px`)
     const hot = hotRef.current
@@ -2481,7 +1918,7 @@ export default function WorksGrid() {
             <FilterModal
               columns={COLUMNS.filter((c): c is typeof c & { data: string; title: string; fieldType: string } => typeof c.data === 'string' && c.data !== '') as FilterColDef[]}
               filterState={filterState}
-              selectOptions={FILTER_SELECT_OPTIONS}
+              selectOptions={filterSelectOptions}
               onChange={setFilterState}
               onApply={handleLoad}
               onClose={() => setShowFilterModal(false)}
