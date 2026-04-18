@@ -60,6 +60,13 @@ body {
   cursor: pointer;
 }
 
+/* First header cell gets a bit more breathing room — previously set as an
+   inline style in afterGetColHeader; moved here so it doesn't re-apply on
+   every horizontal scroll re-render. */
+.handsontable thead th:first-child {
+  padding-left: 12px !important;
+}
+
 .handsontable thead th .colHeader {
   display: inline-flex !important;
   align-items: center !important;
@@ -494,4 +501,42 @@ body {
 }
 .handsontable .wtHolder::-webkit-scrollbar-thumb:hover {
   background: #94A3B8;
+}
+
+/* ── HOT context menu — align with Works toolbar/dropdown styling ─ */
+.htContextMenu {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid #E2E8F0 !important;
+  border-radius: 6px !important;
+  background: #ffffff !important;
+  padding: 4px 0 !important;
+  font-family: inherit !important;
+}
+.htContextMenu table.htCore {
+  border: none !important;
+}
+.htContextMenu table.htCore td {
+  font-size: 12px !important;
+  color: #111827 !important;
+  padding: 6px 12px !important;
+  height: auto !important;
+  line-height: 1.4 !important;
+  border: none !important;
+  background: #ffffff !important;
+}
+.htContextMenu table.htCore td.current,
+.htContextMenu table.htCore td:hover:not(.htDisabled):not(.htSeparator) {
+  background: #F8FAFC !important;
+  color: #111827 !important;
+}
+.htContextMenu table.htCore td.htDisabled {
+  color: #9CA3AF !important;
+  background: #ffffff !important;
+  cursor: default !important;
+}
+.htContextMenu table.htCore td.htSeparator {
+  padding: 0 !important;
+  border-top: 1px solid #E2E8F0 !important;
+  height: 0 !important;
+  line-height: 0 !important;
 }

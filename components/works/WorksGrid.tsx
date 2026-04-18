@@ -1165,22 +1165,42 @@ export default function WorksGrid() {
     return () => ro.disconnect()
   }, [])
 
-  // Block browser back/forward swipe gesture on macOS trackpads.
-  // When the user scrolls the grid horizontally (deltaX dominant), Safari/Chrome
-  // interpret it as a navigation swipe. We preventDefault on those wheel events
-  // so the event reaches HOT's scroll handling instead of the history API.
-  // passive:false is required — the browser ignores preventDefault on passive
-  // listeners. Vertical-dominant wheel events pass through untouched.
+  // Intercept horizontal-dominant wheel events before HOT sees them and
+  // redirect them to the custom scrollbar. Rationale:
+  //   * Blocks macOS trackpad back/forward swipe (deltaX without
+  //     preventDefault triggers browser history navigation).
+  //   * HOT's master wtHolder has a vertical scrollbar, so its scrollable
+  //     width is larger than ht_clone_top's — letting HOT's own wheel path
+  //     drive master.scrollLeft causes master to overshoot past topMax for
+  //     one frame before the sync handler caps it, producing a visible
+  //     header-vs-body misalignment at the right edge and flicker during
+  //     rapid scroll.
+  //   * Custom scrollbar's clientWidth matches top's (no vertical
+  //     scrollbar), so its natural max == topMax. Driving master/top via
+  //     customBar.scrollLeft keeps them in lock-step with no overshoot.
+  //
+  // stopPropagation in the CAPTURE phase prevents HOT's internal wheel
+  // listeners (on descendant wtHolder) from firing for horizontal wheels.
+  // Vertical wheels pass through untouched so HOT's vertical virtualization
+  // and infinite-scroll hook keep working.
   useEffect(() => {
     const el = hotContainerRef.current
     if (!el) return
     const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-        e.preventDefault()
-      }
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+      e.preventDefault()
+      e.stopPropagation()
+      const customBar = customScrollbarRef.current
+      if (!customBar) return
+      const maxScroll = customBar.scrollWidth - customBar.clientWidth
+      if (maxScroll <= 0) return
+      const next = Math.max(0, Math.min(customBar.scrollLeft + e.deltaX, maxScroll))
+      if (customBar.scrollLeft !== next) customBar.scrollLeft = next
     }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
+    // capture:true so we see the event before HOT's descendant listeners
+    // and can stop propagation.
+    el.addEventListener('wheel', onWheel, { passive: false, capture: true })
+    return () => el.removeEventListener('wheel', onWheel, { capture: true })
   }, [])
 
   // Initialize Handsontable once
@@ -1258,6 +1278,37 @@ export default function WorksGrid() {
               setFrozenCount(0)
             },
           },
+          'sep_hide': '---------',
+          'hide_column': {
+            name() { return '이 컬럼 숨기기' },
+            disabled() {
+              const hot = hotRef.current
+              if (!hot) return true
+              const sel = hot.getSelectedLast()
+              if (!sel) return true
+              const vi = sel[1]
+              // Visual col 0 is the first column — allow hiding it too, but
+              // block when there's no valid selection.
+              return typeof vi !== 'number' || vi < 0
+            },
+            callback: (_key: string, selection: Array<{ start: { col: number } }>) => {
+              const vi = selection?.[0]?.start?.col
+              if (typeof vi !== 'number' || vi < 0) return
+              const hot = hotRef.current
+              if (!hot) return
+              const pi = hot.toPhysicalColumn(vi)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const colDef = (effectiveColumnsRef.current as any[])[pi]
+              const prop = colDef?.data
+              if (!prop) return
+              setHiddenColumns(prev => {
+                if (prev.has(prop)) return prev
+                const next = new Set(prev)
+                next.add(prop)
+                return next
+              })
+            },
+          },
         },
       },
       // Disable HOT native UndoRedo plugin — we implement a custom stack that
@@ -1328,16 +1379,11 @@ export default function WorksGrid() {
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
-      TH.style.verticalAlign = 'middle'
-      TH.style.lineHeight = 'normal'
-      TH.style.paddingTop = '0'
-      TH.style.paddingBottom = '0'
-      if (col === 0) TH.style.paddingLeft = '12px'
-      const divBase = TH.querySelector('.colHeader') as HTMLElement | null
-      if (divBase) {
-        divBase.style.height = '100%'
-        divBase.style.lineHeight = 'normal'
-      }
+      // Layout styles (vertical-align, line-height, padding, .colHeader sizing)
+      // are handled via globals.css. Avoid writing them here on every header
+      // re-render — HOT calls this hook during horizontal virtualization, so
+      // redundant inline style writes thrash layout and cause visible flicker
+      // during left/right scroll.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (effectiveColumnsRef.current as any[])[col]
       if (!colDef || !colDef.fieldType) return
@@ -2467,7 +2513,7 @@ export default function WorksGrid() {
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2h10v10H2z M5.5 2v10 M8.5 2v10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             컬럼
             {hiddenColumns.size > 0 && (
-              <span className="ml-0.5 inline-flex items-center justify-center min-w-[16px] h-[16px] rounded-full bg-[#2D7FF9] text-white text-[10px] font-medium px-1">{hiddenColumns.size}</span>
+              <span className="text-[#9CA3AF]">· {hiddenColumns.size}개 숨김</span>
             )}
           </button>
           {showColumnManager && (
