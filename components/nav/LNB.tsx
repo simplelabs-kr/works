@@ -3,22 +3,31 @@
 // Left Nav Bar — per-workspace navigation. 220px column on the left
 // edge of every /works route, collapsible to a 36px rail.
 //
-// Section order:
-//   1. 즐겨찾기 — starred presets (cross-page). Starred presets ALSO
-//      remain visible in their owning 현재 페이지 list — the star is a
-//      pinning affordance, not a move.
-//   2. 현재 페이지 — every preset scoped to the currently-active page,
-//      plus a "+ 새 뷰" button that opens NewPresetModal. The preset
-//      most recently applied/created is highlighted as "active". Rows
-//      are drag-reorderable; the new order persists to
-//      user_view_presets.sort_order.
-//   3. 페이지 목록 — static list from WORKS_PAGES. Coming-soon pages
-//      render muted; clicking them is a no-op.
-//   4. 휴지통 — separate section, navigates to /works/trash.
+// Section order (top → bottom):
+//   1. 즐겨찾기   — starred presets (cross-page, read-only pins)
+//   2. 공유 뷰    — collaborative presets + folders for active page
+//   3. 내 뷰      — private presets + folders for active page
+//   4. 페이지     — static page list from WORKS_PAGES
+//   5. 휴지통     — pinned to the bottom with a trash icon; a divider
+//                  above it separates it from the scrolling content.
+//
+// Ownership model on collaborative rows:
+//   - Everyone sees the row.
+//   - Only the owner sees star / delete / drag-handle / rename
+//     affordances. Non-owners see a "내 뷰로 복사" option in the
+//     right-click menu that POSTs a new private preset with the same
+//     filters/sort/view.
+//
+// Folders: a preset can be filed inside a folder (folder_id FK). When
+// a folder is collapsed, its nested presets hide. Folder collapse
+// state is localStorage-scoped and per-id so it survives reload. The
+// +폴더 button appends a new folder to the active section. Folder
+// rename is via double-click; folder delete is via the right-click
+// menu and detaches (does NOT cascade-delete) any contained presets.
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   WORKS_PAGES,
   TRASH_PAGE,
@@ -28,30 +37,62 @@ import {
 import { usePresets } from './PresetsContext'
 import {
   applyPreset,
+  createFolder,
   createPreset,
+  deleteFolder,
   deletePreset,
   loadEffectiveSettings,
+  reorderFolders,
   reorderPresets,
   snapshotLiveView,
+  updateFolder,
   updatePreset,
+  type PresetScope,
+  type ViewFolder,
   type ViewPreset,
 } from '@/lib/works/viewPresets'
 import NewPresetModal from './NewPresetModal'
 
-// Map from path-based active page → the pageKey stored on presets.
-// 생산관리 presets use pageKey 'works' (legacy, matches worksPageConfig),
-// 휴지통 uses 'works-trash' (worksTrashPageConfig). Keep this in sync
-// with worksConfig.ts if those constants ever change.
+// ── Page key mapping ────────────────────────────────────────────────
+// presets/folders are keyed by the legacy page_key; nav pages use the
+// newer slug. Keep aligned with worksPageConfig.
 function presetKeyForActivePage(activeKey: string | null): string | null {
   if (activeKey === 'production') return 'works'
   if (activeKey === 'trash') return 'works-trash'
   return null
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+// ── Collapse persistence ────────────────────────────────────────────
+// Folder open/closed state per id, stored in localStorage. Default is
+// expanded (so new folders with no LS entry render open).
+const FOLDER_COLLAPSE_LS = 'works:folder-collapsed'
+function readFolderCollapseSet(): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const raw = window.localStorage.getItem(FOLDER_COLLAPSE_LS)
+    if (!raw) return new Set()
+    const arr = JSON.parse(raw)
+    return new Set(Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : [])
+  } catch {
+    return new Set()
+  }
+}
+function writeFolderCollapseSet(s: Set<string>) {
+  try {
+    window.localStorage.setItem(FOLDER_COLLAPSE_LS, JSON.stringify(Array.from(s)))
+  } catch {
+    /* ignore */
+  }
+}
+
+// ── Atoms ───────────────────────────────────────────────────────────
+function SectionLabel({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
-    <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8]">
-      {children}
+    <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8]">
+        {children}
+      </span>
+      {action}
     </div>
   )
 }
@@ -68,8 +109,6 @@ function StarIcon({ filled }: { filled: boolean }) {
   )
 }
 
-// ⠿ drag handle glyph — six-dot grip rendered as SVG so it scales with
-// the row height consistently across platforms.
 function DragHandleIcon() {
   return (
     <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
@@ -83,44 +122,149 @@ function DragHandleIcon() {
   )
 }
 
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      fill="none"
+      aria-hidden="true"
+      style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 120ms' }}
+    >
+      <path d="M3.5 2L6.5 5L3.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 3.5h9"/>
+      <path d="M5.5 3.5V2.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V3.5"/>
+      <path d="M3.5 3.5l.6 7.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-7.5"/>
+    </svg>
+  )
+}
+
+function FolderIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="#CBD5E1" aria-hidden="true">
+      <path d="M1 3.25A1.25 1.25 0 0 1 2.25 2h2.1c.28 0 .54.1.75.27l.7.58c.21.17.47.27.75.27H9.75A1.25 1.25 0 0 1 11 4.37v4.38A1.25 1.25 0 0 1 9.75 10H2.25A1.25 1.25 0 0 1 1 8.75v-5.5z"/>
+    </svg>
+  )
+}
+
+// ── Right-click context menu ────────────────────────────────────────
+type MenuItem =
+  | { kind: 'action'; label: string; onClick: () => void; danger?: boolean; disabled?: boolean }
+  | { kind: 'separator' }
+
+function ContextMenu({
+  x, y, items, onClose,
+}: {
+  x: number; y: number; items: MenuItem[]; onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!ref.current) return
+      if (!ref.current.contains(e.target as Node)) onClose()
+    }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    // Defer so the triggering contextmenu event doesn't immediately close us.
+    const t = setTimeout(() => {
+      window.addEventListener('mousedown', handler)
+      window.addEventListener('keydown', esc)
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      window.removeEventListener('mousedown', handler)
+      window.removeEventListener('keydown', esc)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[10002] min-w-[160px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_6px_18px_rgba(15,23,42,0.12)]"
+      style={{ left: x, top: y }}
+      role="menu"
+    >
+      {items.map((it, i) => {
+        if (it.kind === 'separator') {
+          return <div key={`sep-${i}`} className="my-1 h-px bg-[#E2E8F0]" aria-hidden="true" />
+        }
+        return (
+          <button
+            key={it.label}
+            type="button"
+            disabled={it.disabled}
+            onClick={() => { if (!it.disabled) { it.onClick(); onClose() } }}
+            className={`block w-full text-left px-3 py-1.5 text-[12px] ${
+              it.disabled
+                ? 'text-[#CBD5E1] cursor-not-allowed'
+                : it.danger
+                  ? 'text-[#DC2626] hover:bg-[#FEF2F2]'
+                  : 'text-[#334155] hover:bg-[#F1F5F9]'
+            }`}
+            role="menuitem"
+          >
+            {it.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Preset row ──────────────────────────────────────────────────────
+type DragData =
+  | { kind: 'preset'; id: string }
+  | { kind: 'folder'; id: string; section: PresetScope }
+type DropTarget =
+  | { kind: 'preset'; id: string; position: 'above' | 'below' }
+  | { kind: 'folder-row'; id: string; position: 'above' | 'below' }
+  | { kind: 'folder-into'; id: string }
+  | { kind: 'section'; section: PresetScope }
+
 type PresetRowProps = {
   preset: ViewPreset
   active: boolean
+  ownedByMe: boolean
+  indented?: boolean
   onApply: () => void
-  onToggleStar: () => void
-  onDelete: () => void
-  // Drag props — omitted for the 즐겨찾기 section (reorder is only
-  // supported on the 현재 페이지 list; favorites inherit that order).
+  onToggleStar?: () => void
+  onDelete?: () => void
+  onCopyToMine?: () => void
+  onRename?: (next: string) => void
+  renaming?: boolean
+  onRequestRename?: () => void
+  onCancelRename?: () => void
   draggable?: boolean
   isDragging?: boolean
-  // Drop-position indicator: shows a 2px blue line between rows. 'above'
-  // renders the line flush with this row's top edge (i.e. between the
-  // previous row and this one); 'below' renders it flush with the
-  // bottom edge. Implemented via inset box-shadow so it doesn't shift
-  // layout. null hides the line on this row.
   dropLinePosition?: 'above' | 'below' | null
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
   onDrop?: (e: React.DragEvent<HTMLDivElement>) => void
   onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
+  onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void
 }
 
 function PresetRow({
-  preset,
-  active,
-  onApply,
-  onToggleStar,
-  onDelete,
-  draggable,
-  isDragging,
-  dropLinePosition,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
+  preset, active, ownedByMe, indented,
+  onApply, onToggleStar, onDelete, onCopyToMine,
+  onRename, renaming, onRequestRename, onCancelRename,
+  draggable, isDragging, dropLinePosition,
+  onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onContextMenu,
 }: PresetRowProps) {
+  const [editName, setEditName] = useState(preset.name)
+  useEffect(() => { if (renaming) setEditName(preset.name) }, [renaming, preset.name])
+  const showStar = ownedByMe && onToggleStar != null
+  const showDelete = ownedByMe && onDelete != null
+  const showShareTag = preset.scope === 'collaborative' && ownedByMe
+
   return (
     <div
       draggable={draggable}
@@ -129,15 +273,13 @@ function PresetRow({
       onDragLeave={onDragLeave}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
-      // position:relative so the drop-line child below can span the
-      // row's full width via absolute positioning. An earlier attempt
-      // used inset box-shadow, but border-radius clips inset shadows
-      // to the rounded corners — producing a curved, incomplete line.
-      // An absolutely-positioned 2px rectangle renders as a true
-      // straight line regardless of the row's border-radius.
+      onContextMenu={onContextMenu}
+      onDoubleClick={() => { if (ownedByMe && onRequestRename) onRequestRename() }}
       className={`group relative flex items-center gap-1 rounded-[6px] px-1 py-1 ${
-        active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
-      } ${isDragging ? 'opacity-40' : ''}`}
+        indented ? 'ml-4' : ''
+      } ${active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'} ${
+        isDragging ? 'opacity-40' : ''
+      }`}
     >
       {dropLinePosition && (
         <div
@@ -147,57 +289,229 @@ function PresetRow({
           }`}
         />
       )}
-      {draggable && (
+      {draggable ? (
         <span
           aria-label="순서 변경"
-          title="드래그하여 순서 변경"
+          title="드래그하여 이동"
           className="flex-shrink-0 flex items-center justify-center w-[12px] h-[16px] text-[#CBD5E1] group-hover:text-[#64748B] cursor-grab active:cursor-grabbing"
         >
           <DragHandleIcon />
         </span>
+      ) : (
+        <span className="flex-shrink-0 w-[12px] h-[16px]" aria-hidden="true" />
       )}
-      <button
-        type="button"
-        onClick={onToggleStar}
-        aria-label={preset.starred ? '즐겨찾기 해제' : '즐겨찾기'}
-        className="flex-shrink-0 p-0.5 rounded hover:bg-[#CBD5E1]"
-      >
-        <StarIcon filled={preset.starred} />
-      </button>
-      <button
-        type="button"
-        onClick={onApply}
-        className={`flex-1 min-w-0 text-left text-[12px] truncate ${
-          active ? 'text-[#1E3A8A] font-semibold' : 'text-[#334155]'
-        }`}
-        title={preset.name}
-      >
-        {preset.name}
-      </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        aria-label="뷰 삭제"
-        className="flex-shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#CBD5E1] text-[#94A3B8] hover:text-[#EF4444]"
-      >
-        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
-          <path d="M3 3l6 6M9 3l-6 6"/>
-        </svg>
-      </button>
+
+      {showStar ? (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onToggleStar?.() }}
+          aria-label={preset.starred ? '즐겨찾기 해제' : '즐겨찾기'}
+          className="flex-shrink-0 p-0.5 rounded hover:bg-[#CBD5E1]"
+        >
+          <StarIcon filled={preset.starred} />
+        </button>
+      ) : (
+        <span className="flex-shrink-0 p-0.5" aria-hidden="true">
+          <StarIcon filled={preset.starred} />
+        </span>
+      )}
+
+      {renaming ? (
+        <input
+          autoFocus
+          value={editName}
+          onChange={e => setEditName(e.target.value)}
+          onBlur={() => {
+            const trimmed = editName.trim()
+            if (trimmed && trimmed !== preset.name) onRename?.(trimmed)
+            else onCancelRename?.()
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              const trimmed = editName.trim()
+              if (trimmed && trimmed !== preset.name) onRename?.(trimmed)
+              else onCancelRename?.()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              onCancelRename?.()
+            }
+          }}
+          maxLength={80}
+          className="flex-1 min-w-0 h-[22px] rounded-[4px] border border-[#2D7FF9] bg-white px-1 text-[12px] outline-none"
+          onClick={e => e.stopPropagation()}
+          onDragStart={e => e.preventDefault()}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onApply}
+          className={`flex-1 min-w-0 text-left text-[12px] truncate ${
+            active ? 'text-[#1E3A8A] font-semibold' : 'text-[#334155]'
+          }`}
+          title={preset.name}
+        >
+          {preset.name}
+        </button>
+      )}
+
+      {showShareTag && !renaming && (
+        <span
+          className="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[#0EA5E9] bg-[#E0F2FE] rounded-[3px] px-1 py-px"
+          title="팀 공유 뷰"
+        >
+          공유
+        </span>
+      )}
+
+      {!ownedByMe && onCopyToMine && !renaming && (
+        <span
+          className="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[#64748B] bg-[#E2E8F0] rounded-[3px] px-1 py-px"
+          title="다른 사람의 뷰"
+        >
+          공유
+        </span>
+      )}
+
+      {showDelete && !renaming && (
+        <button
+          type="button"
+          onClick={e => { e.stopPropagation(); onDelete?.() }}
+          aria-label="뷰 삭제"
+          className="flex-shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#CBD5E1] text-[#94A3B8] hover:text-[#EF4444]"
+        >
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+            <path d="M3 3l6 6M9 3l-6 6"/>
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
 
+// ── Folder row ──────────────────────────────────────────────────────
+type FolderRowProps = {
+  folder: ViewFolder
+  ownedByMe: boolean
+  open: boolean
+  onToggle: () => void
+  onRename?: (next: string) => void
+  renaming?: boolean
+  onRequestRename?: () => void
+  onCancelRename?: () => void
+  draggable?: boolean
+  isDragging?: boolean
+  dropLinePosition?: 'above' | 'below' | null
+  dropInto?: boolean
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDrop?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
+  onContextMenu?: (e: React.MouseEvent<HTMLDivElement>) => void
+}
+
+function FolderRow({
+  folder, ownedByMe, open, onToggle,
+  onRename, renaming, onRequestRename, onCancelRename,
+  draggable, isDragging, dropLinePosition, dropInto,
+  onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, onContextMenu,
+}: FolderRowProps) {
+  const [editName, setEditName] = useState(folder.name)
+  useEffect(() => { if (renaming) setEditName(folder.name) }, [renaming, folder.name])
+
+  return (
+    <div
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      onContextMenu={onContextMenu}
+      onDoubleClick={() => { if (ownedByMe && onRequestRename) onRequestRename() }}
+      className={`group relative flex items-center gap-1 rounded-[6px] px-1 py-1 hover:bg-[#E2E8F0] ${
+        isDragging ? 'opacity-40' : ''
+      } ${dropInto ? 'ring-2 ring-[#2D7FF9] ring-offset-0' : ''}`}
+    >
+      {dropLinePosition && (
+        <div
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-0 right-0 h-[2px] bg-[#2D7FF9] ${
+            dropLinePosition === 'above' ? 'top-0' : 'bottom-0'
+          }`}
+        />
+      )}
+      {draggable ? (
+        <span
+          aria-label="폴더 순서 변경"
+          title="드래그하여 폴더 순서 변경"
+          className="flex-shrink-0 flex items-center justify-center w-[12px] h-[16px] text-[#CBD5E1] group-hover:text-[#64748B] cursor-grab active:cursor-grabbing"
+        >
+          <DragHandleIcon />
+        </span>
+      ) : (
+        <span className="flex-shrink-0 w-[12px] h-[16px]" aria-hidden="true" />
+      )}
+
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-label={open ? '폴더 접기' : '폴더 펼치기'}
+        className="flex-shrink-0 p-0.5 rounded text-[#64748B] hover:bg-[#CBD5E1]"
+      >
+        <ChevronIcon open={open} />
+      </button>
+
+      <span className="flex-shrink-0" aria-hidden="true">
+        <FolderIcon />
+      </span>
+
+      {renaming ? (
+        <input
+          autoFocus
+          value={editName}
+          onChange={e => setEditName(e.target.value)}
+          onBlur={() => {
+            const trimmed = editName.trim()
+            if (trimmed && trimmed !== folder.name) onRename?.(trimmed)
+            else onCancelRename?.()
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') {
+              const trimmed = editName.trim()
+              if (trimmed && trimmed !== folder.name) onRename?.(trimmed)
+              else onCancelRename?.()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              onCancelRename?.()
+            }
+          }}
+          maxLength={80}
+          className="flex-1 min-w-0 h-[22px] rounded-[4px] border border-[#2D7FF9] bg-white px-1 text-[12px] outline-none"
+          onClick={e => e.stopPropagation()}
+          onDragStart={e => e.preventDefault()}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={onToggle}
+          className="flex-1 min-w-0 text-left text-[12px] truncate font-medium text-[#475569]"
+          title={folder.name}
+        >
+          {folder.name}
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ── Props ───────────────────────────────────────────────────────────
 type Props = {
   collapsed: boolean
-  // Controls whether width transitions run. False on the very first paint
-  // so users don't see an animation during hydration; true afterwards.
   animated: boolean
   onToggle: () => void
 }
 
-// Chevron glyph pointing toward the direction the LNB will move on click:
-// «  when expanded (will collapse → slide left), »  when collapsed.
 function ToggleIcon({ collapsed }: { collapsed: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -224,6 +538,7 @@ function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
   )
 }
 
+// ── Main ────────────────────────────────────────────────────────────
 export default function LNB({ collapsed, animated, onToggle }: Props) {
   const pathname = usePathname()
   const router = useRouter()
@@ -231,23 +546,34 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   const activeKey = activePage?.key ?? null
   const activePresetKey = presetKeyForActivePage(activeKey)
 
-  const { presets, refresh, activeByPage, setActivePreset } = usePresets()
+  const { presets, folders, refresh, activeByPage, setActivePreset, currentUserKey } = usePresets()
   const activePresetId = activePresetKey ? (activeByPage[activePresetKey] ?? null) : null
 
-  const starredPresets = useMemo(() => presets.filter(p => p.starred), [presets])
-  // Starred presets stay in their page list too — starring is a pin, not
-  // a move. The 즐겨찾기 section above just duplicates the pinned rows
-  // at the top of the LNB.
-  const currentPagePresets = useMemo(
-    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey) : [],
-    [presets, activePresetKey]
+  const isMine = useCallback(
+    (ownerKey: string) => ownerKey.toLowerCase() === currentUserKey.toLowerCase(),
+    [currentUserKey],
   )
 
+  const starredPresets = useMemo(() => presets.filter(p => p.starred), [presets])
+  const pagePresets = useMemo(
+    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey) : [],
+    [presets, activePresetKey],
+  )
+  const pageFolders = useMemo(
+    () => activePresetKey ? folders.filter(f => f.page_key === activePresetKey) : [],
+    [folders, activePresetKey],
+  )
+
+  // Split by scope for the two middle sections.
+  const sharedPresets = useMemo(() => pagePresets.filter(p => p.scope === 'collaborative'), [pagePresets])
+  const privatePresets = useMemo(() => pagePresets.filter(p => p.scope === 'private' && isMine(p.owner_user_key)), [pagePresets, isMine])
+  const sharedFolders = useMemo(() => pageFolders.filter(f => f.scope === 'collaborative'), [pageFolders])
+  const privateFolders = useMemo(() => pageFolders.filter(f => f.scope === 'private' && isMine(f.owner_user_key)), [pageFolders, isMine])
+
+  // Modal state
   const [modalOpen, setModalOpen] = useState(false)
+  const [modalTargetFolderId, setModalTargetFolderId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  // Snapshot captured at the moment "+ 새 뷰" is pressed. Shown in the
-  // modal preview and used verbatim when the user clicks 저장. Captured
-  // up-front (not on submit) so the user sees exactly what they'll save.
   const [snapshot, setSnapshot] = useState<{
     filters: unknown
     sort: unknown
@@ -255,64 +581,110 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     view: any
   } | null>(null)
 
-  // Drag-reorder state — scoped to the 현재 페이지 list. `draggingId`
-  // is the row being dragged; `dropIndicator` is where a 2px blue
-  // horizontal line is rendered to show the insertion slot between
-  // rows ('above' vs 'below' a specific target, decided by whether
-  // the cursor is in the top or bottom half of that row).
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dropIndicator, setDropIndicator] = useState<
-    { id: string; position: 'above' | 'below' } | null
-  >(null)
-  // Optimistic override of the 현재 페이지 order during/after drop. On
-  // drop we set this immediately so the UI reflects the new order
-  // before refresh() completes; cleared once refresh() returns with
-  // the server-confirmed order.
-  const [optimisticOrder, setOptimisticOrder] = useState<string[] | null>(null)
+  // Rename state (preset / folder). Mutually exclusive.
+  const [renamingPresetId, setRenamingPresetId] = useState<string | null>(null)
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
 
-  const orderedCurrentPagePresets = useMemo(() => {
-    if (!optimisticOrder) return currentPagePresets
-    const byId = new Map(currentPagePresets.map(p => [p.id, p]))
+  // Folder collapse state
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set())
+  useEffect(() => { setCollapsedFolders(readFolderCollapseSet()) }, [])
+  const toggleFolder = useCallback((id: string) => {
+    setCollapsedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      writeFolderCollapseSet(next)
+      return next
+    })
+  }, [])
+
+  // Context menu state
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+
+  // ── Drag state ─────────────────────────────────────────────────────
+  const [drag, setDrag] = useState<DragData | null>(null)
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  // Optimistic order override for each list we reorder.
+  const [optPresetOrder, setOptPresetOrder] = useState<Record<PresetScope, string[] | null>>({
+    private: null, collaborative: null,
+  })
+  const [optFolderOrder, setOptFolderOrder] = useState<Record<PresetScope, string[] | null>>({
+    private: null, collaborative: null,
+  })
+
+  // ── Helpers: grouping presets by folder per section ───────────────
+  type Grouped = { topLevel: ViewPreset[]; byFolder: Record<string, ViewPreset[]> }
+  const groupPresets = useCallback((list: ViewPreset[]): Grouped => {
+    const topLevel: ViewPreset[] = []
+    const byFolder: Record<string, ViewPreset[]> = {}
+    for (const p of list) {
+      if (p.folder_id) {
+        if (!byFolder[p.folder_id]) byFolder[p.folder_id] = []
+        byFolder[p.folder_id].push(p)
+      } else {
+        topLevel.push(p)
+      }
+    }
+    return { topLevel, byFolder }
+  }, [])
+
+  // Apply optimistic preset order within a section (both top-level
+  // and folder members are reordered by the same id list).
+  const applyOptPresetOrder = useCallback((list: ViewPreset[], section: PresetScope): ViewPreset[] => {
+    const order = optPresetOrder[section]
+    if (!order) return list
+    const byId = new Map(list.map(p => [p.id, p]))
     const out: ViewPreset[] = []
-    for (const id of optimisticOrder) {
+    for (const id of order) {
       const p = byId.get(id)
       if (p) { out.push(p); byId.delete(id) }
     }
-    // Any presets not covered by the optimistic order (e.g. a new
-    // preset created in another tab since drop) fall through at the
-    // bottom in their server order.
     byId.forEach(p => out.push(p))
     return out
-  }, [currentPagePresets, optimisticOrder])
+  }, [optPresetOrder])
 
-  const openNewPresetModal = async () => {
+  const applyOptFolderOrder = useCallback((list: ViewFolder[], section: PresetScope): ViewFolder[] => {
+    const order = optFolderOrder[section]
+    if (!order) return list
+    const byId = new Map(list.map(f => [f.id, f]))
+    const out: ViewFolder[] = []
+    for (const id of order) {
+      const f = byId.get(id)
+      if (f) { out.push(f); byId.delete(id) }
+    }
+    byId.forEach(f => out.push(f))
+    return out
+  }, [optFolderOrder])
+
+  const orderedShared = useMemo(() => applyOptPresetOrder(sharedPresets, 'collaborative'), [sharedPresets, applyOptPresetOrder])
+  const orderedPrivate = useMemo(() => applyOptPresetOrder(privatePresets, 'private'), [privatePresets, applyOptPresetOrder])
+  const orderedSharedFolders = useMemo(() => applyOptFolderOrder(sharedFolders, 'collaborative'), [sharedFolders, applyOptFolderOrder])
+  const orderedPrivateFolders = useMemo(() => applyOptFolderOrder(privateFolders, 'private'), [privateFolders, applyOptFolderOrder])
+
+  // ── Modal submit / create preset ──────────────────────────────────
+  const openNewPresetModal = async (folderId: string | null) => {
     if (!activePresetKey || saving) return
-    // Prefer the in-memory snapshot from the mounted DataGrid (always
-    // current). If the LNB opens on a page that doesn't host a grid,
-    // fall back to the last server-saved settings.
     let snap = snapshotLiveView(activePresetKey)
     if (!snap) {
-      // Fall back to the effective settings for this page — the active
-      // preset's row if one is marked active, else the default row.
-      // Using loadSettings here (which only reads the default row) would
-      // clone stale state when the user last applied a preset on a page
-      // that isn't currently rendered.
       const { settings: saved } = await loadEffectiveSettings(activePresetKey)
       snap = saved
         ? { filters: saved.filters, sort: saved.sort, view: saved.view }
         : { filters: null, sort: null, view: null }
     }
     setSnapshot(snap)
+    setModalTargetFolderId(folderId)
     setModalOpen(true)
   }
 
-  const handleSubmitPreset = async (name: string) => {
+  const handleSubmitPreset = async (name: string, scope: PresetScope) => {
     if (!activePresetKey || !snapshot) return
     setSaving(true)
     try {
       const created = await createPreset({
         page_key: activePresetKey,
         name,
+        scope,
+        folder_id: modalTargetFolderId,
         filters: snapshot.filters ?? null,
         sort: snapshot.sort ?? null,
         view: snapshot.view ?? null,
@@ -321,35 +693,20 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         window.alert('뷰 저장에 실패했습니다')
         return
       }
-      // Newly created preset becomes the active one for this page — its
-      // settings match the current live state exactly.
       setActivePreset(activePresetKey, created.id)
       await refresh()
       setModalOpen(false)
       setSnapshot(null)
+      setModalTargetFolderId(null)
     } finally {
       setSaving(false)
     }
   }
 
+  // ── Preset actions ────────────────────────────────────────────────
   const handleApplyPreset = (preset: ViewPreset) => {
-    // Instant highlight: update the context's active id synchronously
-    // BEFORE awaiting applyPreset so the clicked row switches to the
-    // active style on the very same tick as the click. applyPreset
-    // does a DB fetch inside (to grab the latest preset state) which
-    // can take a few hundred ms — without this optimistic update the
-    // highlight would lag behind the click.
     setActivePreset(preset.page_key, preset.id)
-
-    // Fire-and-forget: applyPreset caches the preset, cancels any
-    // pending grid save, and either drives the mounted grid via
-    // applyRuntime or bumps the remount version for cross-page applies.
-    // No hard reload — WorksShell/LNB stay mounted across the switch,
-    // which is what keeps the collapse state and avoids the flicker.
     void applyPreset(preset)
-
-    // Cross-page applies need a route change; same-page applies are
-    // handled entirely by the applyPreset path above.
     const href = resolvePageHrefForKey(preset.page_key)
     if (href && href !== pathname) router.push(href)
   }
@@ -359,104 +716,458 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     if (next) await refresh()
   }
 
-  const handleDelete = async (preset: ViewPreset) => {
+  const handleDeletePreset = async (preset: ViewPreset) => {
     if (!window.confirm(`'${preset.name}' 뷰를 삭제할까요?`)) return
     const ok = await deletePreset(preset.id)
     if (!ok) return
-    if (activePresetKey && activePresetId === preset.id) {
-      setActivePreset(activePresetKey, null)
-    }
+    if (activePresetKey && activePresetId === preset.id) setActivePreset(activePresetKey, null)
     await refresh()
   }
 
-  // ── Drag-reorder handlers ────────────────────────────────────────
-  const handleDragStart = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    setDraggingId(preset.id)
-    // Firefox requires setData to actually initiate the drag.
+  const handleRenamePreset = async (preset: ViewPreset, next: string) => {
+    const res = await updatePreset(preset.id, { name: next })
+    setRenamingPresetId(null)
+    if (res) await refresh()
+  }
+
+  const handleCopyToMine = async (preset: ViewPreset) => {
+    if (!activePresetKey) return
+    const created = await createPreset({
+      page_key: preset.page_key,
+      name: `${preset.name} (복사본)`,
+      scope: 'private',
+      folder_id: null,
+      filters: preset.filters ?? null,
+      sort: preset.sort ?? null,
+      view: preset.view ?? null,
+    })
+    if (!created) {
+      window.alert('복사에 실패했습니다')
+      return
+    }
+    setActivePreset(preset.page_key, created.id)
+    await refresh()
+  }
+
+  // ── Folder actions ───────────────────────────────────────────────
+  const handleCreateFolder = async (scope: PresetScope) => {
+    if (!activePresetKey) return
+    const name = window.prompt('새 폴더 이름', '새 폴더')?.trim()
+    if (!name) return
+    const created = await createFolder({ page_key: activePresetKey, name, scope })
+    if (!created) {
+      window.alert('폴더 생성에 실패했습니다')
+      return
+    }
+    await refresh()
+    // Immediately enter rename mode? We use the prompt result as name;
+    // user can double-click later if they want to change.
+  }
+
+  const handleRenameFolder = async (folder: ViewFolder, next: string) => {
+    const res = await updateFolder(folder.id, { name: next })
+    setRenamingFolderId(null)
+    if (res) await refresh()
+  }
+
+  const handleDeleteFolder = async (folder: ViewFolder) => {
+    if (!window.confirm(`'${folder.name}' 폴더를 삭제할까요? (포함된 뷰는 섹션 최상위로 이동됩니다)`)) return
+    const ok = await deleteFolder(folder.id)
+    if (!ok) return
+    await refresh()
+  }
+
+  // ── Drag handlers ─────────────────────────────────────────────────
+  const startPresetDrag = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    setDrag({ kind: 'preset', id: preset.id })
     try { e.dataTransfer.setData('text/plain', preset.id) } catch { /* ignore */ }
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const handleDragOver = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    if (!draggingId || draggingId === preset.id) return
+  const startFolderDrag = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
+    setDrag({ kind: 'folder', id: folder.id, section: folder.scope })
+    try { e.dataTransfer.setData('text/plain', folder.id) } catch { /* ignore */ }
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const overPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    if (!drag) return
+    // Folders can't drop onto preset rows.
+    if (drag.kind !== 'preset') return
+    if (drag.id === target.id) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    // Pick above/below by which half of the row the cursor is in.
-    // currentTarget is the row div (drag handlers are bound to it).
     const rect = e.currentTarget.getBoundingClientRect()
     const isAbove = e.clientY < rect.top + rect.height / 2
     const position: 'above' | 'below' = isAbove ? 'above' : 'below'
-    setDropIndicator(prev =>
-      prev && prev.id === preset.id && prev.position === position
+    setDropTarget(prev =>
+      prev && prev.kind === 'preset' && prev.id === target.id && prev.position === position
         ? prev
-        : { id: preset.id, position },
+        : { kind: 'preset', id: target.id, position }
     )
   }
 
-  const handleDragLeave = (preset: ViewPreset) => (_e: React.DragEvent<HTMLDivElement>) => {
-    // Only clear if we're leaving the row we last marked — prevents
-    // flicker when the cursor crosses between the row and its buttons
-    // (dragleave fires on child-enter in some browsers).
-    setDropIndicator(prev => (prev?.id === preset.id ? null : prev))
+  const overFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
+    if (!drag) return
+    if (drag.kind === 'folder') {
+      // Folder-to-folder = reorder.
+      if (drag.id === folder.id) return
+      // Can only reorder within the same section.
+      if (drag.section !== folder.scope) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      const rect = e.currentTarget.getBoundingClientRect()
+      const isAbove = e.clientY < rect.top + rect.height / 2
+      const position: 'above' | 'below' = isAbove ? 'above' : 'below'
+      setDropTarget(prev =>
+        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === position
+          ? prev
+          : { kind: 'folder-row', id: folder.id, position }
+      )
+    } else {
+      // Preset-to-folder = drop INTO folder.
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      setDropTarget(prev =>
+        prev && prev.kind === 'folder-into' && prev.id === folder.id
+          ? prev
+          : { kind: 'folder-into', id: folder.id }
+      )
+    }
   }
 
-  const handleDrop = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const sourceId = draggingId
-    // Snapshot the indicator before clearing — we need its position
-    // to decide whether to insert above or below `target`.
-    const indicator = dropIndicator
-    setDraggingId(null)
-    setDropIndicator(null)
-    if (!sourceId || sourceId === target.id) return
+  const leaveRow = () => {
+    // We don't clear aggressively; if the cursor moves to a new valid
+    // target that handler will replace dropTarget. Aggressive clearing
+    // causes flicker between rows.
+  }
 
-    const currentOrder = orderedCurrentPagePresets.map(p => p.id)
-    const fromIdx = currentOrder.indexOf(sourceId)
+  // Drop onto a preset row — only reorders within the same section.
+  const dropOnPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const d = drag
+    const t = dropTarget
+    setDrag(null); setDropTarget(null)
+    if (!d || d.kind !== 'preset') return
+    if (d.id === target.id) return
+    const section: PresetScope = target.scope
+    // Only allow reorder if source preset is in the same section.
+    const sourcePreset = presets.find(p => p.id === d.id)
+    if (!sourcePreset || sourcePreset.scope !== section) return
+    // Reorder within section: union of top-level + all folder members,
+    // since sort_order is global per-section.
+    const sectionList = section === 'collaborative' ? orderedShared : orderedPrivate
+    const currentOrder = sectionList.map(p => p.id)
+    const fromIdx = currentOrder.indexOf(d.id)
     const targetIdx = currentOrder.indexOf(target.id)
     if (fromIdx < 0 || targetIdx < 0) return
-
-    // Translate the visual "above/below target" indicator into an
-    // insertion index in the pre-removal list:
-    //   above → slot at targetIdx  (source lands at target's spot,
-    //                               pushing target one down)
-    //   below → slot at targetIdx+1
-    const position = indicator?.id === target.id ? indicator.position : 'above'
+    const position = t && t.kind === 'preset' && t.id === target.id ? t.position : 'above'
     let insertAt = position === 'above' ? targetIdx : targetIdx + 1
-
     const nextOrder = currentOrder.slice()
     nextOrder.splice(fromIdx, 1)
-    // Removing source at fromIdx shifts every later index down by one.
     if (fromIdx < insertAt) insertAt -= 1
-    nextOrder.splice(insertAt, 0, sourceId)
+    nextOrder.splice(insertAt, 0, d.id)
+    if (nextOrder.every((id, i) => id === currentOrder[i])) {
+      // Same order but maybe moving across folder boundaries — if
+      // source.folder_id != target.folder_id, treat as move.
+      if (sourcePreset.folder_id !== target.folder_id) {
+        const folderId = target.folder_id
+        setOptPresetOrder(prev => ({ ...prev, [section]: nextOrder }))
+        void (async () => {
+          await updatePreset(d.id, { folder_id: folderId })
+          await refresh()
+          setOptPresetOrder(prev => ({ ...prev, [section]: null }))
+        })()
+      }
+      return
+    }
 
-    // No-op guard: order unchanged.
-    if (nextOrder.every((id, i) => id === currentOrder[i])) return
-
-    // Optimistic: render the new order right away so the drop feels
-    // instant. The server PATCH storm runs in the background; once
-    // refresh() returns with the server-confirmed order we drop the
-    // override.
-    setOptimisticOrder(nextOrder)
+    setOptPresetOrder(prev => ({ ...prev, [section]: nextOrder }))
+    const folderId = target.folder_id
+    const folderChanged = sourcePreset.folder_id !== folderId
     void (async () => {
+      if (folderChanged) await updatePreset(d.id, { folder_id: folderId })
       await reorderPresets(nextOrder)
       await refresh()
-      setOptimisticOrder(null)
+      setOptPresetOrder(prev => ({ ...prev, [section]: null }))
     })()
   }
 
-  const handleDragEnd = () => {
-    setDraggingId(null)
-    setDropIndicator(null)
+  // Drop onto a folder row — either reorders folders or files a preset into it.
+  const dropOnFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const d = drag
+    const t = dropTarget
+    setDrag(null); setDropTarget(null)
+    if (!d) return
+
+    if (d.kind === 'folder') {
+      if (d.id === folder.id || d.section !== folder.scope) return
+      const sectionList = folder.scope === 'collaborative' ? orderedSharedFolders : orderedPrivateFolders
+      const currentOrder = sectionList.map(f => f.id)
+      const fromIdx = currentOrder.indexOf(d.id)
+      const targetIdx = currentOrder.indexOf(folder.id)
+      if (fromIdx < 0 || targetIdx < 0) return
+      const position = t && t.kind === 'folder-row' && t.id === folder.id ? t.position : 'above'
+      let insertAt = position === 'above' ? targetIdx : targetIdx + 1
+      const nextOrder = currentOrder.slice()
+      nextOrder.splice(fromIdx, 1)
+      if (fromIdx < insertAt) insertAt -= 1
+      nextOrder.splice(insertAt, 0, d.id)
+      if (nextOrder.every((id, i) => id === currentOrder[i])) return
+      setOptFolderOrder(prev => ({ ...prev, [folder.scope]: nextOrder }))
+      void (async () => {
+        await reorderFolders(nextOrder)
+        await refresh()
+        setOptFolderOrder(prev => ({ ...prev, [folder.scope]: null }))
+      })()
+      return
+    }
+
+    // Preset → folder: move under this folder.
+    if (d.kind === 'preset') {
+      const source = presets.find(p => p.id === d.id)
+      if (!source) return
+      if (source.folder_id === folder.id) return
+      // Scope guard: a private preset may only move into a private folder (and vice versa).
+      if (source.scope !== folder.scope) {
+        window.alert('공개 범위가 다른 폴더에는 이동할 수 없습니다')
+        return
+      }
+      void (async () => {
+        await updatePreset(d.id, { folder_id: folder.id })
+        await refresh()
+      })()
+    }
+  }
+
+  // Drop on empty section area → move preset to top-level (folder_id=null).
+  const overSection = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
+    if (!drag || drag.kind !== 'preset') return
+    const source = presets.find(p => p.id === drag.id)
+    if (!source || source.scope !== section) return
+    // Only highlight the section if the source is currently in a folder;
+    // dragging within top-level already handled by preset-row handler.
+    if (!source.folder_id) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDropTarget(prev =>
+      prev && prev.kind === 'section' && prev.section === section
+        ? prev
+        : { kind: 'section', section }
+    )
+  }
+  const dropOnSection = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const d = drag
+    setDrag(null); setDropTarget(null)
+    if (!d || d.kind !== 'preset') return
+    const source = presets.find(p => p.id === d.id)
+    if (!source || source.scope !== section || !source.folder_id) return
+    void (async () => {
+      await updatePreset(d.id, { folder_id: null })
+      await refresh()
+    })()
+  }
+
+  const endDrag = () => {
+    setDrag(null)
+    setDropTarget(null)
+  }
+
+  // ── Context menus ─────────────────────────────────────────────────
+  const openPresetMenu = (preset: ViewPreset, e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const mine = isMine(preset.owner_user_key)
+    const items: MenuItem[] = []
+    if (mine) {
+      items.push({ kind: 'action', label: '이름 바꾸기', onClick: () => setRenamingPresetId(preset.id) })
+      items.push({ kind: 'action', label: preset.starred ? '즐겨찾기 해제' : '즐겨찾기', onClick: () => void handleToggleStar(preset) })
+      items.push({ kind: 'separator' })
+      items.push({ kind: 'action', label: '삭제', danger: true, onClick: () => void handleDeletePreset(preset) })
+    } else {
+      items.push({ kind: 'action', label: '내 뷰로 복사', onClick: () => void handleCopyToMine(preset) })
+    }
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
+
+  const openFolderMenu = (folder: ViewFolder, e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const mine = isMine(folder.owner_user_key)
+    const items: MenuItem[] = []
+    if (mine) {
+      items.push({ kind: 'action', label: '이름 바꾸기', onClick: () => setRenamingFolderId(folder.id) })
+      items.push({ kind: 'separator' })
+      items.push({ kind: 'action', label: '삭제', danger: true, onClick: () => void handleDeleteFolder(folder) })
+    }
+    if (items.length === 0) return
+    setMenu({ x: e.clientX, y: e.clientY, items })
+  }
+
+  // ── Render helpers ────────────────────────────────────────────────
+  const renderPresetSection = (
+    section: PresetScope,
+    label: string,
+    presetsList: ViewPreset[],
+    foldersList: ViewFolder[],
+  ) => {
+    const grouped = groupPresets(presetsList)
+    const canCreate = !!activePresetKey
+    return (
+      <>
+        <SectionLabel
+          action={
+            canCreate ? (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => void handleCreateFolder(section)}
+                  title="새 폴더"
+                  className="text-[10px] text-[#94A3B8] hover:text-[#334155] px-1 rounded hover:bg-[#E2E8F0]"
+                >
+                  + 폴더
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void openNewPresetModal(null)}
+                  title={section === 'collaborative' ? '새 공유 뷰' : '새 뷰'}
+                  className="text-[10px] text-[#94A3B8] hover:text-[#334155] px-1 rounded hover:bg-[#E2E8F0]"
+                >
+                  + 뷰
+                </button>
+              </div>
+            ) : null
+          }
+        >
+          {label}
+        </SectionLabel>
+        <div
+          className={`px-2 pb-1 ${dropTarget?.kind === 'section' && dropTarget.section === section ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
+          onDragOver={overSection(section)}
+          onDrop={dropOnSection(section)}
+        >
+          {!activePresetKey && (
+            <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              뷰를 지원하지 않는 페이지입니다
+            </div>
+          )}
+          {activePresetKey && presetsList.length === 0 && foldersList.length === 0 && (
+            <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              {section === 'collaborative' ? '공유된 뷰가 없습니다' : '저장된 뷰가 없습니다'}
+            </div>
+          )}
+
+          {/* Folders first, then top-level presets. */}
+          {foldersList.map(folder => {
+            const mine = isMine(folder.owner_user_key)
+            const open = !collapsedFolders.has(folder.id)
+            const members = grouped.byFolder[folder.id] ?? []
+            const folderDropLine =
+              dropTarget?.kind === 'folder-row' && dropTarget.id === folder.id
+                ? dropTarget.position
+                : null
+            const folderDropInto =
+              dropTarget?.kind === 'folder-into' && dropTarget.id === folder.id
+            return (
+              <div key={folder.id}>
+                <FolderRow
+                  folder={folder}
+                  ownedByMe={mine}
+                  open={open}
+                  onToggle={() => toggleFolder(folder.id)}
+                  onRename={next => void handleRenameFolder(folder, next)}
+                  renaming={renamingFolderId === folder.id}
+                  onRequestRename={() => setRenamingFolderId(folder.id)}
+                  onCancelRename={() => setRenamingFolderId(null)}
+                  draggable={mine}
+                  isDragging={drag?.kind === 'folder' && drag.id === folder.id}
+                  dropLinePosition={folderDropLine}
+                  dropInto={folderDropInto}
+                  onDragStart={mine ? startFolderDrag(folder) : undefined}
+                  onDragOver={overFolderRow(folder)}
+                  onDragLeave={leaveRow}
+                  onDrop={dropOnFolderRow(folder)}
+                  onDragEnd={endDrag}
+                  onContextMenu={e => openFolderMenu(folder, e)}
+                />
+                {open && members.map(p => {
+                  const pMine = isMine(p.owner_user_key)
+                  const dropLine =
+                    dropTarget?.kind === 'preset' && dropTarget.id === p.id
+                      ? dropTarget.position
+                      : null
+                  return (
+                    <PresetRow
+                      key={p.id}
+                      preset={p}
+                      active={activePresetId === p.id}
+                      ownedByMe={pMine}
+                      indented
+                      onApply={() => handleApplyPreset(p)}
+                      onToggleStar={pMine ? () => void handleToggleStar(p) : undefined}
+                      onDelete={pMine ? () => void handleDeletePreset(p) : undefined}
+                      onCopyToMine={!pMine ? () => void handleCopyToMine(p) : undefined}
+                      onRename={next => void handleRenamePreset(p, next)}
+                      renaming={renamingPresetId === p.id}
+                      onRequestRename={() => setRenamingPresetId(p.id)}
+                      onCancelRename={() => setRenamingPresetId(null)}
+                      draggable={pMine}
+                      isDragging={drag?.kind === 'preset' && drag.id === p.id}
+                      dropLinePosition={dropLine}
+                      onDragStart={pMine ? startPresetDrag(p) : undefined}
+                      onDragOver={overPresetRow(p)}
+                      onDragLeave={leaveRow}
+                      onDrop={dropOnPresetRow(p)}
+                      onDragEnd={endDrag}
+                      onContextMenu={e => openPresetMenu(p, e)}
+                    />
+                  )
+                })}
+              </div>
+            )
+          })}
+
+          {grouped.topLevel.map(p => {
+            const pMine = isMine(p.owner_user_key)
+            const dropLine =
+              dropTarget?.kind === 'preset' && dropTarget.id === p.id
+                ? dropTarget.position
+                : null
+            return (
+              <PresetRow
+                key={p.id}
+                preset={p}
+                active={activePresetId === p.id}
+                ownedByMe={pMine}
+                onApply={() => handleApplyPreset(p)}
+                onToggleStar={pMine ? () => void handleToggleStar(p) : undefined}
+                onDelete={pMine ? () => void handleDeletePreset(p) : undefined}
+                onCopyToMine={!pMine ? () => void handleCopyToMine(p) : undefined}
+                onRename={next => void handleRenamePreset(p, next)}
+                renaming={renamingPresetId === p.id}
+                onRequestRename={() => setRenamingPresetId(p.id)}
+                onCancelRename={() => setRenamingPresetId(null)}
+                draggable={pMine}
+                isDragging={drag?.kind === 'preset' && drag.id === p.id}
+                dropLinePosition={dropLine}
+                onDragStart={pMine ? startPresetDrag(p) : undefined}
+                onDragOver={overPresetRow(p)}
+                onDragLeave={leaveRow}
+                onDrop={dropOnPresetRow(p)}
+                onDragEnd={endDrag}
+                onContextMenu={e => openPresetMenu(p, e)}
+              />
+            )
+          })}
+        </div>
+      </>
+    )
   }
 
   const widthClass = collapsed ? 'w-[36px]' : 'w-[220px]'
   const transitionClass = animated ? 'transition-[width] duration-200 ease-out' : ''
 
   if (collapsed) {
-    // Collapsed rail: 36px wide. Only content is the toggle button so
-    // the user always has a way back. Keeping the rail (rather than
-    // removing the element) preserves the horizontal layout and avoids
-    // a content-area reflow while the transition animates.
     return (
       <aside
         data-worksy-lnb
@@ -473,143 +1184,115 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   return (
     <aside
       data-worksy-lnb
-      className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto`}
+      className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-hidden`}
     >
-      {/* Top row: collapse toggle, flush-right so it sits on the edge
-          nearest the content area (the side it'll slide toward). */}
-      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-1">
+      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-1 flex-shrink-0">
         <ToggleButton collapsed={collapsed} onToggle={onToggle} />
       </div>
 
-      {/* 즐겨찾기 */}
-      <SectionLabel>즐겨찾기</SectionLabel>
-      <div className="px-2 pb-1">
-        {starredPresets.length === 0 && (
-          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
-            별표를 눌러 뷰를 고정하세요
-          </div>
-        )}
-        {starredPresets.map(p => (
-          <PresetRow
-            key={`fav-${p.id}`}
-            preset={p}
-            active={p.page_key === activePresetKey && activePresetId === p.id}
-            onApply={() => handleApplyPreset(p)}
-            onToggleStar={() => handleToggleStar(p)}
-            onDelete={() => handleDelete(p)}
-          />
-        ))}
-      </div>
-
-      <Divider />
-
-      {/* 현재 페이지 */}
-      <SectionLabel>현재 페이지</SectionLabel>
-      <div className="px-2 pb-1">
-        {!activePresetKey && (
-          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
-            뷰를 지원하지 않는 페이지입니다
-          </div>
-        )}
-        {activePresetKey && orderedCurrentPagePresets.length === 0 && (
-          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
-            저장된 뷰가 없습니다
-          </div>
-        )}
-        {orderedCurrentPagePresets.map(p => (
-          <PresetRow
-            key={p.id}
-            preset={p}
-            active={activePresetId === p.id}
-            onApply={() => handleApplyPreset(p)}
-            onToggleStar={() => handleToggleStar(p)}
-            onDelete={() => handleDelete(p)}
-            draggable
-            isDragging={draggingId === p.id}
-            dropLinePosition={
-              dropIndicator?.id === p.id && draggingId !== p.id
-                ? dropIndicator.position
-                : null
-            }
-            onDragStart={handleDragStart(p)}
-            onDragOver={handleDragOver(p)}
-            onDragLeave={handleDragLeave(p)}
-            onDrop={handleDrop(p)}
-            onDragEnd={handleDragEnd}
-          />
-        ))}
-      </div>
-      <div className="px-3 py-1.5">
-        <button
-          type="button"
-          onClick={openNewPresetModal}
-          disabled={!activePresetKey || saving}
-          title={activePresetKey ? '현재 설정을 새 뷰로 저장' : '뷰를 지원하지 않는 페이지'}
-          className="w-full rounded-[6px] border border-dashed border-[#CBD5E1] bg-white px-2 py-1 text-[12px] text-[#64748B] hover:border-[#94A3B8] hover:text-[#334155] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? '저장 중…' : '+ 새 뷰'}
-        </button>
-      </div>
-
-      <Divider />
-
-      {/* 페이지 목록 */}
-      <SectionLabel>페이지</SectionLabel>
-      <nav className="flex flex-col gap-0.5 px-2 pb-2">
-        {WORKS_PAGES.map(p => {
-          const isActive = p.key === activeKey
-          const isComingSoon = p.status === 'coming-soon'
-          if (isComingSoon) {
+      {/* Scrolling content: everything except the bottom 휴지통 pin. */}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* 즐겨찾기 */}
+        <SectionLabel>즐겨찾기</SectionLabel>
+        <div className="px-2 pb-1">
+          {starredPresets.length === 0 && (
+            <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              별표를 눌러 뷰를 고정하세요
+            </div>
+          )}
+          {starredPresets.map(p => {
+            const mine = isMine(p.owner_user_key)
             return (
-              <div
-                key={p.key}
-                title="준비중"
-                className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-[13px] text-[#94A3B8] cursor-not-allowed"
-              >
-                <span>{p.label}</span>
-                <span className="text-[10px] rounded-[3px] bg-[#E2E8F0] px-1.5 py-0.5 text-[#64748B]">준비중</span>
-              </div>
+              <PresetRow
+                key={`fav-${p.id}`}
+                preset={p}
+                active={p.page_key === activePresetKey && activePresetId === p.id}
+                ownedByMe={mine}
+                onApply={() => handleApplyPreset(p)}
+                onToggleStar={mine ? () => void handleToggleStar(p) : undefined}
+                onDelete={mine ? () => void handleDeletePreset(p) : undefined}
+                onCopyToMine={!mine ? () => void handleCopyToMine(p) : undefined}
+                onContextMenu={e => openPresetMenu(p, e)}
+              />
             )
-          }
-          return (
-            <Link
-              key={p.key}
-              href={p.href ?? '#'}
-              className={`rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
-                isActive
-                  ? 'bg-[#2D7FF9] text-white font-medium'
-                  : 'text-[#334155] hover:bg-[#E2E8F0]'
-              }`}
-            >
-              {p.label}
-            </Link>
-          )
-        })}
-      </nav>
+          })}
+        </div>
 
-      <Divider />
+        <Divider />
 
-      {/* 휴지통 */}
-      <nav className="flex flex-col px-2 pb-3">
-        <Link
-          href={TRASH_PAGE.href ?? '#'}
-          className={`rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
-            activeKey === TRASH_PAGE.key
-              ? 'bg-[#2D7FF9] text-white font-medium'
-              : 'text-[#334155] hover:bg-[#E2E8F0]'
-          }`}
-        >
-          {TRASH_PAGE.label}
-        </Link>
-      </nav>
+        {/* 공유 뷰 */}
+        {renderPresetSection('collaborative', '공유 뷰', orderedShared, orderedSharedFolders)}
+
+        <Divider />
+
+        {/* 내 뷰 */}
+        {renderPresetSection('private', '내 뷰', orderedPrivate, orderedPrivateFolders)}
+
+        <Divider />
+
+        {/* 페이지 목록 */}
+        <SectionLabel>페이지</SectionLabel>
+        <nav className="flex flex-col gap-0.5 px-2 pb-2">
+          {WORKS_PAGES.map(p => {
+            const isActive = p.key === activeKey
+            const isComingSoon = p.status === 'coming-soon'
+            if (isComingSoon) {
+              return (
+                <div
+                  key={p.key}
+                  title="준비중"
+                  className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-[13px] text-[#94A3B8] cursor-not-allowed"
+                >
+                  <span>{p.label}</span>
+                  <span className="text-[10px] rounded-[3px] bg-[#E2E8F0] px-1.5 py-0.5 text-[#64748B]">준비중</span>
+                </div>
+              )
+            }
+            return (
+              <Link
+                key={p.key}
+                href={p.href ?? '#'}
+                className={`rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
+                  isActive
+                    ? 'bg-[#2D7FF9] text-white font-medium'
+                    : 'text-[#334155] hover:bg-[#E2E8F0]'
+                }`}
+              >
+                {p.label}
+              </Link>
+            )
+          })}
+        </nav>
+      </div>
+
+      {/* 휴지통 — pinned to bottom with a divider above. flex-shrink-0
+          keeps it fixed while the section above scrolls. */}
+      <div className="flex-shrink-0">
+        <Divider />
+        <nav className="flex flex-col px-2 pb-3">
+          <Link
+            href={TRASH_PAGE.href ?? '#'}
+            className={`flex items-center gap-2 rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
+              activeKey === TRASH_PAGE.key
+                ? 'bg-[#2D7FF9] text-white font-medium'
+                : 'text-[#334155] hover:bg-[#E2E8F0]'
+            }`}
+          >
+            <TrashIcon />
+            <span>{TRASH_PAGE.label}</span>
+          </Link>
+        </nav>
+      </div>
 
       <NewPresetModal
         open={modalOpen}
         snapshot={snapshot}
         saving={saving}
-        onCancel={() => { if (!saving) { setModalOpen(false); setSnapshot(null) } }}
+        onCancel={() => { if (!saving) { setModalOpen(false); setSnapshot(null); setModalTargetFolderId(null) } }}
         onSubmit={handleSubmitPreset}
       />
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
     </aside>
   )
 }

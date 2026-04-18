@@ -4,13 +4,20 @@ import { requireUser } from '@/lib/auth/requireUser'
 
 export const maxDuration = 10
 
+const PRESET_SELECT =
+  'id, page_key, name, filters, sort, view, starred, sort_order, scope, owner_user_key, folder_id, created_at, updated_at'
+
 function userKeyFromAuth(email: string | null | undefined): string {
   return (email ?? 'dev@simplelabs.kr').toLowerCase()
 }
 
-// PATCH — partial update of a preset (rename, toggle star, or re-save
-// current filter/sort/view). owner_user_key equality guards every write
-// so a client cannot touch another user's preset even with a guessed id.
+// PATCH — partial update of a preset (rename, toggle star, re-save
+// current filter/sort/view, move between folders, or reorder). The
+// owner_user_key equality on the update guards every write — even
+// collaborative rows can only be modified by their owner, so a
+// teammate's edits to a shared view never hit the DB. Clients that
+// want to fork someone else's view should POST a new private row
+// instead of PATCHing (see "내 뷰로 복사" in the LNB).
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireUser()
   if (auth.response) return auth.response
@@ -28,6 +35,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     sort?: unknown
     view?: unknown
     sort_order?: unknown
+    folder_id?: unknown
+    scope?: unknown
   }
   try {
     body = await req.json()
@@ -59,6 +68,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: 'invalid sort_order' }, { status: 400 })
     }
   }
+  if ('folder_id' in body) {
+    if (body.folder_id === null) {
+      patch.folder_id = null
+    } else if (typeof body.folder_id === 'string') {
+      patch.folder_id = body.folder_id
+    } else {
+      return NextResponse.json({ error: 'invalid folder_id' }, { status: 400 })
+    }
+  }
+  if ('scope' in body) {
+    if (body.scope === 'private' || body.scope === 'collaborative') {
+      patch.scope = body.scope
+    } else {
+      return NextResponse.json({ error: 'invalid scope' }, { status: 400 })
+    }
+  }
   patch.updated_at = new Date().toISOString()
 
   if (Object.keys(patch).length === 1) {
@@ -70,7 +95,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .update(patch)
     .eq('id', id)
     .eq('owner_user_key', user_key)
-    .select('id, page_key, name, filters, sort, view, starred, sort_order, created_at, updated_at')
+    .select(PRESET_SELECT)
     .maybeSingle()
 
   if (error) {
@@ -78,13 +103,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: '뷰 업데이트에 실패했습니다' }, { status: 500 })
   }
   if (!data) {
-    return NextResponse.json({ error: 'not found' }, { status: 404 })
+    // Either the id doesn't exist or the requester isn't its owner.
+    // We conflate the two so a non-owner probing for collaborative
+    // view ids can't tell the difference between "you can't touch it"
+    // and "not found".
+    return NextResponse.json({ error: 'not found or not owner' }, { status: 404 })
   }
   return NextResponse.json({ data })
 }
 
-// DELETE — remove a preset. Restricted to the owning user via the
-// owner_user_key equality filter; hitting someone else's id no-ops.
+// DELETE — remove a preset. Owner-only regardless of scope (deleting
+// a shared view should be restricted to its creator).
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireUser()
   if (auth.response) return auth.response

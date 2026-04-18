@@ -1,29 +1,37 @@
 'use client'
 
-// Shared presets state for LNB + Command Palette. Fetched once on
-// mount (and refetched after every CRUD) so both consumers see the
-// same list without each making their own request.
+// Shared presets + folders state for LNB + Command Palette. Fetched
+// once on mount (and refetched after every CRUD) so both consumers
+// see the same lists without each making their own request.
 //
 // Also tracks the "active" preset per page_key — the one the user most
 // recently applied (or created). Persisted in localStorage so a full
 // reload after applyPreset keeps the LNB highlight in sync. Cleared
 // when the active preset is deleted.
+//
+// currentUserKey is exposed so client components can gate owner-only
+// affordances (star / rename / delete / drag-reorder of collaborative
+// rows). The server enforces the same rule; this is purely UX so
+// non-owners don't see buttons that would 404.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { listPresets, type ViewPreset } from '@/lib/works/viewPresets'
+import { listFolders, listPresets, type ViewFolder, type ViewPreset } from '@/lib/works/viewPresets'
 
 type Ctx = {
   presets: ViewPreset[]
+  folders: ViewFolder[]
   refresh: () => Promise<void>
   loading: boolean
   // pageKey → preset id currently considered "active" for that page
   activeByPage: Record<string, string>
   setActivePreset: (pageKey: string, presetId: string | null) => void
+  currentUserKey: string
 }
 
 const PresetsContext = createContext<Ctx | null>(null)
 
 const LS_PREFIX = 'works:active-preset:'
+const FALLBACK_USER_KEY = 'dev@simplelabs.kr'
 
 function readActiveMap(): Record<string, string> {
   if (typeof window === 'undefined') return {}
@@ -41,21 +49,41 @@ function readActiveMap(): Record<string, string> {
   return out
 }
 
+// Best-effort: hit /api/me for the signed-in email. If the endpoint
+// isn't available (e.g. local dev without auth), fall back to the
+// same dev key the server uses so owner checks still line up.
+async function fetchCurrentUserKey(): Promise<string> {
+  try {
+    const res = await fetch('/api/me', { cache: 'no-store' })
+    if (!res.ok) return FALLBACK_USER_KEY
+    const body = (await res.json()) as { email?: string | null }
+    const email = body?.email
+    if (typeof email === 'string' && email) return email.toLowerCase()
+    return FALLBACK_USER_KEY
+  } catch {
+    return FALLBACK_USER_KEY
+  }
+}
+
 export function PresetsProvider({ children }: { children: React.ReactNode }) {
   const [presets, setPresets] = useState<ViewPreset[]>([])
+  const [folders, setFolders] = useState<ViewFolder[]>([])
   const [loading, setLoading] = useState(true)
   const [activeByPage, setActiveByPage] = useState<Record<string, string>>({})
+  const [currentUserKey, setCurrentUserKey] = useState<string>(FALLBACK_USER_KEY)
 
   const refresh = useCallback(async () => {
     setLoading(true)
-    const data = await listPresets()
-    setPresets(data)
+    const [p, f] = await Promise.all([listPresets(), listFolders()])
+    setPresets(p)
+    setFolders(f)
     setLoading(false)
   }, [])
 
   useEffect(() => {
     void refresh()
     setActiveByPage(readActiveMap())
+    void fetchCurrentUserKey().then(setCurrentUserKey)
   }, [refresh])
 
   // Prune active entries whose preset no longer exists (e.g. deleted in
@@ -94,8 +122,8 @@ export function PresetsProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ presets, refresh, loading, activeByPage, setActivePreset }),
-    [presets, refresh, loading, activeByPage, setActivePreset],
+    () => ({ presets, folders, refresh, loading, activeByPage, setActivePreset, currentUserKey }),
+    [presets, folders, refresh, loading, activeByPage, setActivePreset, currentUserKey],
   )
   return <PresetsContext.Provider value={value}>{children}</PresetsContext.Provider>
 }

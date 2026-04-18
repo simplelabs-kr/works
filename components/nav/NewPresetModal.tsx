@@ -5,8 +5,14 @@
 // sort / column width / frozen state summary) and match the rest of
 // the Works chrome. Keyboard: Enter submits, Esc cancels, autofocus on
 // the name input.
+//
+// Scope selection controls whether the preset is private ("내 뷰") or
+// collaborative ("공유 뷰"). Both live under the same page_key and
+// show up in their respective LNB sections. Scope defaults to private
+// — sharing is an explicit opt-in.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { PresetScope } from '@/lib/works/viewPresets'
 
 type Snapshot = {
   filters: unknown
@@ -20,7 +26,7 @@ type Props = {
   snapshot: Snapshot
   saving: boolean
   onCancel: () => void
-  onSubmit: (name: string) => void
+  onSubmit: (name: string, scope: PresetScope) => void
 }
 
 // Counts filter conditions in RootFilterState (shape: { logic, conditions[] }
@@ -70,12 +76,14 @@ function summarize(snapshot: Snapshot): Array<{ label: string; value: string }> 
 
 export default function NewPresetModal({ open, snapshot, saving, onCancel, onSubmit }: Props) {
   const [name, setName] = useState('')
+  const [scope, setScope] = useState<PresetScope>('private')
   const inputRef = useRef<HTMLInputElement>(null)
   const summary = useMemo(() => summarize(snapshot), [snapshot])
 
   useEffect(() => {
     if (!open) return
     setName('')
+    setScope('private')
     const t = setTimeout(() => inputRef.current?.focus(), 0)
     return () => clearTimeout(t)
   }, [open])
@@ -87,7 +95,7 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
 
   const submit = () => {
     if (!canSave) return
-    onSubmit(trimmed)
+    onSubmit(trimmed, scope)
   }
 
   return (
@@ -126,7 +134,52 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
           <div className="mt-1 text-[10px] text-[#94A3B8] text-right">{trimmed.length}/80</div>
         </div>
 
-        <div className="px-4 pb-3">
+        <div className="px-4 pt-1">
+          <div className="block text-[11px] font-medium text-[#64748B] mb-1">공개 범위</div>
+          <div className="flex gap-2">
+            <label
+              className={`flex-1 cursor-pointer rounded-[6px] border px-2 py-1.5 text-[12px] ${
+                scope === 'private'
+                  ? 'border-[#2D7FF9] bg-[#EFF6FF] text-[#1E3A8A]'
+                  : 'border-[#E2E8F0] bg-white text-[#334155] hover:bg-[#F1F5F9]'
+              }`}
+            >
+              <input
+                type="radio"
+                name="preset-scope"
+                value="private"
+                checked={scope === 'private'}
+                onChange={() => setScope('private')}
+                className="mr-1.5 align-middle"
+              />
+              나만 보기
+            </label>
+            <label
+              className={`flex-1 cursor-pointer rounded-[6px] border px-2 py-1.5 text-[12px] ${
+                scope === 'collaborative'
+                  ? 'border-[#2D7FF9] bg-[#EFF6FF] text-[#1E3A8A]'
+                  : 'border-[#E2E8F0] bg-white text-[#334155] hover:bg-[#F1F5F9]'
+              }`}
+            >
+              <input
+                type="radio"
+                name="preset-scope"
+                value="collaborative"
+                checked={scope === 'collaborative'}
+                onChange={() => setScope('collaborative')}
+                className="mr-1.5 align-middle"
+              />
+              팀 공유
+            </label>
+          </div>
+          <div className="mt-1 text-[10px] text-[#94A3B8]">
+            {scope === 'collaborative'
+              ? '팀원 모두가 볼 수 있습니다. 수정·삭제는 작성자만 가능합니다.'
+              : '본인만 볼 수 있는 뷰입니다.'}
+          </div>
+        </div>
+
+        <div className="px-4 pt-3 pb-3">
           <div className="rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-2">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] mb-1">
               미리보기
