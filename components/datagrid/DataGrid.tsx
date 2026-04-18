@@ -1240,15 +1240,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const restoredRef = useRef(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedViewRef = useRef<PersistedView | null>(null)
-  // Always-current view + filter + sort snapshot. Used by the LNB "+ 새 뷰"
-  // path to build a preset from the live HOT state without waiting for the
-  // debounced save → reload round-trip. Updated eagerly inside the save
-  // effect (pre-debounce).
-  const latestSnapshotRef = useRef<{
-    filters: RootFilterState
-    sort: SortCondition[]
-    view: PersistedView | null
-  }>({ filters: { logic: 'AND', conditions: [] }, sort: [], view: null })
 
   // HOT's current physical-column schema. Defaults to COLUMNS (original
   // definition order); swapped to a reordered array when a saved
@@ -1264,23 +1255,37 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const effectiveColumnsRef = useRef<typeof COLUMNS>(COLUMNS)
   const propToColRef = useRef<Record<string, number>>(PROP_TO_COL)
 
-  // Build a snapshot of the live HOT + filter/sort state synchronously.
-  // Single source of truth read by both the save effect (which then
-  // debounces the server write) and the registry's getSnapshot (which
-  // the LNB "+ 새 뷰" path reads at click time).
+  // Single source of truth for "what does the grid currently show?".
+  // Called by the save effect (debounced server write), the registry
+  // getSnapshot (LNB "+ 새 뷰"), and the registry flush (unmount / tab
+  // close). Reads live state imperatively from HOT plugins + refs —
+  // never from React state or a stored snapshot ref — so the answer
+  // is always true at call time regardless of where in the commit
+  // cycle we are.
   //
-  // Reads from refs, not state, so it returns the true current values
-  // regardless of where in the render/effect cycle we are — the save
-  // effect's restoredRef-guarded `latestSnapshotRef` is NOT required
-  // for this to be correct. That was the previous bug: getSnapshot
-  // returned latestSnapshotRef, which only gets populated when the
-  // save effect runs AND restoredRef is true, so first-interaction
-  // "+ 새 뷰" clicks (or clicks right after an applyRuntime) saw
-  // initial/stale defaults.
-  //
-  // Column order is read from HOT's index mappers (toPhysicalColumn)
-  // so runtime header drags are reflected immediately. Widths come
-  // from colWidthsRef, which afterColumnResize updates on every drag.
+  // Data source rationale:
+  //   columnOrder  ← hot.toPhysicalColumn(vi) for vi=1..N.
+  //                  toPhysicalColumn already reflects runtime header
+  //                  drags (manualColumnMove) AND declarative reorders
+  //                  from updateSettings({columns}). No separate state
+  //                  to sync.
+  //   columnWidths ← colWidthsRef (React-state mirror). afterColumnResize
+  //                  writes this with the user's manual size. We do NOT
+  //                  use hot.getColWidth(vi) because it returns 0 for
+  //                  hidden columns and can reflect stretch-to-fit,
+  //                  neither of which represents the user's intent.
+  //   hiddenColumns← hot.getPlugin('hiddenColumns').getHiddenColumns()
+  //                  as visual indices → resolved back to prop names.
+  //                  Plugin state is authoritative — toggling via the
+  //                  ColumnManager modal writes through this plugin.
+  //   frozenCount  ← hot.getSettings().fixedColumnsStart. Our freeze
+  //                  controls flow through setFrozenCount → effect →
+  //                  updateSettings({fixedColumnsStart}), so HOT is the
+  //                  authoritative holder.
+  //   rowHeight    ← rowHeightRef (React-state mirror).
+  //   filters/sort ← filterStateRef / sortConditionsRef (React-state
+  //                  mirrors). These are UI-only state with no HOT
+  //                  counterpart.
   const computeLiveSnapshot = useCallback((): {
     filters: RootFilterState
     sort: SortCondition[]
@@ -1289,25 +1294,59 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     const hot = hotRef.current
     const columnOrder: string[] = []
     const columnWidths: Record<string, number> = {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const total = (effectiveColumnsRef.current as any[]).length
+    const hiddenProps: string[] = []
+    let frozenNow = frozenCountRef.current
+
     if (hot) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const total = (effectiveColumnsRef.current as any[]).length
+
+      // Hidden columns — pull authoritative visual indices from the
+      // plugin and resolve back to prop names.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hp = hot.getPlugin('hiddenColumns') as any
+      const hiddenVisualsArr: unknown = hp?.getHiddenColumns?.()
+      const hiddenVisualSet = new Set<number>(
+        Array.isArray(hiddenVisualsArr)
+          ? hiddenVisualsArr.filter((x): x is number => typeof x === 'number')
+          : []
+      )
+
+      // Walk HOT's visual order. vi=0 is the pinned No. column — skip.
+      // hiddenColumns in HOT 14 uses a hidingMap (not a trimmingMap),
+      // so hidden columns still occupy visual indices and getHiddenColumns
+      // returns their visual positions. Iterating up to total (physical
+      // count) therefore includes both visible and hidden slots.
       for (let vi = 1; vi < total; vi++) {
         const pi = hot.toPhysicalColumn(vi)
+        if (typeof pi !== 'number' || pi < 0) continue
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const c = (effectiveColumnsRef.current as any[])[pi]
-        if (c && typeof c.data === 'string' && c.data) {
-          columnOrder.push(c.data)
-          const w = colWidthsRef.current[pi]
-          if (typeof w === 'number' && w > 0) columnWidths[c.data] = w
+        if (!c || typeof c.data !== 'string' || !c.data) continue
+
+        columnOrder.push(c.data)
+
+        // Width: colWidthsRef (user's manual intent). Fall back to the
+        // column definition's default so we always record something.
+        const stateW = colWidthsRef.current[pi]
+        if (typeof stateW === 'number' && stateW > 0) {
+          columnWidths[c.data] = stateW
+        } else if (typeof c.width === 'number' && c.width > 0) {
+          columnWidths[c.data] = c.width
         }
+
+        if (hiddenVisualSet.has(vi)) hiddenProps.push(c.data)
       }
+
+      const fcs = hot.getSettings().fixedColumnsStart
+      if (typeof fcs === 'number' && fcs >= 0) frozenNow = fcs
     }
+
     const view: PersistedView = {
       columnOrder,
       columnWidths,
-      hiddenColumns: Array.from(hiddenColumnsRef.current),
-      frozenCount: frozenCountRef.current,
+      hiddenColumns: hiddenProps,
+      frozenCount: frozenNow,
       rowHeight: rowHeightRef.current,
     }
     return {
@@ -1466,18 +1505,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   useEffect(() => {
     if (!restoredRef.current) return
 
-    // Build from refs (always current) rather than the deps' captured
-    // values. This keeps latestSnapshotRef / savedViewRef authoritative
-    // even when, e.g., afterColumnResize fires mid-commit and the
-    // dependency-value closure is one tick behind.
+    // Build from live HOT state via computeLiveSnapshot rather than the
+    // deps' captured values. This keeps savedViewRef authoritative even
+    // when afterColumnResize fires mid-commit and the dependency-value
+    // closure is one tick behind. getSnapshot / flush read the same
+    // source, so there's no second mirror to maintain.
     const snap = computeLiveSnapshot()
     savedViewRef.current = snap.view
-
-    // Also mirror into latestSnapshotRef for flush (tab-close / SPA
-    // unmount paths). getSnapshot doesn't read this anymore — it goes
-    // through computeLiveSnapshot directly — but flush still does so
-    // an unmount right after a state change persists the last delta.
-    latestSnapshotRef.current = snap
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
@@ -1514,12 +1548,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       applyRuntime: (settings: PersistedSettings | null) => void
     }> = w.__worksGrid ?? (w.__worksGrid = {})
     const entry = {
-      // Read live state at click-time instead of returning whatever was
-      // last written to latestSnapshotRef by the save effect. The save
-      // effect is gated by restoredRef, so on first mount and right
-      // after applyRuntime, latestSnapshotRef is stale/default — that
-      // was the bug making every "+ 새 뷰" preset save with identical
-      // widths/order that didn't match the on-screen grid.
+      // Read live state at click-time by imperatively querying HOT
+      // (column order, hidden, frozen) + the ref mirrors (widths,
+      // rowHeight, filter/sort). The save effect is gated by
+      // restoredRef, so on first mount and right after applyRuntime a
+      // cached snapshot would be stale/default — that was the bug
+      // making every "+ 새 뷰" preset save with identical widths/order
+      // that didn't match the on-screen grid.
       getSnapshot: () => computeLiveSnapshot(),
       flush: () => {
         if (saveTimerRef.current) {
@@ -1527,17 +1562,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           saveTimerRef.current = null
         }
         // Also read live — a flush fired from unmount/beforeunload must
-        // persist the true current state, not whatever latestSnapshotRef
-        // happened to hold.
+        // persist the true current state.
         const snap = computeLiveSnapshot()
         saveSettings(VIEW_PAGE_KEY, { filters: snap.filters, sort: snap.sort, view: snap.view })
       },
-      // applyPreset calls this before navigating so the beforeunload
-      // handler below doesn't overwrite the preset with whatever live
-      // grid state happened to still be in latestSnapshotRef. Without
-      // this, a pending debounced save (e.g. a resize made just before
-      // clicking the preset) would fire via keepalive after applyPreset's
-      // POST and clobber it on the server.
+      // applyPreset calls this before navigating so a pending debounced
+      // save (e.g. a resize made just before clicking the preset)
+      // doesn't fire via keepalive after applyPreset's POST and clobber
+      // the preset on the server.
       cancelPending: () => {
         if (saveTimerRef.current) {
           clearTimeout(saveTimerRef.current)
