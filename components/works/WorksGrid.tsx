@@ -2089,6 +2089,15 @@ export default function WorksGrid() {
 
     // 2) Column order. No. col pinned at visual 0; new (unsaved) columns
     //    fall in after the saved set so a schema addition doesn't lose data.
+    //
+    //    We write the physical-index sequence directly via
+    //    columnIndexMapper.setIndexesSequence — that is precisely what
+    //    manualColumnMove.moveColumns ends up calling internally, but the
+    //    plugin path went through beforeColumnMove / isColumnOrderChanged /
+    //    afterColumnMove and was flaky for bulk restore (the other six
+    //    settings restored fine via the same post-loadData effect; only
+    //    order via moveColumns silently produced identity). Writing the
+    //    sequence straight to the IndexMapper is deterministic and cheap.
     const newOrder: number[] = [0]
     const seen = new Set<number>([0])
     for (const prop of view.columnOrder) {
@@ -2102,8 +2111,13 @@ export default function WorksGrid() {
       if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mcm = hot.getPlugin('manualColumnMove') as any
-    if (mcm && newOrder.length > 0) mcm.moveColumns(newOrder, 0)
+    const cim = (hot as any).columnIndexMapper
+    if (cim && newOrder.length > 0) {
+      cim.setIndexesSequence(newOrder)
+      // setIndexesSequence doesn't fire afterColumnMove, so bump the version
+      // manually to keep managedColumns (column manager dropdown) in sync.
+      setColumnOrderVersion(v => v + 1)
+    }
 
     // 3) Hidden columns — after the move so toVisualColumn reflects the
     //    new mapping. hideColumns takes *visual* indices
