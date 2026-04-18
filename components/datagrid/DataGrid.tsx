@@ -873,6 +873,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       div.style.alignItems = 'center'
       div.style.width = '100%'
       div.style.overflow = 'hidden'
+      // Make the .colHeader the offsetParent for the icon/text children.
+      // Without position:relative their offsetParent walks past this div
+      // to the TH/table, and HOT's manualColumnMove plugin calls
+      // offsetRelativeTo() on drag — it crashes with "undefined is not
+      // an object (evaluating 'element.offsetLeft')" when the parent
+      // chain becomes null before reaching the expected reference node.
+      div.style.position = 'relative'
       div.appendChild(icon)
       div.appendChild(textSpan)
     })
@@ -1057,9 +1064,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           if (editor?.datePickerButton) {
             editor.datePickerButton.style.display = 'none'
           }
-          if (editor?.datePicker) {
-            editor.datePicker.show()
-          }
+          // NOTE: `editor.datePicker` is the wrapper DIV, not the Pikaday
+          // instance (that's `editor.$datePicker`). Calling `.show()` on
+          // the DIV throws "datePicker.show is not a function". The
+          // picker is already shown by HOT when the editor opens, so
+          // there's nothing to do here.
         }, 30)
       }
 
@@ -1221,7 +1230,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       }
     })
     return () => {
-      hotRef.current?.destroy()
+      const instance = hotRef.current
+      if (instance) {
+        instance.destroy()
+        // HOT's destroy() nulls `instance.view` along with every other
+        // non-function property, but an IntersectionObserver registered
+        // by observeVisibilityChangeOnce (when the root's offsetParent
+        // was null at init) can still fire AFTER destroy — its callback
+        // reaches into `instance.view.*` and throws
+        // "null is not an object (evaluating 'instance.view')". Swap in
+        // a safe no-op shape so the late callback is a no-op.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(instance as any).view = {
+          _wt: { draw: () => {}, wtOverlays: { updateMainScrollableElements: () => {} } },
+          adjustElementsSize: () => {},
+        }
+      }
       hotRef.current = null
     }
   }, [])

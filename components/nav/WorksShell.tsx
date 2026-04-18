@@ -18,7 +18,12 @@ import LNB from './LNB'
 import CommandPalette from './CommandPalette'
 import { PresetsProvider } from './PresetsContext'
 
-export const LNB_COLLAPSED_COOKIE = 'works:lnb-collapsed'
+// Cookie name uses underscores, not colons. RFC 6265 defines cookie
+// names as a `token` (RFC 7230) which explicitly excludes `:`. Safari
+// silently drops Set-Cookie headers with invalid tokens in the name,
+// which caused the collapse state to never persist across refreshes
+// even though document.cookie appeared to accept the assignment.
+export const LNB_COLLAPSED_COOKIE = 'works_lnb_collapsed'
 
 type Props = {
   children: React.ReactNode
