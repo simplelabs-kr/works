@@ -5,9 +5,12 @@
 // both drive the same instance, and wires the GNB + LNB + content slot
 // layout. Rendered from the server-side app/works/layout.tsx.
 //
-// Also owns the LNB collapsed state. Persisted in localStorage so a
-// full reload (triggered by applyPreset's window.location.href swap)
-// doesn't reset the user's preferred sidebar width.
+// Also owns the LNB collapsed state. Persisted in a cookie (read by
+// app/works/layout.tsx on the server and passed in as initialCollapsed)
+// so the first paint reflects the user's preferred width — no expanded
+// → collapsed flash on refresh, which is what the old localStorage-
+// only path produced because localStorage isn't readable on the
+// server render.
 
 import { useCallback, useEffect, useState } from 'react'
 import GNB from './GNB'
@@ -15,30 +18,40 @@ import LNB from './LNB'
 import CommandPalette from './CommandPalette'
 import { PresetsProvider } from './PresetsContext'
 
-const LS_LNB_COLLAPSED = 'works:lnb-collapsed'
+export const LNB_COLLAPSED_COOKIE = 'works:lnb-collapsed'
 
-export default function WorksShell({ children }: { children: React.ReactNode }) {
+type Props = {
+  children: React.ReactNode
+  // Read from cookie on the server so the first client paint matches
+  // the server HTML. Undefined on first-ever visit (no cookie yet) →
+  // expanded.
+  initialCollapsed?: boolean
+}
+
+export default function WorksShell({ children, initialCollapsed = false }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false)
-  // Start collapsed=false; the mount effect below reconciles with
-  // localStorage in a second commit. This matches the server render
-  // (which has no access to localStorage) and avoids the hydration
-  // mismatch a conditional initialState would produce.
-  const [lnbCollapsed, setLnbCollapsed] = useState(false)
+  // Seed from the cookie-read prop so the server render and the first
+  // client commit agree — avoids the hydration-time width flash.
+  const [lnbCollapsed, setLnbCollapsed] = useState(initialCollapsed)
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    try {
-      setLnbCollapsed(window.localStorage.getItem(LS_LNB_COLLAPSED) === '1')
-    } catch {
-      /* storage disabled — stay expanded */
-    }
+    // Flip the animated flag on after hydration so width transitions
+    // don't play on the first paint. (The initial width is already
+    // correct via initialCollapsed, so we don't need to re-read the
+    // cookie here.)
     setHydrated(true)
   }, [])
 
   const toggleLnb = useCallback(() => {
     setLnbCollapsed(prev => {
       const next = !prev
-      try { window.localStorage.setItem(LS_LNB_COLLAPSED, next ? '1' : '0') } catch { /* ignore */ }
+      try {
+        // 1-year persistent cookie, path=/ so every /works route reads
+        // the same value. SameSite=Lax is the safe default for nav-
+        // driven state. No HttpOnly — this needs to be client-writable.
+        document.cookie = `${LNB_COLLAPSED_COOKIE}=${next ? '1' : '0'}; path=/; max-age=31536000; samesite=lax`
+      } catch { /* ignore — e.g. cookies disabled */ }
       return next
     })
   }, [])

@@ -15,7 +15,7 @@ import ImageModal from '@/components/works/ImageModal'
 import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
-import { loadSettings, saveSettings, type PersistedView } from '@/lib/works/viewSettings'
+import { loadSettings, saveSettings, type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
 import type { FieldType, ImageItem, AttachmentItem, Row } from '@/features/works/worksTypes'
 import { getFieldTypeIcon } from '@/features/works/worksConfig'
 import {
@@ -1253,100 +1253,136 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const effectiveColumnsRef = useRef<typeof COLUMNS>(COLUMNS)
   const propToColRef = useRef<Record<string, number>>(PROP_TO_COL)
 
+  // Pure-ish helper: takes a settings blob (from loadSettings on mount OR
+  // from applyPreset's runtime hand-off) and applies it to React state +
+  // HOT's declarative settings (columns / colWidths / fixedColumnsStart
+  // are handled by HOT via updateSettings; manualColumnResize widths are
+  // re-attached by the post-loadData effect after rows change).
+  //
+  // Called from the mount-restore effect (with settings loaded from
+  // loadSettings) and from the registry's applyRuntime path (with the
+  // preset's settings passed in by applyPreset). Both paths end by
+  // calling handleLoad so rows re-fetch and the post-loadData effect
+  // runs against the freshly-stashed savedViewRef.
+  const applyFromSettings = useCallback((settings: PersistedSettings | null) => {
+    // Stash view in ref so the post-loadData effect can re-apply it
+    // every time `rows` changes (first fetch + infinite scroll).
+    savedViewRef.current = settings?.view ?? null
+
+    // filters + sort → state, UNCONDITIONALLY. A preset with no filters
+    // must clear the current filter state, not inherit the previous one.
+    if (settings?.filters && typeof settings.filters === 'object') {
+      setFilterState(settings.filters as RootFilterState)
+    } else {
+      setFilterState({ logic: 'AND', conditions: [] })
+    }
+    if (Array.isArray(settings?.sort)) {
+      setSortConditions(settings.sort as SortCondition[])
+    } else {
+      setSortConditions([])
+    }
+
+    if (settings?.view) {
+      const view = settings.view
+
+      // ── Declarative column order ─────────────────────────────────
+      // If a saved columnOrder is present, reorder the columns array
+      // here and push it into HOT via updateSettings({ columns }).
+      // This makes HOT's *physical* column order equal to the user's
+      // saved visual order from the start, so index mappers stay at
+      // identity and no imperative moveColumn/setIndexesSequence is
+      // needed. Columns not in the saved order (e.g. a schema column
+      // added since last save) get appended at the end so their data
+      // is still visible.
+      //
+      // Must run BEFORE setColWidths + HOT.updateSettings(colWidths)
+      // so the widths array we compute is indexed by the *new*
+      // physical order.
+      const hot = hotRef.current
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let effectiveColumns: any[] = COLUMNS as any[]
+      if (hot && Array.isArray(view.columnOrder) && view.columnOrder.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ordered: any[] = [(COLUMNS as any[])[0]] // pin No. col at physical/visual 0
+        const seen = new Set<string>()
+        for (const prop of view.columnOrder) {
+          if (typeof prop !== 'string' || seen.has(prop)) continue
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const c = (COLUMNS as any[]).find((x: any) => x?.data === prop)
+          if (c) { ordered.push(c); seen.add(prop) }
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (let i = 1; i < (COLUMNS as any[]).length; i++) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const c = (COLUMNS as any[])[i]
+          if (typeof c?.data === 'string' && c.data && !seen.has(c.data)) {
+            ordered.push(c); seen.add(c.data)
+          }
+        }
+        effectiveColumns = ordered
+      }
+
+      // Widths indexed by effectiveColumns physical order.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const widthsArr = (effectiveColumns as any[]).map((c: any) => {
+        if (typeof c?.data === 'string' && c.data) {
+          const w = view.columnWidths[c.data]
+          if (typeof w === 'number' && w > 0) return w
+        }
+        return c?.width ?? 100
+      })
+
+      // Push reordered schema + widths into HOT in one call. HOT's
+      // index mappers end up at identity (visual == physical), which
+      // is exactly what we want — runtime drags go through
+      // manualColumnMove as usual and don't need to worry about a
+      // pre-existing non-identity mapping.
+      if (hot) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        effectiveColumnsRef.current = effectiveColumns as typeof COLUMNS
+        const nextPropToCol: Record<string, number> = {}
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(effectiveColumns as any[]).forEach((c: any, i: number) => {
+          if (typeof c?.data === 'string' && c.data) nextPropToCol[c.data] = i
+        })
+        propToColRef.current = nextPropToCol
+        hot.updateSettings({ columns: effectiveColumns, colWidths: widthsArr })
+      }
+
+      setColWidths(widthsArr)
+      setHiddenColumns(new Set(view.hiddenColumns))
+      setFrozenCount(view.frozenCount)
+      setRowHeight(view.rowHeight)
+      // Nudge managedColumns / dependent memos that key off column order.
+      setColumnOrderVersion(v => v + 1)
+    } else {
+      // No view in settings (e.g. preset with null view): reset to
+      // defaults so stale widths/hidden/freeze from a prior preset
+      // don't persist.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const defaultWidths = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
+      const hot = hotRef.current
+      if (hot) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        effectiveColumnsRef.current = COLUMNS as typeof COLUMNS
+        propToColRef.current = PROP_TO_COL
+        hot.updateSettings({ columns: COLUMNS, colWidths: defaultWidths })
+      }
+      setColWidths(defaultWidths)
+      setHiddenColumns(new Set())
+      setFrozenCount(0)
+      setRowHeight('short')
+      setColumnOrderVersion(v => v + 1)
+    }
+  }, [COLUMNS, PROP_TO_COL])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const settings = await loadSettings(VIEW_PAGE_KEY)
       if (cancelled) return
 
-      // Stash view in ref so the post-loadData effect can re-apply it
-      // even after every rows change (first fetch + infinite scroll).
-      savedViewRef.current = settings?.view ?? null
-
-      // filters + sort → state. Refs (line ~1015) re-sync in the commit
-      // triggered by these setters and fetchTrigger, so the fetch effect
-      // sees the restored filter/sort before it runs.
-      if (settings?.filters && typeof settings.filters === 'object') {
-        setFilterState(settings.filters as RootFilterState)
-      }
-      if (Array.isArray(settings?.sort)) {
-        setSortConditions(settings.sort as SortCondition[])
-      }
-
-      // State-backed view fields (not plugin-backed, so safe to set now —
-      // their individual effects will sync to HOT when relevant).
-      if (settings?.view) {
-        const view = settings.view
-
-        // ── Declarative column order ─────────────────────────────────
-        // If a saved columnOrder is present, reorder the columns array
-        // here and push it into HOT via updateSettings({ columns }).
-        // This makes HOT's *physical* column order equal to the user's
-        // saved visual order from the start, so index mappers stay at
-        // identity and no imperative moveColumn/setIndexesSequence is
-        // needed. Columns not in the saved order (e.g. a schema column
-        // added since last save) get appended at the end so their data
-        // is still visible.
-        //
-        // Must run BEFORE setColWidths + HOT.updateSettings(colWidths)
-        // so the widths array we compute is indexed by the *new*
-        // physical order.
-        const hot = hotRef.current
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let effectiveColumns: any[] = COLUMNS as any[]
-        if (hot && Array.isArray(view.columnOrder) && view.columnOrder.length > 0) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const ordered: any[] = [(COLUMNS as any[])[0]] // pin No. col at physical/visual 0
-          const seen = new Set<string>()
-          for (const prop of view.columnOrder) {
-            if (typeof prop !== 'string' || seen.has(prop)) continue
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const c = (COLUMNS as any[]).find((x: any) => x?.data === prop)
-            if (c) { ordered.push(c); seen.add(prop) }
-          }
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          for (let i = 1; i < (COLUMNS as any[]).length; i++) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const c = (COLUMNS as any[])[i]
-            if (typeof c?.data === 'string' && c.data && !seen.has(c.data)) {
-              ordered.push(c); seen.add(c.data)
-            }
-          }
-          effectiveColumns = ordered
-        }
-
-        // Widths indexed by effectiveColumns physical order.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const widthsArr = (effectiveColumns as any[]).map((c: any) => {
-          if (typeof c?.data === 'string' && c.data) {
-            const w = view.columnWidths[c.data]
-            if (typeof w === 'number' && w > 0) return w
-          }
-          return c?.width ?? 100
-        })
-
-        // Push reordered schema + widths into HOT in one call. HOT's
-        // index mappers end up at identity (visual == physical), which
-        // is exactly what we want — runtime drags go through
-        // manualColumnMove as usual and don't need to worry about a
-        // pre-existing non-identity mapping.
-        if (hot && effectiveColumns !== (COLUMNS as any[])) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          effectiveColumnsRef.current = effectiveColumns as typeof COLUMNS
-          const nextPropToCol: Record<string, number> = {}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(effectiveColumns as any[]).forEach((c: any, i: number) => {
-            if (typeof c?.data === 'string' && c.data) nextPropToCol[c.data] = i
-          })
-          propToColRef.current = nextPropToCol
-          hot.updateSettings({ columns: effectiveColumns, colWidths: widthsArr })
-        }
-
-        setColWidths(widthsArr)
-        setHiddenColumns(new Set(view.hiddenColumns))
-        setFrozenCount(view.frozenCount)
-        setRowHeight(view.rowHeight)
-      }
+      applyFromSettings(settings)
 
       // Trigger the data fetch. The post-loadData effect will apply view
       // to HOT plugins once rows arrive.
@@ -1436,6 +1472,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       getSnapshot: () => { filters: unknown; sort: unknown; view: PersistedView | null }
       flush: () => void
       cancelPending: () => void
+      applyRuntime: (settings: PersistedSettings | null) => void
     }> = w.__worksGrid ?? (w.__worksGrid = {})
     const entry = {
       getSnapshot: () => ({
@@ -1462,6 +1499,31 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           clearTimeout(saveTimerRef.current)
           saveTimerRef.current = null
         }
+      },
+      // Imperative same-page preset apply. When applyPreset lands on a
+      // grid that's already mounted for its pageKey, calling this skips
+      // the remount dance: restoredRef blocks the save effect, settings
+      // are applied to React state + HOT via applyFromSettings, rows
+      // re-fetch via handleLoad, and then the post-loadData effect
+      // reattaches manualColumnResize widths. This avoids the failure
+      // mode where bumpRemountVersion didn't actually tear down the
+      // grid (e.g. because useSyncExternalStore skipped the notify) and
+      // preset.view.columnWidths never reached HOT.
+      applyRuntime: (settings: PersistedSettings | null) => {
+        // Block the save effect while we mutate the view-related state
+        // in one commit — otherwise it would flush those transient
+        // setState calls back to the server before they settle.
+        restoredRef.current = false
+        // Also drop any debounced save that was scheduled just before
+        // the preset click (belt-and-braces with applyPreset's own
+        // cancelPending call).
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current)
+          saveTimerRef.current = null
+        }
+        applyFromSettings(settings)
+        handleLoad()
+        setTimeout(() => { restoredRef.current = true }, 0)
       },
     }
     registry[VIEW_PAGE_KEY] = entry

@@ -135,13 +135,9 @@ export async function applyPreset(preset: ViewPreset): Promise<void> {
   // debounce could still fire via its own timer and race against the
   // preset write. cancelPending is a no-op if no grid is mounted for
   // this pageKey (e.g. applying a preset for a page the user isn't on).
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const entry = (window as any).__worksGrid?.[preset.page_key]
-    entry?.cancelPending?.()
-  } catch {
-    /* registry missing — nothing to cancel */
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const entry = (() => { try { return (window as any).__worksGrid?.[preset.page_key] } catch { return null } })()
+  try { entry?.cancelPending?.() } catch { /* registry shape mismatch */ }
 
   // Writes through to the in-session cache synchronously, then POSTs
   // to the server (awaited so a tab close right after this resolves
@@ -155,11 +151,12 @@ export async function applyPreset(preset: ViewPreset): Promise<void> {
   // Redundant with saveSettings' own cache write, but explicit — if
   // saveSettings' POST failed, the local cache still reflects the
   // preset so the next mount in this session restores correctly.
-  writeCache(preset.page_key, {
+  const nextSettings = {
     filters: preset.filters,
     sort: preset.sort,
     view: viewCast,
-  })
+  }
+  writeCache(preset.page_key, nextSettings)
 
   try {
     window.localStorage.setItem(`works:active-preset:${preset.page_key}`, preset.id)
@@ -167,7 +164,24 @@ export async function applyPreset(preset: ViewPreset): Promise<void> {
     /* storage disabled — LNB will just not highlight until next applyPreset */
   }
 
-  // Force any DataGrid mounted for this pageKey to remount and rerun
-  // its mount-restore effect (which now hits the cache we just wrote).
+  // Primary path: if a DataGrid is already mounted for this pageKey,
+  // drive it imperatively so preset.view reliably lands in HOT (widths,
+  // hidden columns, freeze, row height) + React state (filters, sort)
+  // without depending on a remount cycle. This replaces the old "bump
+  // remount version and hope the key change propagates" path, which
+  // could silently no-op when preset-to-preset on the same page.
+  if (entry && typeof entry.applyRuntime === 'function') {
+    try {
+      entry.applyRuntime(nextSettings)
+      return
+    } catch {
+      /* fall through to remount bump below */
+    }
+  }
+
+  // Fallback for when no grid is currently mounted for this pageKey
+  // (e.g. cross-page preset apply from the LNB). The remount-version
+  // bump primes any future mount on this page to pick up the cached
+  // preset; the actual navigation is the caller's responsibility.
   bumpRemountVersion(preset.page_key)
 }
