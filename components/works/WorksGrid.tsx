@@ -1060,7 +1060,7 @@ export default function WorksGrid() {
   const handleSelectOption = (column: string, rowIdx: number, value: string) => {
     const hot = hotRef.current
     if (!hot) return
-    const col = PROP_TO_COL[column] ?? -1
+    const col = propToColRef.current[column] ?? -1
     if (col < 0) return
     // Route through setDataAtCell so afterChange handles PATCH, local state, and undo-stack tracking.
     hot.setDataAtCell(rowIdx, col, value)
@@ -1339,7 +1339,7 @@ export default function WorksGrid() {
         divBase.style.lineHeight = 'normal'
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (COLUMNS as any[])[col]
+      const colDef = (effectiveColumnsRef.current as any[])[col]
       if (!colDef || !colDef.fieldType) return
       if (TH.querySelector('.field-type-icon')) return
       const div = TH.querySelector('.colHeader') as HTMLElement | null
@@ -1413,7 +1413,7 @@ export default function WorksGrid() {
           const current = rowsRef.current[rowIdx]
           const newShipDate = calcShipDateFromRow({ ...current, 데드라인: newDeadline }, holidaySetRef.current)
           // Propagate derived 출고예정일 to HOT directly (readonly formula column).
-          const shipCol = PROP_TO_COL['출고예정일'] ?? -1
+          const shipCol = propToColRef.current['출고예정일'] ?? -1
           if (shipCol >= 0) {
             hotRef.current?.setDataAtCell(rowIdx, shipCol, newShipDate, 'derived')
           }
@@ -1436,7 +1436,7 @@ export default function WorksGrid() {
           })
           if (!res.ok) {
             // Rollback HOT cell
-            const rollbackCol = PROP_TO_COL[prop as string] ?? -1
+            const rollbackCol = propToColRef.current[prop as string] ?? -1
             if (rollbackCol >= 0) {
               hotRef.current?.setDataAtCell(rowIdx, rollbackCol, oldVal, 'rollback')
             }
@@ -1445,7 +1445,7 @@ export default function WorksGrid() {
               const oldDeadline = oldVal ? String(oldVal).slice(0, 10) : ''
               const current = rowsRef.current[rowIdx]
               const oldShipDate = calcShipDateFromRow({ ...current, 데드라인: oldDeadline }, holidaySetRef.current)
-              const shipCol = PROP_TO_COL['출고예정일'] ?? -1
+              const shipCol = propToColRef.current['출고예정일'] ?? -1
               if (shipCol >= 0) {
                 hotRef.current?.setDataAtCell(rowIdx, shipCol, oldShipDate, 'derived')
               }
@@ -1485,7 +1485,7 @@ export default function WorksGrid() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterBeginEditing', (row: number, col: number) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (COLUMNS as any[])[col]
+      const colDef = (effectiveColumnsRef.current as any[])[col]
       if (!colDef) return
 
       if (colDef.fieldType === 'longtext') {
@@ -1562,7 +1562,7 @@ export default function WorksGrid() {
 
       // 기존 select 컬럼 로직
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cd = (COLUMNS as any[])[coords.col]
+      const cd = (effectiveColumnsRef.current as any[])[coords.col]
       if (cd?.fieldType !== 'select' || cd?.readOnly) {
         selectAlreadySelected = false
         return
@@ -1576,7 +1576,7 @@ export default function WorksGrid() {
     hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (COLUMNS as any[])[coords.col]
+      const colDef = (effectiveColumnsRef.current as any[])[coords.col]
       if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
       const column = colDef.data as string
@@ -1707,6 +1707,20 @@ export default function WorksGrid() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const savedViewRef = useRef<PersistedView | null>(null)
 
+  // HOT's current physical-column schema. Defaults to COLUMNS (original
+  // definition order); swapped to a reordered array when a saved
+  // columnOrder is restored (see restore effect below). Every runtime
+  // lookup that asks "which column definition is at HOT physical index
+  // X?" MUST go through this ref — after a declarative reorder, COLUMNS
+  // no longer matches HOT's physical order.
+  //
+  // `propToColRef` is the inverse: prop name → physical index in the
+  // current effectiveColumns. It replaces direct `PROP_TO_COL[prop]`
+  // reads in runtime paths (handlers, effects). We keep the module-scope
+  // `PROP_TO_COL` const as the initial seed value.
+  const effectiveColumnsRef = useRef<typeof COLUMNS>(COLUMNS)
+  const propToColRef = useRef<Record<string, number>>(PROP_TO_COL)
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -1731,15 +1745,71 @@ export default function WorksGrid() {
       // their individual effects will sync to HOT when relevant).
       if (settings?.view) {
         const view = settings.view
+
+        // ── Declarative column order ─────────────────────────────────
+        // If a saved columnOrder is present, reorder the columns array
+        // here and push it into HOT via updateSettings({ columns }).
+        // This makes HOT's *physical* column order equal to the user's
+        // saved visual order from the start, so index mappers stay at
+        // identity and no imperative moveColumn/setIndexesSequence is
+        // needed. Columns not in the saved order (e.g. a schema column
+        // added since last save) get appended at the end so their data
+        // is still visible.
+        //
+        // Must run BEFORE setColWidths + HOT.updateSettings(colWidths)
+        // so the widths array we compute is indexed by the *new*
+        // physical order.
+        const hot = hotRef.current
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const widthsArr = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
+        let effectiveColumns: any[] = COLUMNS as any[]
+        if (hot && Array.isArray(view.columnOrder) && view.columnOrder.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const ordered: any[] = [(COLUMNS as any[])[0]] // pin No. col at physical/visual 0
+          const seen = new Set<string>()
+          for (const prop of view.columnOrder) {
+            if (typeof prop !== 'string' || seen.has(prop)) continue
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const c = (COLUMNS as any[]).find((x: any) => x?.data === prop)
+            if (c) { ordered.push(c); seen.add(prop) }
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          for (let i = 1; i < (COLUMNS as any[]).length; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const c = (COLUMNS as any[])[i]
+            if (typeof c?.data === 'string' && c.data && !seen.has(c.data)) {
+              ordered.push(c); seen.add(c.data)
+            }
+          }
+          effectiveColumns = ordered
+        }
+
+        // Widths indexed by effectiveColumns physical order.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(COLUMNS as any[]).forEach((c: any, pi: number) => {
+        const widthsArr = (effectiveColumns as any[]).map((c: any) => {
           if (typeof c?.data === 'string' && c.data) {
             const w = view.columnWidths[c.data]
-            if (typeof w === 'number' && w > 0) widthsArr[pi] = w
+            if (typeof w === 'number' && w > 0) return w
           }
+          return c?.width ?? 100
         })
+
+        // Push reordered schema + widths into HOT in one call. HOT's
+        // index mappers end up at identity (visual == physical), which
+        // is exactly what we want — runtime drags go through
+        // manualColumnMove as usual and don't need to worry about a
+        // pre-existing non-identity mapping.
+        if (hot && effectiveColumns !== (COLUMNS as any[])) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          effectiveColumnsRef.current = effectiveColumns as typeof COLUMNS
+          const nextPropToCol: Record<string, number> = {}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(effectiveColumns as any[]).forEach((c: any, i: number) => {
+            if (typeof c?.data === 'string' && c.data) nextPropToCol[c.data] = i
+          })
+          propToColRef.current = nextPropToCol
+          hot.updateSettings({ columns: effectiveColumns, colWidths: widthsArr })
+        }
+
         setColWidths(widthsArr)
         setHiddenColumns(new Set(view.hiddenColumns))
         setFrozenCount(view.frozenCount)
@@ -1769,12 +1839,12 @@ export default function WorksGrid() {
     const columnOrder: string[] = []
     const columnWidths: Record<string, number> = {}
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const total = (COLUMNS as any[]).length
+    const total = (effectiveColumnsRef.current as any[]).length
     if (hot) {
       for (let vi = 1; vi < total; vi++) {
         const pi = hot.toPhysicalColumn(vi)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const c = (COLUMNS as any[])[pi]
+        const c = (effectiveColumnsRef.current as any[])[pi]
         if (c && typeof c.data === 'string' && c.data) {
           columnOrder.push(c.data)
           const w = colWidths[pi]
@@ -1861,7 +1931,7 @@ export default function WorksGrid() {
     if (prevHidden.length > 0) plugin.showColumns(prevHidden)
     const targetVisual: number[] = []
     hiddenColumns.forEach(prop => {
-      const pi = PROP_TO_COL[prop]
+      const pi = propToColRef.current[prop]
       if (typeof pi === 'number') {
         const vi = hot.toVisualColumn(pi)
         if (vi >= 0) targetVisual.push(vi)
@@ -1931,8 +2001,8 @@ export default function WorksGrid() {
   const handleReorderColumn = useCallback((fromProp: string, toProp: string) => {
     const hot = hotRef.current
     if (!hot) return
-    const fromPi = PROP_TO_COL[fromProp]
-    const toPi = PROP_TO_COL[toProp]
+    const fromPi = propToColRef.current[fromProp]
+    const toPi = propToColRef.current[toProp]
     if (typeof fromPi !== 'number' || typeof toPi !== 'number') return
     const fromVi = hot.toVisualColumn(fromPi)
     const toVi = hot.toVisualColumn(toPi)
@@ -1955,7 +2025,7 @@ export default function WorksGrid() {
     if (prevHidden.length > 0) hiddenPlugin.showColumns(prevHidden)
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const defaultWidths = (COLUMNS as any[]).map((c: any) => c.width ?? 100)
+    const defaultWidths = (effectiveColumnsRef.current as any[]).map((c: any) => c.width ?? 100)
     hot.updateSettings({ colWidths: defaultWidths, fixedColumnsStart: 0 })
     setColWidths(defaultWidths)
 
@@ -2029,12 +2099,12 @@ export default function WorksGrid() {
   const managedColumns: ManagedColumn[] = useMemo(() => {
     const hot = hotRef.current
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const total = (COLUMNS as any[]).length
+    const total = (effectiveColumnsRef.current as any[]).length
     const result: ManagedColumn[] = []
     for (let vi = 1; vi < total; vi++) {
       const pi = hot ? hot.toPhysicalColumn(vi) : vi
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const c = (COLUMNS as any[])[pi]
+      const c = (effectiveColumnsRef.current as any[])[pi]
       if (c && typeof c.data === 'string' && c.data && typeof c.title === 'string') {
         result.push({ data: c.data, title: c.title })
       }
@@ -2058,7 +2128,12 @@ export default function WorksGrid() {
   // Post-loadData view re-apply. Must be declared AFTER the loadData effect
   // above so React runs it later in the same commit — that's the point where
   // HOT's column plugins have just been reset to identity by initIndexMappers
-  // and we can cleanly re-attach widths / order / hidden / freeze.
+  // and we can cleanly re-attach widths / hidden / freeze.
+  //
+  // Order is NOT re-applied here: it's declarative, set once in the mount
+  // restore effect via updateSettings({ columns }). loadData doesn't touch
+  // the columns array, so the physical order persists across reloads and
+  // appends without any imperative work.
   //
   // Applied every time `rows` changes (initial load, filter/sort reload,
   // infinite scroll append) because each of those paths hits loadData. Cheap
@@ -2069,14 +2144,16 @@ export default function WorksGrid() {
     const view = savedViewRef.current
     if (!view) return
 
-    // 1) Widths — before any move so visual === physical and we can pass
-    //    physical indices to setManualSize (which treats its arg as visual
-    //    and internally converts; identity mapping here makes that safe).
+    // 1) Widths — iterate HOT's current physical column schema
+    //    (effectiveColumnsRef) so setManualSize receives the right index.
+    //    With the declarative order in place, visual == physical, so passing
+    //    physical to setManualSize (which treats its arg as visual and
+    //    converts internally) is safe.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mcr = hot.getPlugin('manualColumnResize') as any
     if (mcr) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(COLUMNS as any[]).forEach((c: any, pi: number) => {
+      ;(effectiveColumnsRef.current as any[]).forEach((c: any, pi: number) => {
         if (pi === 0) return
         const savedW = typeof c?.data === 'string' && c.data
           ? view.columnWidths[c.data]
@@ -2087,80 +2164,9 @@ export default function WorksGrid() {
       })
     }
 
-    // 2) Column order. No. col pinned at visual 0; new (unsaved) columns
-    //    fall in after the saved set so a schema addition doesn't lose data.
-    //
-    //    Approach: iteratively call manualColumnMove.moveColumn(fromVi, toVi)
-    //    to walk each saved physical column into its target visual slot.
-    //    This is exactly the same API the header-drag path (handleReorderColumn)
-    //    uses, which is known-good. Previously we wrote the physical-index
-    //    sequence directly via columnIndexMapper.setIndexesSequence, but that
-    //    silently produced identity in the post-loadData restore path (likely
-    //    because loadData's index-mapper reset races the write). The plugin's
-    //    moveColumn goes through beforeColumnMove / afterColumnMove and plays
-    //    well with the rest of HOT's column pipeline.
-    //
-    //    targetPhysOrder[visualIdx] = physicalIdx we want at that visual slot.
-    const targetPhysOrder: number[] = [0]
-    const seen = new Set<number>([0])
-    for (const prop of view.columnOrder) {
-      const pi = PROP_TO_COL[prop]
-      if (typeof pi === 'number' && pi > 0 && !seen.has(pi)) {
-        targetPhysOrder.push(pi); seen.add(pi)
-      }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
-      if (!seen.has(pi)) { targetPhysOrder.push(pi); seen.add(pi) }
-    }
-    // Guards: moveColumn eventually reaches selection.commit(), and in some
-    // transient states (StrictMode unmount/remount, or before HOT finishes
-    // its first render) that path touches `instance.view` — which can be
-    // null. So: require the plugin and a live `view` before writing, wrap
-    // the loop in try/catch so a late failure doesn't break steps 3/4
-    // (hidden / freeze) below, and if HOT isn't ready yet defer the whole
-    // order-restore to the next tick.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mcm = hot.getPlugin('manualColumnMove') as any
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const hotReady = !!(hot as any).view
-    if (mcm && targetPhysOrder.length > 0) {
-      const applyOrder = () => {
-        const hotNow = hotRef.current
-        if (!hotNow) return
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mcmNow = hotNow.getPlugin('manualColumnMove') as any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (!mcmNow || !(hotNow as any).view) return
-        try {
-          // For each target visual slot, check if the column currently there
-          // is the one we want. If not, look up the current visual index of
-          // the desired physical column and move it into place. Each
-          // moveColumn renumbers subsequent visual indices, so we recompute
-          // currentVi every iteration via toVisualColumn(physIdx).
-          let moved = false
-          for (let targetVi = 1; targetVi < targetPhysOrder.length; targetVi++) {
-            const targetPi = targetPhysOrder[targetVi]
-            const currentVi = hotNow.toVisualColumn(targetPi)
-            if (currentVi >= 0 && currentVi !== targetVi) {
-              mcmNow.moveColumn(currentVi, targetVi)
-              moved = true
-            }
-          }
-          if (moved) hotNow.render()
-          // afterColumnMove hook already bumps columnOrderVersion; no manual
-          // bump needed here.
-        } catch (err) {
-          console.warn('[view-restore] moveColumn failed', err)
-        }
-      }
-      if (hotReady) applyOrder()
-      else setTimeout(applyOrder, 0)
-    }
-
-    // 3) Hidden columns — after the move so toVisualColumn reflects the
-    //    new mapping. hideColumns takes *visual* indices
+    // 2) Hidden columns. hideColumns takes *visual* indices
     //    (handsontable/plugins/hiddenColumns/hiddenColumns.js:304, .318).
+    //    propToColRef gives HOT physical, toVisualColumn converts.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hiddenPlugin = hot.getPlugin('hiddenColumns') as any
     if (hiddenPlugin) {
@@ -2168,7 +2174,7 @@ export default function WorksGrid() {
       if (prevHidden.length > 0) hiddenPlugin.showColumns(prevHidden)
       const targetVisual: number[] = []
       for (const prop of view.hiddenColumns) {
-        const pi = PROP_TO_COL[prop]
+        const pi = propToColRef.current[prop]
         if (typeof pi === 'number') {
           const vi = hot.toVisualColumn(pi)
           if (vi >= 0) targetVisual.push(vi)
@@ -2207,7 +2213,7 @@ export default function WorksGrid() {
         for (const item of entry.items) {
           const rowIdx = rowsRef.current.findIndex(r => r.id === item.rowId)
           if (rowIdx === -1) continue
-          const col = PROP_TO_COL[item.prop] ?? -1
+          const col = propToColRef.current[item.prop] ?? -1
           if (col < 0) continue
           tuples.push([rowIdx, col, pickValue(item)])
           validItems.push(item)
