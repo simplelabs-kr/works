@@ -3,6 +3,17 @@
 // Left Nav Bar — per-workspace navigation. 220px column on the left
 // edge of every /works route, collapsible to a 36px rail.
 //
+// The LNB is now view-only chrome: it surfaces the current page name,
+// the star/share/private view sections for the active page, and a
+// trash shortcut. Cross-page navigation lives in the Cmd+K palette.
+//
+// Per-page reuse: the page header and section-bound preset lists are
+// derived from `resolveActivePage(pathname)` + the pages.ts registry.
+// To hook a new page into the LNB (products, bundles, ...):
+//   1. Add a PageDef entry to WORKS_PAGES in lib/nav/pages.ts.
+//   2. Teach presetKeyForActivePage the new page's preset key.
+// No LNB code change needed beyond those two registry touches.
+//
 // ── Ordering model ─────────────────────────────────────────────────
 // Flat list per section (scope × page_key). sort_order is a simple
 // integer; rows render sorted ASC. Drag reorder computes a midpoint
@@ -13,7 +24,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  WORKS_PAGES,
   TRASH_PAGE,
   resolveActivePage,
   resolvePageHrefForKey,
@@ -68,6 +78,19 @@ function writeSectionCollapseSet(s: Set<SectionKey>) {
 }
 
 // ── Atoms ───────────────────────────────────────────────────────────
+// Page header — the topmost LNB element identifying which workspace
+// page the user is looking at. Label is driven by pages.ts so any new
+// page (products, bundles, ...) gets a header with zero LNB changes.
+function PageHeader({ label }: { label: string | null }) {
+  return (
+    <div className="px-3 pt-3 pb-2">
+      <div className="text-[14px] font-semibold text-[#0F172A] truncate" title={label ?? undefined}>
+        {label ?? '\u00A0'}
+      </div>
+    </div>
+  )
+}
+
 function SectionHeader({
   label,
   open,
@@ -80,12 +103,12 @@ function SectionHeader({
   action?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between px-2 pt-3 pb-1.5">
+    <div className="flex items-center justify-between px-2 pt-2 pb-1">
       <button
         type="button"
         onClick={onToggle}
         aria-label={open ? `${label} 접기` : `${label} 펼치기`}
-        className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] hover:text-[#475569] px-1 rounded"
+        className="flex items-center gap-1.5 text-[12px] font-semibold text-[#475569] hover:text-[#0F172A] px-1.5 py-1 rounded-[4px] hover:bg-[#E2E8F0]"
       >
         <ChevronIcon open={open} />
         <span>{label}</span>
@@ -96,7 +119,7 @@ function SectionHeader({
 }
 
 function Divider() {
-  return <div className="mx-3 my-2 h-px bg-[#E2E8F0]" aria-hidden="true" />
+  return <div className="mx-3 my-1.5 h-px bg-[#E2E8F0]" aria-hidden="true" />
 }
 
 function StarIcon({ filled }: { filled: boolean }) {
@@ -254,7 +277,7 @@ function PresetRow({
       onDragEnd={onDragEnd}
       onContextMenu={onContextMenu}
       onDoubleClick={() => { if (ownedByMe && onRequestRename) onRequestRename() }}
-      className={`group relative flex items-center gap-1 rounded-[6px] px-1 py-1 ${
+      className={`group relative flex items-center gap-1.5 rounded-[6px] px-1.5 py-1.5 ${
         active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
       } ${isDragging ? 'opacity-40' : ''}`}
     >
@@ -311,7 +334,7 @@ function PresetRow({
         <button
           type="button"
           onClick={onApply}
-          className={`flex-1 min-w-0 text-left text-[12px] truncate ${
+          className={`flex-1 min-w-0 text-left text-[13px] leading-tight truncate ${
             active ? 'text-[#1E3A8A] font-semibold' : 'text-[#334155]'
           }`}
           title={preset.name}
@@ -720,7 +743,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                 type="button"
                 onClick={() => void openNewPresetModal()}
                 title={section === 'collaborative' ? '새 공유 뷰' : '새 뷰'}
-                className="text-[10px] text-[#94A3B8] hover:text-[#334155] px-1 rounded hover:bg-[#E2E8F0]"
+                className="text-[12px] text-[#64748B] hover:text-[#0F172A] px-1.5 py-0.5 rounded-[4px] hover:bg-[#E2E8F0]"
               >
                 + 뷰
               </button>
@@ -734,12 +757,12 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
             onDrop={e => { e.preventDefault(); executeDrop(section) }}
           >
             {!activePresetKey && (
-              <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              <div className="px-2 py-1.5 text-[12px] text-[#94A3B8]">
                 뷰를 지원하지 않는 페이지입니다
               </div>
             )}
             {activePresetKey && rows.length === 0 && (
-              <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              <div className="px-2 py-1.5 text-[12px] text-[#94A3B8]">
                 {section === 'collaborative' ? '공유된 뷰가 없습니다' : '저장된 뷰가 없습니다'}
               </div>
             )}
@@ -802,11 +825,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       data-worksy-lnb
       className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-hidden`}
     >
-      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-1 flex-shrink-0">
+      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-0 flex-shrink-0">
         <ToggleButton collapsed={collapsed} onToggle={onToggle} />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <PageHeader label={activePage?.label ?? null} />
+      <div className="mx-3 h-px bg-[#E2E8F0]" aria-hidden="true" />
+
+      <div className="flex-1 min-h-0 overflow-y-auto pt-1">
         {/* 즐겨찾기 */}
         <SectionHeader
           label="즐겨찾기"
@@ -816,7 +842,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         {favoritesOpen && (
           <div className="px-2 pb-1">
             {starredPresets.length === 0 && (
-              <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+              <div className="px-2 py-1.5 text-[12px] text-[#94A3B8]">
                 별표를 눌러 뷰를 고정하세요
               </div>
             )}
@@ -844,46 +870,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         <Divider />
 
         {renderPresetSection('private', 'private', '내 뷰', privatePresets)}
-
-        <Divider />
-
-        {/* 페이지 목록 */}
-        <div className="px-2 pt-3 pb-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-[#94A3B8] px-1">
-            페이지
-          </span>
-        </div>
-        <nav className="flex flex-col gap-0.5 px-2 pb-2">
-          {WORKS_PAGES.map(p => {
-            const isActive = p.key === activeKey
-            const isComingSoon = p.status === 'coming-soon'
-            if (isComingSoon) {
-              return (
-                <div
-                  key={p.key}
-                  title="준비중"
-                  className="flex items-center justify-between rounded-[6px] px-2 py-1.5 text-[13px] text-[#94A3B8] cursor-not-allowed"
-                >
-                  <span>{p.label}</span>
-                  <span className="text-[10px] rounded-[3px] bg-[#E2E8F0] px-1.5 py-0.5 text-[#64748B]">준비중</span>
-                </div>
-              )
-            }
-            return (
-              <Link
-                key={p.key}
-                href={p.href ?? '#'}
-                className={`rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
-                  isActive
-                    ? 'bg-[#2D7FF9] text-white font-medium'
-                    : 'text-[#334155] hover:bg-[#E2E8F0]'
-                }`}
-              >
-                {p.label}
-              </Link>
-            )
-          })}
-        </nav>
       </div>
 
       {/* 휴지통 — pinned bottom */}
@@ -892,7 +878,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         <nav className="flex flex-col px-2 pb-3">
           <Link
             href={TRASH_PAGE.href ?? '#'}
-            className={`flex items-center gap-2 rounded-[6px] px-2 py-1.5 text-[13px] transition-colors ${
+            className={`flex items-center gap-2 rounded-[6px] px-2 py-2 text-[13px] transition-colors ${
               activeKey === TRASH_PAGE.key
                 ? 'bg-[#2D7FF9] text-white font-medium'
                 : 'text-[#334155] hover:bg-[#E2E8F0]'
