@@ -9,8 +9,8 @@ function userKeyFromAuth(email: string | null | undefined): string {
 }
 
 // PATCH — partial update of a preset (rename, toggle star, or re-save
-// current filter/sort/view). user_key equality guards every write so
-// a client cannot touch another user's preset even with a guessed id.
+// current filter/sort/view). owner_user_key equality guards every write
+// so a client cannot touch another user's preset even with a guessed id.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireUser()
   if (auth.response) return auth.response
@@ -59,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .from('user_view_presets')
     .update(patch)
     .eq('id', id)
-    .eq('user_key', user_key)
+    .eq('owner_user_key', user_key)
     .select('id, page_key, name, filters, sort, view, starred, created_at, updated_at')
     .maybeSingle()
 
@@ -74,7 +74,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 // DELETE — remove a preset. Restricted to the owning user via the
-// user_key equality filter; hitting someone else's id 404s.
+// owner_user_key equality filter; hitting someone else's id no-ops.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const auth = await requireUser()
   if (auth.response) return auth.response
@@ -89,7 +89,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .from('user_view_presets')
     .delete()
     .eq('id', id)
-    .eq('user_key', user_key)
+    .eq('owner_user_key', user_key)
 
   if (error) {
     console.error('[user-view-presets DELETE] supabase error:', error.message)

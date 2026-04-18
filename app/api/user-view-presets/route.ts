@@ -24,10 +24,14 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const page_key = searchParams.get('page_key')
 
+  // owner_user_key is NOT NULL in the schema and is the canonical
+  // creator identity; user_key was added later as a convenience column.
+  // We guard on owner_user_key so rows without user_key are still
+  // reachable by their owner.
   let q = supabaseAdmin
     .from('user_view_presets')
     .select('id, page_key, name, filters, sort, view, starred, created_at, updated_at')
-    .eq('user_key', user_key)
+    .eq('owner_user_key', user_key)
     .order('starred', { ascending: false })
     .order('created_at', { ascending: true })
 
@@ -77,9 +81,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '이름은 80자 이내여야 합니다' }, { status: 400 })
   }
 
+  // scope + owner_user_key are NOT NULL in the schema. For the private
+  // MVP every preset is scoped to its creator, so scope='private' and
+  // owner_user_key == user_key. Keep user_key in sync for any legacy
+  // code paths that still read it.
   const { data, error } = await supabaseAdmin
     .from('user_view_presets')
     .insert({
+      scope: 'private',
+      owner_user_key: user_key,
       user_key,
       page_key,
       name,
