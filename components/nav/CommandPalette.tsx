@@ -144,8 +144,11 @@ export default function CommandPalette({ open, onClose }: Props) {
     if (entry.disabled) return
     if (entry.kind === 'preset') {
       onClose()
-      // applyPreset does a hard navigate/reload so the target grid picks
-      // up the freshly-written user_view_settings on mount.
+      // applyPreset fetches the latest preset state from DB (the
+      // `entry.preset` object here may be stale because PresetsContext
+      // doesn't refresh after grid-side updatePreset calls) and drives
+      // the mounted grid via applyRuntime, or bumps the remount
+      // version for cross-page applies.
       void applyPreset(entry.preset)
       return
     }

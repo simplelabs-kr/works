@@ -145,45 +145,62 @@ export async function deletePreset(id: string): Promise<boolean> {
   }
 }
 
-// Apply a preset to the grid + mark it active for its page. Does NOT
-// write into user_view_settings anymore — that was the bug producing
-// "whichever preset you applied last becomes the default view, and
-// hard refresh always shows it regardless of which preset is active".
+// Apply a preset to the grid + mark it active for its page.
 //
 // Flow:
-//   1. flush() any pending debounced save on the mounted grid. That save
-//      is aimed at the CURRENT active target (the preset we're about
-//      to switch away from, or user_view_settings), so flushing it
-//      persists the last in-flight edits to the correct row before we
-//      switch. The old code called cancelPending() here, which silently
-//      dropped those edits.
-//   2. Write the new preset's {filters, sort, view} into the in-session
-//      cache. A same-tab mount for this pageKey can now restore from
-//      the preset without any network trip.
-//   3. Set localStorage active-preset id so the next mount (including
-//      hard refresh) knows which row to load FROM. The LNB also mirrors
-//      this into PresetsContext so the highlight updates immediately.
-//   4. If a grid is mounted for this pageKey, drive it via applyRuntime
-//      — same-page applies skip the remount dance. Otherwise bump the
-//      remount version so a future mount on this page picks up the
-//      cached preset via loadEffectiveSettings.
+//   1. Await flush() on the mounted grid. Its write is aimed at the
+//      CURRENT active target (the preset we're about to switch away
+//      from, or the default row), so flushing first persists the last
+//      in-flight edits to the correct row before we swap LS active id.
+//      Must be AWAITED — otherwise its in-flight PATCH races with the
+//      listPresets GET below when the user clicks the already-active
+//      preset (edge case, but correctness matters).
+//   2. Fetch the LATEST preset rows from DB and use the row matching
+//      preset.id as the authoritative source. CRITICAL: the `preset`
+//      parameter comes from PresetsContext's list, which is fetched
+//      exactly once on provider mount and is NEVER refreshed after
+//      grid-side updatePreset calls. So `preset.view` / `preset.filters`
+//      / `preset.sort` reflect state from page-load time — stale the
+//      moment the user edits anything. This was the root cause of
+//      "View A → edit → View B → View A shows original widths": the
+//      DB was correct, but applyRuntime was being fed the frozen
+//      mount-time snapshot.
+//   3. Write the fresh state into the in-session cache + set the
+//      active-preset localStorage id.
+//   4. If a grid is mounted for this pageKey, drive it via applyRuntime.
+//      Otherwise bump the remount version so a future mount on this
+//      page picks up the cached preset via loadEffectiveSettings.
 //
 // Navigation is left to the caller so LNB can use Next.js soft nav.
 export async function applyPreset(preset: ViewPreset): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const viewCast = preset.view as any
-
-  // Flush any pending debounced save from the currently-mounted grid.
-  // Its write target is the CURRENT active preset (or the default row),
-  // not this new one — so flushing it persists the last edits to the
-  // correct row before we overwrite localStorage active id.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const entry = (() => { try { return (window as any).__worksGrid?.[preset.page_key] } catch { return null } })()
-  try { entry?.flush?.() } catch { /* registry shape mismatch */ }
 
+  // Step 1: persist outgoing preset's pending edits FIRST so the
+  // fetch below sees a fully consistent DB. flush is a no-op when
+  // nothing is pending.
+  try {
+    const flushResult = entry?.flush?.()
+    if (flushResult && typeof (flushResult as Promise<void>).then === 'function') {
+      await flushResult
+    }
+  } catch { /* registry shape mismatch — fall through */ }
+
+  // Step 2: fetch the latest state for this preset. This replaces
+  // trusting `preset.view` / `preset.filters` / `preset.sort` from
+  // the (stale) PresetsContext list.
+  let latest: ViewPreset = preset
+  try {
+    const fresh = await listPresets(preset.page_key)
+    const match = fresh.find(p => p.id === preset.id)
+    if (match) latest = match
+  } catch { /* fall back to the passed-in object on fetch failure */ }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const viewCast = latest.view as any
   const nextSettings: PersistedSettings = {
-    filters: preset.filters,
-    sort: preset.sort,
+    filters: latest.filters,
+    sort: latest.sort,
     view: viewCast,
   }
   writeCache(preset.page_key, nextSettings)

@@ -1570,7 +1570,10 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     const w = window as any
     const registry: Record<string, {
       getSnapshot: () => { filters: unknown; sort: unknown; view: PersistedView | null }
-      flush: () => void
+      // Returns a promise so applyPreset can await the outgoing preset's
+      // DB write before fetching the incoming preset's fresh state.
+      // Resolves immediately when there's nothing pending.
+      flush: () => Promise<void>
       cancelPending: () => void
       applyRuntime: (settings: PersistedSettings | null) => void
     }> = w.__worksGrid ?? (w.__worksGrid = {})
@@ -1584,16 +1587,18 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       // that didn't match the on-screen grid.
       getSnapshot: () => computeLiveSnapshot(),
       flush: () => {
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current)
-          saveTimerRef.current = null
-        }
+        // No-op when nothing is pending. Prevents applyPreset's awaited
+        // flush from adding an unnecessary network round-trip on every
+        // preset switch (the common case — the user wasn't mid-edit).
+        if (!saveTimerRef.current) return Promise.resolve()
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
         // Also read live — a flush fired from unmount/beforeunload must
         // persist the true current state. Routes to the active preset's
         // row or the default row based on activePresetIdRef at call
         // time, same as the debounced path.
         const snap = computeLiveSnapshot()
-        persistViewPatch(VIEW_PAGE_KEY, activePresetIdRef.current, {
+        return persistViewPatch(VIEW_PAGE_KEY, activePresetIdRef.current, {
           filters: snap.filters,
           sort: snap.sort,
           view: snap.view,
@@ -1638,11 +1643,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     registry[VIEW_PAGE_KEY] = entry
 
     const onBeforeUnload = () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current)
-        saveTimerRef.current = null
-        entry.flush()
-      }
+      // flush() internally checks saveTimerRef and no-ops if nothing
+      // is pending. Let it own the clearing so the short-circuit path
+      // (applyPreset's awaited flush) and this path both go through
+      // the same logic.
+      void entry.flush()
     }
     window.addEventListener('beforeunload', onBeforeUnload)
 
@@ -1654,9 +1659,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       // on Next.js soft nav — if the user resizes and navigates within the
       // 400ms debounce window, the write would otherwise be lost and the
       // next mount would restore stale widths.
-      if (saveTimerRef.current) {
-        entry.flush()
-      }
+      void entry.flush()
       if (registry[VIEW_PAGE_KEY] === entry) delete registry[VIEW_PAGE_KEY]
     }
   }, [VIEW_PAGE_KEY])
