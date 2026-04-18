@@ -1329,16 +1329,15 @@ export default function WorksGrid() {
     // and HOT's internal Overlays sync keeps top.scrollLeft locked to
     // master.scrollLeft at the exact pixel — no drift, no clamp needed.
     //
-    // This listener's only job is to reflect the master's scroll state
-    // into our visual adjuncts:
-    //   - custom horizontal scrollbar thumb (read-only mirror)
-    //   - custom vertical scrollbar thumb (read-only mirror)
-    //   - summary bar translateX
-    //   - is-scrolled-x class that drives the frozen-columns shadow
-    //   - fade-in timer for both overlay scrollbars
+    // Its only job is to reflect the master's scroll state into visual
+    // adjuncts (custom bars, summary translate, frozen-columns shadow).
     //
-    // Equality guards on each write prevent a write→scroll→write feedback
-    // loop with the custom bars' own onScroll handlers.
+    // Perf: the event can fire much faster than the display refresh rate
+    // (every momentum-scroll input tick on macOS/iOS trackpads). We
+    // coalesce all mirroring work into a single rAF callback so we do at
+    // most one write-batch per frame, and all DOM reads in the listener
+    // itself — keeping reads and writes in separate "phases" to avoid
+    // layout thrash.
     setTimeout(() => {
       if (!hotRef.current) return
       const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
@@ -1346,21 +1345,16 @@ export default function WorksGrid() {
       let lastX = -1
       let lastY = -1
       let lastShadowOn: boolean | null = null
-      const showBars = () => {
-        if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '1'
-        if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '1'
-        if (scrollFadeTimerRef.current) clearTimeout(scrollFadeTimerRef.current)
-        scrollFadeTimerRef.current = setTimeout(() => {
-          if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '0'
-          if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '0'
-        }, 1000)
-      }
-      masterEl.addEventListener('scroll', () => {
-        const x = masterEl.scrollLeft
-        const y = masterEl.scrollTop
+      let lastOpacityOn = false
+      let rafId = 0
+      let pendingX = 0
+      let pendingY = 0
+      const flush = () => {
+        rafId = 0
+        const x = pendingX
+        const y = pendingY
         const xChanged = x !== lastX
         const yChanged = y !== lastY
-        if (!xChanged && !yChanged) return
         if (xChanged) {
           lastX = x
           // Frozen-column shadow — only toggle when state flips.
@@ -1371,7 +1365,10 @@ export default function WorksGrid() {
             lastShadowOn = shadowOn
           }
           if (summaryInnerRef.current) {
-            summaryInnerRef.current.style.transform = `translateX(-${x}px)`
+            // translate3d (not translateX) guarantees the element is
+            // promoted to its own compositor layer — the transform
+            // animates on the GPU instead of re-painting on every frame.
+            summaryInnerRef.current.style.transform = `translate3d(${-x}px, 0, 0)`
           }
           // Mirror into custom horizontal bar (guarded against feedback).
           if (!syncingCustomScrollRef.current && customScrollbarRef.current
@@ -1390,7 +1387,28 @@ export default function WorksGrid() {
             syncingCustomVScrollRef.current = false
           }
         }
-        showBars()
+        // Fade bars in; schedule fade-out. Guard the opacity write so we
+        // don't invalidate the compositor on every frame while already lit.
+        if (!lastOpacityOn) {
+          if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '1'
+          if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '1'
+          lastOpacityOn = true
+        }
+        if (scrollFadeTimerRef.current) clearTimeout(scrollFadeTimerRef.current)
+        scrollFadeTimerRef.current = setTimeout(() => {
+          if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '0'
+          if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '0'
+          lastOpacityOn = false
+        }, 1000)
+      }
+      masterEl.addEventListener('scroll', () => {
+        // Reads happen here (synchronous with the event). All writes are
+        // batched into the next animation frame, so repeated scroll ticks
+        // inside one frame coalesce into exactly one flush.
+        pendingX = masterEl.scrollLeft
+        pendingY = masterEl.scrollTop
+        if (rafId) return
+        rafId = requestAnimationFrame(flush)
       }, { passive: true })
     }, 100)
 

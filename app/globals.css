@@ -514,6 +514,7 @@ body {
 .handsontable.ht_master .wtHolder {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* legacy Edge */
+  will-change: scroll-position;
 }
 .handsontable .wtHolder::-webkit-scrollbar-track {
   background: transparent;
