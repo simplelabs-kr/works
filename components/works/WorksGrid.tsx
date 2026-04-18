@@ -2090,55 +2090,68 @@ export default function WorksGrid() {
     // 2) Column order. No. col pinned at visual 0; new (unsaved) columns
     //    fall in after the saved set so a schema addition doesn't lose data.
     //
-    //    We write the physical-index sequence directly via
-    //    columnIndexMapper.setIndexesSequence — that is precisely what
-    //    manualColumnMove.moveColumns ends up calling internally, but the
-    //    plugin path went through beforeColumnMove / isColumnOrderChanged /
-    //    afterColumnMove and was flaky for bulk restore (the other six
-    //    settings restored fine via the same post-loadData effect; only
-    //    order via moveColumns silently produced identity). Writing the
-    //    sequence straight to the IndexMapper is deterministic and cheap.
-    const newOrder: number[] = [0]
+    //    Approach: iteratively call manualColumnMove.moveColumn(fromVi, toVi)
+    //    to walk each saved physical column into its target visual slot.
+    //    This is exactly the same API the header-drag path (handleReorderColumn)
+    //    uses, which is known-good. Previously we wrote the physical-index
+    //    sequence directly via columnIndexMapper.setIndexesSequence, but that
+    //    silently produced identity in the post-loadData restore path (likely
+    //    because loadData's index-mapper reset races the write). The plugin's
+    //    moveColumn goes through beforeColumnMove / afterColumnMove and plays
+    //    well with the rest of HOT's column pipeline.
+    //
+    //    targetPhysOrder[visualIdx] = physicalIdx we want at that visual slot.
+    const targetPhysOrder: number[] = [0]
     const seen = new Set<number>([0])
     for (const prop of view.columnOrder) {
       const pi = PROP_TO_COL[prop]
       if (typeof pi === 'number' && pi > 0 && !seen.has(pi)) {
-        newOrder.push(pi); seen.add(pi)
+        targetPhysOrder.push(pi); seen.add(pi)
       }
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (let pi = 1; pi < (COLUMNS as any[]).length; pi++) {
-      if (!seen.has(pi)) { newOrder.push(pi); seen.add(pi) }
+      if (!seen.has(pi)) { targetPhysOrder.push(pi); seen.add(pi) }
     }
-    // Guards: setIndexesSequence cascades through a 'change' hook that can
-    // reach selection.commit() and (in some transient states, e.g. StrictMode
-    // unmount/remount or before HOT finishes its first render) that path
-    // touches `instance.view` — which can be null and throws
-    // "TypeError: null is not an object (evaluating 'instance.view')".
-    // So: require the IndexMapper and a live `view` before writing, wrap
-    // the write in try/catch so a late failure doesn't break steps 3/4
+    // Guards: moveColumn eventually reaches selection.commit(), and in some
+    // transient states (StrictMode unmount/remount, or before HOT finishes
+    // its first render) that path touches `instance.view` — which can be
+    // null. So: require the plugin and a live `view` before writing, wrap
+    // the loop in try/catch so a late failure doesn't break steps 3/4
     // (hidden / freeze) below, and if HOT isn't ready yet defer the whole
     // order-restore to the next tick.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cim = (hot as any).columnIndexMapper
+    const mcm = hot.getPlugin('manualColumnMove') as any
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hotReady = !!(hot as any).view
-    if (cim && newOrder.length > 0) {
+    if (mcm && targetPhysOrder.length > 0) {
       const applyOrder = () => {
         const hotNow = hotRef.current
+        if (!hotNow) return
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cimNow = (hotNow as any)?.columnIndexMapper
+        const mcmNow = hotNow.getPlugin('manualColumnMove') as any
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (!hotNow || !cimNow || !(hotNow as any).view) return
+        if (!mcmNow || !(hotNow as any).view) return
         try {
-          cimNow.setIndexesSequence(newOrder)
-          // setIndexesSequence doesn't fire afterColumnMove, so bump the
-          // version manually to keep managedColumns (column manager
-          // dropdown) in sync.
-          setColumnOrderVersion(v => v + 1)
-          hotNow.render()
+          // For each target visual slot, check if the column currently there
+          // is the one we want. If not, look up the current visual index of
+          // the desired physical column and move it into place. Each
+          // moveColumn renumbers subsequent visual indices, so we recompute
+          // currentVi every iteration via toVisualColumn(physIdx).
+          let moved = false
+          for (let targetVi = 1; targetVi < targetPhysOrder.length; targetVi++) {
+            const targetPi = targetPhysOrder[targetVi]
+            const currentVi = hotNow.toVisualColumn(targetPi)
+            if (currentVi >= 0 && currentVi !== targetVi) {
+              mcmNow.moveColumn(currentVi, targetVi)
+              moved = true
+            }
+          }
+          if (moved) hotNow.render()
+          // afterColumnMove hook already bumps columnOrderVersion; no manual
+          // bump needed here.
         } catch (err) {
-          console.warn('[view-restore] setIndexesSequence failed', err)
+          console.warn('[view-restore] moveColumn failed', err)
         }
       }
       if (hotReady) applyOrder()
