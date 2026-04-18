@@ -88,4 +88,27 @@ export type PageConfig = {
   // recomputed; returning the same reference signals "no change" and lets
   // DataGrid keep React state stable when the page has no such fields.
   recomputeDerivedOnHolidayChange?: (row: Row, holidays: Set<string>) => Row
+
+  // Opt-in "+ 추가" (add row) support.
+  //
+  // When `enabled`, DataGrid renders a "+ 추가" toolbar button and binds
+  // Shift+Enter to invoke the same flow. The button POSTs to
+  // `${apiBase}/create` which is expected to insert a bare row (only `id`
+  // NOT NULL on the underlying table) and return `{ id }`. DataGrid then
+  // prepends an optimistic placeholder Row (built by `createEmptyRow(id)`)
+  // and scrolls/focuses to it so the user can start editing immediately.
+  //
+  // The placeholder lives in client state until the server-side derived
+  // row materializes (for works: flat_order_details only populates once
+  // order_id + product_id are filled in via edits). On the next fetch-
+  // replace DataGrid dedupes by id — optimistic rows whose id now appears
+  // in the server response are removed, others stay pinned at the top.
+  //
+  // `createEmptyRow` is required when enabled because the Row shape is
+  // page-specific and transformRow expects a full Item (which the bare
+  // INSERT does not produce).
+  addRow?: {
+    enabled: boolean
+    createEmptyRow: (id: string) => Row
+  }
 }
