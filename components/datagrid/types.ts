@@ -93,32 +93,8 @@ export type PageConfig = {
   //   - fetch endpoint receives `trashed_only: true`
   //   - every cell is readOnly (no editor, no checkbox toggle)
   //   - the bottom selection bar swaps 삭제 for 복구 / 영구삭제
-  //   - "+ 추가" is suppressed even if addRow.enabled is true
   // Pages wanting this flip it on a variant PageConfig (e.g. works →
   // worksTrashConfig) so the trash page reuses the same column catalog,
   // view persistence, and fetch plumbing as the primary grid.
   trashedMode?: boolean
-
-  // Opt-in "+ 추가" (add row) support.
-  //
-  // When `enabled`, DataGrid renders a "+ 추가" toolbar button and binds
-  // Shift+Enter to invoke the same flow. The button POSTs to
-  // `${apiBase}/create` which is expected to insert a bare row (only `id`
-  // NOT NULL on the underlying table) and return `{ id }`. DataGrid then
-  // prepends an optimistic placeholder Row (built by `createEmptyRow(id)`)
-  // and scrolls/focuses to it so the user can start editing immediately.
-  //
-  // The placeholder lives in client state until the server-side derived
-  // row materializes (for works: flat_order_details only populates once
-  // order_id + product_id are filled in via edits). On the next fetch-
-  // replace DataGrid dedupes by id — optimistic rows whose id now appears
-  // in the server response are removed, others stay pinned at the top.
-  //
-  // `createEmptyRow` is required when enabled because the Row shape is
-  // page-specific and transformRow expects a full Item (which the bare
-  // INSERT does not produce).
-  addRow?: {
-    enabled: boolean
-    createEmptyRow: (id: string) => Row
-  }
 }

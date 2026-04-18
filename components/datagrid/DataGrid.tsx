@@ -93,12 +93,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     mergeRealtimeUpdate,
     recomputeDerivedAfterEdit,
     recomputeDerivedOnHolidayChange,
-    addRow,
     trashedMode,
   } = pageConfig
-  // "+ 추가" is always suppressed in the trash view — you can't create
-  // rows into a soft-deleted bucket.
-  const addRowEnabled = !!addRow?.enabled && !trashedMode
 
   // Prop → column index cache. Derived from pageConfig.columns; recomputes
   // only when the catalog itself changes. Hot path — HOT's propToCol() does
@@ -125,15 +121,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const holidaySetRef = useRef<Set<string>>(new Set())
   const checkedRowsRef = useRef<Set<string>>(new Set())
   const lastCheckedRowRef = useRef<number | null>(null)
-
-  // Optimistic "+ 추가" rows. Tracks ids that were INSERTed client-side but
-  // haven't yet appeared in a server fetch response (flat_order_details
-  // only materializes after order_id/product_id are filled in). We pin
-  // these rows at the top of the grid; each fetch-replace dedupes by id —
-  // optimistic ids that now show up in the server response are removed
-  // from this set (server-side data takes over), the rest stay pinned.
-  const optimisticRowIdsRef = useRef<Set<string>>(new Set())
-  const addingRowRef = useRef(false)
 
   // Custom undo/redo stacks (HOT native undo resets whenever loadData() runs).
   // Each entry is a batch — all cell changes from a single afterChange invocation
@@ -519,23 +506,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         if (shouldAppend) {
           setRows(prev => [...prev, ...mapped])
         } else {
-          // Dedupe optimistic "+ 추가" rows against server response. Ids
-          // that now appear server-side have materialized (e.g. works:
-          // flat_order_details picked them up after order_id/product_id
-          // were set) — drop them from the optimistic set so the server
-          // copy wins. Ids still missing stay pinned at the top.
-          if (optimisticRowIdsRef.current.size > 0) {
-            const serverIds = new Set<string>(mapped.map((r: Row) => r.id))
-            for (const id of Array.from(optimisticRowIdsRef.current)) {
-              if (serverIds.has(id)) optimisticRowIdsRef.current.delete(id)
-            }
-            const pinnedRows = rowsRef.current.filter(r =>
-              optimisticRowIdsRef.current.has(r.id) && !serverIds.has(r.id)
-            )
-            setRows([...pinnedRows, ...mapped])
-          } else {
-            setRows(mapped)
-          }
+          setRows(mapped)
           if (fc != null) setFilterCount(Number(fc))
           if (sc != null) setSearchCount(Number(sc))
           else setSearchCount(null)
@@ -2075,96 +2046,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     return () => { void supabase.removeChannel(channel) }
   }, [realtimeChannel, realtimeTable, mergeRealtimeUpdate])
 
-  // First-editable-column index. The optimistic "+ 추가" row is empty —
-  // auto-focusing the first cell the user can actually edit avoids an
-  // extra click before they can start filling it out. Computed from the
-  // page's column catalog so it stays correct as columns are reordered
-  // or new pages add add-row support.
-  const firstEditableColIdx = useMemo(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const cols = COLUMNS as any[]
-    for (let i = 0; i < cols.length; i++) {
-      const c = cols[i]
-      if (!c || c.readOnly) continue
-      if (typeof c.data !== 'string') continue
-      if (!EDITABLE_FIELD_MAP[c.data]) continue
-      if (c.editor === false) continue // checkbox-only cells don't open an editor
-      return i
-    }
-    return -1
-  }, [COLUMNS, EDITABLE_FIELD_MAP])
-
-  // Add-row flow: POST bare row → get id → prepend optimistic placeholder →
-  // scroll + focus so the user can start editing. Subsequent edits flow
-  // through the normal afterChange PATCH pipeline; the placeholder stays
-  // pinned at the top until the derived row materializes server-side (at
-  // which point the fetch-replace dedupe removes it from the optimistic
-  // set and keeps only the server copy).
-  const handleAddRow = useCallback(async () => {
-    if (!addRowEnabled || !addRow) return
-    if (addingRowRef.current) return
-    addingRowRef.current = true
-    try {
-      const res = await fetch(`${apiBase}/create`, { method: 'POST' })
-      if (!res.ok) {
-        showToast({ message: '행 추가에 실패했습니다', type: 'error' }, 3000)
-        return
-      }
-      const body = (await res.json()) as { id?: string }
-      const id = body?.id
-      if (!id) {
-        showToast({ message: '행 추가에 실패했습니다', type: 'error' }, 3000)
-        return
-      }
-      const placeholder = addRow.createEmptyRow(id)
-      optimisticRowIdsRef.current.add(id)
-      setRows(prev => [placeholder, ...prev])
-      dataLoaded.current = true
-      // After HOT consumes the new row via loadData (rows effect),
-      // scroll the top into view and drop focus on the first editable cell.
-      // One macrotask is enough — loadData runs synchronously in that effect.
-      setTimeout(() => {
-        const hot = hotRef.current
-        if (!hot) return
-        try {
-          hot.scrollViewportTo({ row: 0, col: 0, verticalSnap: 'top' })
-        } catch {
-          // older HOT signature fallback
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(hot as any).scrollViewportTo(0, 0)
-        }
-        const col = firstEditableColIdx >= 0 ? firstEditableColIdx : 0
-        hot.selectCell(0, col)
-      }, 0)
-    } catch {
-      showToast({ message: '행 추가에 실패했습니다', type: 'error' }, 3000)
-    } finally {
-      addingRowRef.current = false
-    }
-  }, [addRow, addRowEnabled, apiBase, firstEditableColIdx, showToast])
-
-  // Shift+Enter anywhere outside an open editor / input triggers add-row.
-  useEffect(() => {
-    if (!addRowEnabled) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || !e.shiftKey) return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      const target = e.target as HTMLElement | null
-      if (target) {
-        const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-        if (target.isContentEditable) return
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const editor = hotRef.current?.getActiveEditor() as any
-      if (editor?.isOpened?.()) return
-      e.preventDefault()
-      void handleAddRow()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [addRowEnabled, handleAddRow])
-
   // Handle row deletion
   const handleDeleteSelected = async () => {
     const ids = Array.from(selectedRowIds)
@@ -2184,11 +2065,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
 
       // Remove deleted rows from UI
       setRows(prev => prev.filter(r => !ids.includes(r.id)))
-      // Optimistic-row bookkeeping: if any of the deleted ids were still
-      // optimistic (never materialized in flat_order_details), drop them
-      // from the pinned-ids set so a subsequent fetch-replace doesn't
-      // resurrect them from rowsRef.
-      for (const id of ids) optimisticRowIdsRef.current.delete(id)
 
       // Clear selection
       checkedRowsRef.current.clear()
@@ -2313,19 +2189,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     <div className="flex flex-col h-full">
       {/* Top bar: (좌) 필터 / 검색 / 정렬  (우) count */}
       <div className="flex-shrink-0 flex items-center gap-2 border-b border-[#E2E8F0] bg-white px-5 py-2">
-        {/* Add row (opt-in per page, suppressed in trash view) */}
-        {addRowEnabled && (
-          <button
-            type="button"
-            onClick={() => { void handleAddRow() }}
-            title="행 추가 (Shift+Enter)"
-            className="h-[28px] rounded-[4px] bg-[#2D7FF9] px-[10px] text-[12px] font-medium text-white hover:bg-[#1E6FE0] transition-colors flex items-center gap-1 flex-shrink-0"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
-            추가
-          </button>
-        )}
-
         {/* Filter button + modal */}
         <div className="relative flex-shrink-0">
           <button

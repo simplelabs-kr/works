@@ -331,62 +331,6 @@ function worksRecomputeDerivedOnHolidayChange(row: Row, holidays: Set<string>): 
   return { ...row, 출고예정일: newShip }
 }
 
-// ── Empty-row factory for "+ 추가" ───────────────────────────────────────────
-//
-// Consumed by DataGrid when a bare order_items row is INSERTed server-side.
-// flat_order_details won't populate until order_id/product_id are filled
-// in, so the client renders this placeholder until the derived row
-// materializes. Matches the Row shape field-for-field so HOT renders
-// cleanly without optional-chaining gymnastics in renderers.
-function worksCreateEmptyRow(id: string): Row {
-  return {
-    id,
-    updated_at: null,
-    고유_번호: '',
-    제품명: '',
-    제품명_코드: '',
-    metals: { name: '', purity: null },
-    발주일: '',
-    생산시작일: '',
-    제작_소요일: null,
-    데드라인: '',
-    출고예정일: '-',
-    시세_g당: '',
-    소재비: '',
-    발주_수량: null,
-    수량: null,
-    호수: null,
-    고객명: '',
-    디자이너_노트: '',
-    중량: null,
-    검수: false,
-    허용_중량_범위: '',
-    중량_검토: '',
-    기타_옵션: '',
-    각인_내용: '',
-    각인_폰트: '',
-    기본_공임: null,
-    공임_조정액: null,
-    확정_공임: null,
-    번들_명칭: '',
-    원부자재: '',
-    발주_현황: '',
-    작업_위치: '',
-    검수_유의: '',
-    도금_색상: '',
-    사출_방식: '',
-    가다번호: null,
-    가다_위치: null,
-    주물_후_수량: null,
-    포장: false,
-    순금_중량: '',
-    rp_출력_시작: false,
-    왁스_파트_전달: false,
-    images: [],
-    reference_files: [],
-  }
-}
-
 // ── PageConfig factory ───────────────────────────────────────────────────────
 
 // The single object the works page passes into DataGrid. Adding a new page
@@ -405,10 +349,6 @@ export const worksPageConfig: PageConfig = {
   mergeRealtimeUpdate: worksMergeRealtimeUpdate,
   recomputeDerivedAfterEdit: worksRecomputeDerivedAfterEdit,
   recomputeDerivedOnHolidayChange: worksRecomputeDerivedOnHolidayChange,
-  addRow: {
-    enabled: true,
-    createEmptyRow: worksCreateEmptyRow,
-  },
 }
 
 // Trash variant — same columns, same fetch endpoint, but switched into
@@ -420,9 +360,6 @@ export const worksTrashPageConfig: PageConfig = {
   ...worksPageConfig,
   pageKey: `${VIEW_PAGE_KEY}-trash`,
   trashedMode: true,
-  // No editable fields — the map is informational elsewhere (e.g. to
-  // drive the add-row focus target), but trashedMode forces every cell
-  // readOnly regardless.
+  // No editable fields — trashedMode forces every cell readOnly regardless.
   editableFields: {},
-  addRow: undefined,
 }
