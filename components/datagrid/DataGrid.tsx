@@ -1239,15 +1239,31 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     // select 컬럼: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
     // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
     let selectAlreadySelected = false
-    hotRef.current.addHook('beforeOnCellMouseDown', (e: MouseEvent, coords: { row: number; col: number }) => {
-      // Group-header row click → toggle collapse and stop all further
-      // HOT handling (no selection, no edit, no checkbox toggle). We
-      // can't cancel HOT's own mouse pipeline from inside a hook, so
-      // we at least prevent the default DOM event and rely on the
-      // state-driven re-render to update the caret/layout.
+    hotRef.current.addHook('beforeOnCellMouseDown', (
+      e: MouseEvent,
+      coords: { row: number; col: number },
+      _td: HTMLTableCellElement,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      controller: any,
+    ) => {
+      // Group-header row click → toggle collapse. Cancel HOT's mouse
+      // pipeline so the header doesn't pick up a cell-selection border
+      // (group rows are not data and must never look "selected"):
+      //   - controller.row/column/cell = true is HOT 14's documented
+      //     cancellation mechanism for this hook (prevents the default
+      //     selection + focus paths).
+      //   - deselectCell() + unlisten() + belt-and-braces for cases
+      //     where HOT has already drawn a prior selection; deselect
+      //     clears its borders, preventDefault stops focus stealing.
       const displayData = displayRowsRef.current[coords.row]
       if (isGroupHeader(displayData)) {
         toggleCollapsedGroupRef.current(displayData.__groupKey)
+        if (controller && typeof controller === 'object') {
+          controller.row = true
+          controller.column = true
+          controller.cell = true
+        }
+        hotRef.current?.deselectCell()
         e.preventDefault?.()
         e.stopPropagation?.()
         selectAlreadySelected = false
@@ -2578,7 +2594,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
               title="그룹"
               className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
             >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.5h10M3.5 7h9M5 10.5h7" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2.5h10M4.5 5.5h7.5M4.5 8.5h7.5M4.5 11.5h7.5M3 4v8" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
               그룹
               {groupByColumn && (
                 <span className="text-[#2D7FF9]">
