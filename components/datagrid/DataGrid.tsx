@@ -65,6 +65,26 @@ const ROW_THUMB_URL_W: Record<RowHeight, number> = {
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
 
+// Synthetic row injected into HOT's data array to act as a group-by
+// section header. Distinguished from real Row objects by `__group: true`
+// — every place that reads HOT's visual-row idx must guard against this
+// marker before treating the entry as a real data row. Group headers are
+// readOnly/non-editable and clicking them toggles the group's collapse
+// state.
+type GroupHeader = {
+  id: string
+  __group: true
+  __groupKey: string
+  __groupColumn: string
+  __groupCount: number
+  __groupCollapsed: boolean
+}
+type DisplayRow = Row | GroupHeader
+
+function isGroupHeader(d: DisplayRow | undefined): d is GroupHeader {
+  return !!d && (d as GroupHeader).__group === true
+}
+
 // Column definitions, select options, editable-field map, renderers,
 // getFieldTypeIcon, and related types all live in features/works now —
 // imported above. This file holds DataGrid/HOT wiring only.
@@ -194,6 +214,106 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
 
   const [rows, setRows] = useState<Row[]>([])
   const [holidaySet, setHolidaySet] = useState<Set<string>>(new Set())
+
+  // ── Group-by state ──────────────────────────────────────────────
+  // `groupByColumn`: active grouping column's data prop, or null when
+  // grouping is off. Persisted in PersistedView so it travels with
+  // widths/order/filters across reloads and presets.
+  //
+  // `collapsedGroups`: per-page set of collapsed group keys. Kept in
+  // localStorage (not DB) because collapse state is transient UI
+  // preference scoped to the current tab — saving it to the shared
+  // user_view_settings row would thrash the preset on every expand.
+  const COLLAPSED_LS_KEY = `datagrid:collapsed:${VIEW_PAGE_KEY}`
+  const [groupByColumn, setGroupByColumn] = useState<string | null>(
+    pageConfig.groupBy?.defaultColumn ?? null
+  )
+  const groupByColumnRef = useRef<string | null>(groupByColumn)
+  useEffect(() => { groupByColumnRef.current = groupByColumn }, [groupByColumn])
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    const col = pageConfig.groupBy?.defaultColumn
+    if (!col) return new Set()
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(COLLAPSED_LS_KEY) ?? '{}')
+      const arr = raw?.[col]
+      return Array.isArray(arr) ? new Set(arr.filter((x: unknown): x is string => typeof x === 'string')) : new Set()
+    } catch {
+      return new Set()
+    }
+  })
+
+  // Writes `collapsedGroups` to localStorage keyed by the active
+  // grouping column. The storage shape is `{ [columnProp]: string[] }`
+  // so switching group-by columns keeps each column's last collapse
+  // state independently.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const col = groupByColumn
+    if (!col) return
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(COLLAPSED_LS_KEY) ?? '{}')
+      const next = { ...(raw && typeof raw === 'object' ? raw : {}), [col]: Array.from(collapsedGroups) }
+      window.localStorage.setItem(COLLAPSED_LS_KEY, JSON.stringify(next))
+    } catch { /* ignore */ }
+  }, [collapsedGroups, groupByColumn, COLLAPSED_LS_KEY])
+
+  // Ref-backed toggle so HOT hooks registered at init-time can call
+  // it without capturing stale closures.
+  const toggleCollapsedGroupRef = useRef<(key: string) => void>(() => {})
+  useEffect(() => {
+    toggleCollapsedGroupRef.current = (key: string) => {
+      setCollapsedGroups(prev => {
+        const next = new Set(prev)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+    }
+  }, [])
+
+  const [showGroupMenu, setShowGroupMenu] = useState(false)
+  const groupMenuRef = useRef<HTMLDivElement>(null)
+
+  // What HOT actually renders: raw rows plus synthetic group-header
+  // rows interleaved between groups. When grouping is off this is
+  // identical to `rows` (same array reference).
+  const displayRows = useMemo<DisplayRow[]>(() => {
+    if (!groupByColumn) return rows
+    const groups = new Map<string, Row[]>()
+    for (const r of rows) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const raw = (r as any)[groupByColumn]
+      const key = raw == null || raw === '' ? '' : String(raw)
+      let bucket = groups.get(key)
+      if (!bucket) { bucket = []; groups.set(key, bucket) }
+      bucket.push(r)
+    }
+    // Sort keys alphabetically for stable presentation. Booleans sort
+    // as "false" < "true" so checkbox groups render false-first.
+    const sortedKeys = Array.from(groups.keys()).sort()
+    const out: DisplayRow[] = []
+    for (const key of sortedKeys) {
+      const items = groups.get(key)!
+      const collapsed = collapsedGroups.has(key)
+      out.push({
+        id: `__group_${groupByColumn}_${key}`,
+        __group: true,
+        __groupKey: key,
+        __groupColumn: groupByColumn,
+        __groupCount: items.length,
+        __groupCollapsed: collapsed,
+      })
+      if (!collapsed) out.push(...items)
+    }
+    return out
+  }, [rows, groupByColumn, collapsedGroups])
+
+  // Stable ref mirror for HOT hooks (cells callback, afterChange, etc.)
+  // which need synchronous access to the current display order.
+  const displayRowsRef = useRef<DisplayRow[]>([])
+  useEffect(() => { displayRowsRef.current = displayRows }, [displayRows])
   // FilterModal's selectOptions prop. Initial value mirrors the hardcoded
   // fallback in worksRenderers; replaced on mount by the /api/field-options
   // response so the filter dropdowns stay aligned with the grid's own
@@ -234,8 +354,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   // assignment is equivalent and avoids per-render allocation.
   useEffect(() => {
     rendererBridge.onAttachmentUpload = async (rowIdx, files) => {
-      const rowData = rowsRef.current[rowIdx]
-      if (!rowData?.id) return
+      // rowIdx is HOT visual idx (from the attachment renderer), which
+      // includes group-header rows — translate via displayRowsRef.
+      const dRow = displayRowsRef.current[rowIdx]
+      if (!dRow || isGroupHeader(dRow)) return
+      const rowData = dRow
+      if (!rowData.id) return
       const existing = rowData.reference_files ?? []
       const uploaded: AttachmentItem[] = []
       const failed: string[] = []
@@ -269,7 +393,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       if (uploaded.length === 0) return
       const newFiles = [...existing, ...uploaded]
       const previousRows = rowsRef.current
-      setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+      setRows(prev => prev.map(r => r.id === rowData.id ? { ...r, reference_files: newFiles } : r))
       const res = await fetch(`${apiBase}/${rowData.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -282,12 +406,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     }
 
     rendererBridge.onAttachmentDelete = async (rowIdx, fileIdx) => {
-      const rowData = rowsRef.current[rowIdx]
-      if (!rowData?.id) return
+      const dRow = displayRowsRef.current[rowIdx]
+      if (!dRow || isGroupHeader(dRow)) return
+      const rowData = dRow
+      if (!rowData.id) return
       const existing = rowData.reference_files ?? []
       const newFiles = existing.filter((_, i) => i !== fileIdx)
       const previousRows = rowsRef.current
-      setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, reference_files: newFiles } : r))
+      setRows(prev => prev.map(r => r.id === rowData.id ? { ...r, reference_files: newFiles } : r))
       const res = await fetch(`${apiBase}/${rowData.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -574,6 +700,56 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     return () => el.removeEventListener('wheel', onWheel, { capture: true })
   }, [])
 
+  // Group-header cell renderer. Paints the whole row with a light grey
+  // background (via className) + writes the caret / value / count label
+  // into col 0. Reads displayRowsRef at call time so collapse-state
+  // changes repaint immediately on the next HOT render.
+  //
+  // The label uses `position: absolute` so it can visually span past
+  // col 0's right edge — with group rows being readOnly and all other
+  // cols rendering empty, the overflow reads as a single-row "section
+  // header" even though HOT still owns each cell individually.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const groupHeaderRenderer = useMemo<any>(() => {
+    return function renderGroupHeader(
+      _hot: Handsontable,
+      td: HTMLTableCellElement,
+      row: number,
+      col: number,
+    ) {
+      const d = displayRowsRef.current[row]
+      if (!isGroupHeader(d)) return
+      td.innerHTML = ''
+      td.style.background = '#F3F4F6'
+      td.style.borderRight = '0'
+      td.style.cursor = 'pointer'
+      if (col !== 0) return
+      td.style.position = 'relative'
+      td.style.overflow = 'visible'
+      const wrap = document.createElement('div')
+      wrap.style.cssText = 'position:absolute;top:0;left:0;width:2000px;height:100%;display:flex;align-items:center;padding:0 12px;font-size:13px;color:#111827;pointer-events:none;z-index:2;'
+      const caret = document.createElement('span')
+      caret.textContent = d.__groupCollapsed ? '▶' : '▼'
+      caret.style.cssText = 'margin-right:8px;font-size:10px;color:#6B7280;'
+      const label = document.createElement('span')
+      label.textContent = d.__groupKey === ''
+        ? '(비어 있음)'
+        : d.__groupKey === 'true'
+          ? '✓ 체크됨'
+          : d.__groupKey === 'false'
+            ? '체크 안 됨'
+            : d.__groupKey
+      label.style.cssText = 'font-weight:600;'
+      const count = document.createElement('span')
+      count.textContent = `${d.__groupCount}건`
+      count.style.cssText = 'margin-left:8px;color:#6B7280;font-weight:400;'
+      wrap.appendChild(caret)
+      wrap.appendChild(label)
+      wrap.appendChild(count)
+      td.appendChild(wrap)
+    }
+  }, [])
+
   // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
@@ -611,11 +787,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       enterBeginsEditing: true,
       enterMoves: { row: 1, col: 0 },
       tabMoves: { row: 0, col: 1 },
-      // Trash view is read-only across every cell. Override per-column
-      // `readOnly: false` (e.g. works 데드라인, 중량) and disable their
-      // editors so checkbox/select renderers also stop responding to
-      // toggles. Non-trash pages leave cell meta untouched.
-      cells: trashedMode ? () => ({ readOnly: true, editor: false }) : undefined,
+      // Per-cell meta override. Two responsibilities merged here:
+      //   1. Trash view forces every cell readOnly (editor: false so
+      //      checkbox/select renderers stop responding to clicks).
+      //   2. Group-header rows get readOnly + a custom renderer that
+      //      paints the group label in col 0. We check the HOT visual
+      //      row against displayRowsRef at call time, so adding or
+      //      removing grouping is a pure React-state change with no
+      //      HOT re-init needed.
+      cells: (row: number) => {
+        const d = displayRowsRef.current[row]
+        if (d && isGroupHeader(d)) {
+          return { readOnly: true, editor: false, renderer: groupHeaderRenderer, className: 'group-header-row' }
+        }
+        if (trashedMode) return { readOnly: true, editor: false }
+        return {}
+      },
       // Custom context menu: Airtable-style freeze semantics.
       // - "여기까지 고정": set fixedColumnsStart = clickedVisualCol + 1
       //   (freezes columns 1..N, where N is the clicked column, 1-indexed).
@@ -878,17 +1065,21 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       const batchItems: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> = []
 
       // Coalesce per-row updates so multi-cell edits trigger a single setRows + single
-      // React re-render instead of one per changed cell.
-      const rowUpdates = new Map<number, Record<string, unknown>>()
-      const addUpdate = (idx: number, patch: Record<string, unknown>) => {
-        const existing = rowUpdates.get(idx)
-        rowUpdates.set(idx, existing ? { ...existing, ...patch } : patch)
+      // React re-render instead of one per changed cell. Keyed by row id
+      // (not visual idx) because HOT's visual indexing differs from the
+      // raw-rows array when grouping injects synthetic header rows.
+      const rowUpdates = new Map<string, Record<string, unknown>>()
+      const addUpdate = (id: string, patch: Record<string, unknown>) => {
+        const existing = rowUpdates.get(id)
+        rowUpdates.set(id, existing ? { ...existing, ...patch } : patch)
       }
 
       for (const [row, prop, oldVal, newVal] of changes) {
         if (oldVal === newVal) continue
         const rowIdx = row as number
-        const rowData = rowsRef.current[rowIdx]
+        const displayData = displayRowsRef.current[rowIdx]
+        if (!displayData || isGroupHeader(displayData)) continue
+        const rowData = displayData as Row
         if (!rowData?.id) continue
         if (prop === 'reference_files') continue
         const field = EDITABLE_FIELD_MAP[prop as string]
@@ -909,7 +1100,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         // into both HOT (via setDataAtCell on the derived columns) and the
         // coalesced rows update.
         const derived = recomputeDerivedAfterEdit
-          ? recomputeDerivedAfterEdit(rowsRef.current[rowIdx], field, newVal, {
+          ? recomputeDerivedAfterEdit(rowData, field, newVal, {
               holidays: holidaySetRef.current,
             })
           : {}
@@ -924,7 +1115,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         const primaryValue = primaryNormalized
           ? (derived as Record<string, unknown>)[prop as string]
           : newVal
-        addUpdate(rowIdx, { ...derived, [prop as string]: primaryValue })
+        addUpdate(rowData.id, { ...derived, [prop as string]: primaryValue })
 
         // PATCH payload: only when the page normalized the primary (e.g.
         // date slicing for 데드라인) do we translate empty-ish values to
@@ -955,8 +1146,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             // Re-run the derived-field hook on the OLD value so any derived
             // columns (e.g. 출고예정일 when 데드라인 rolls back) revert in
             // lockstep with the primary.
+            const currentRaw = rowsRef.current.find(r => r.id === rowData.id) ?? rowData
             const rollbackDerived = recomputeDerivedAfterEdit
-              ? recomputeDerivedAfterEdit(rowsRef.current[rowIdx], field, oldVal, {
+              ? recomputeDerivedAfterEdit(currentRaw, field, oldVal, {
                   holidays: holidaySetRef.current,
                 })
               : {}
@@ -974,8 +1166,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
               ? (rollbackDerived as Record<string, unknown>)[prop as string]
               : oldVal
             skipNextLoadRef.current = true
-            setRows(prev => prev.map((r, i) =>
-              i === rowIdx
+            setRows(prev => prev.map(r =>
+              r.id === rowData.id
                 ? { ...r, ...rollbackDerived, [prop as string]: rollbackPrimary }
                 : r
             ))
@@ -988,8 +1180,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       // Single setRows for all coalesced updates — one React commit for the whole batch.
       if (rowUpdates.size > 0) {
         skipNextLoadRef.current = true
-        setRows(prev => prev.map((r, i) => {
-          const patch = rowUpdates.get(i)
+        setRows(prev => prev.map(r => {
+          const patch = rowUpdates.get(r.id)
           return patch ? { ...r, ...patch } : r
         }))
       }
@@ -1048,6 +1240,20 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
     let selectAlreadySelected = false
     hotRef.current.addHook('beforeOnCellMouseDown', (e: MouseEvent, coords: { row: number; col: number }) => {
+      // Group-header row click → toggle collapse and stop all further
+      // HOT handling (no selection, no edit, no checkbox toggle). We
+      // can't cancel HOT's own mouse pipeline from inside a hook, so
+      // we at least prevent the default DOM event and rely on the
+      // state-driven re-render to update the caret/layout.
+      const displayData = displayRowsRef.current[coords.row]
+      if (isGroupHeader(displayData)) {
+        toggleCollapsedGroupRef.current(displayData.__groupKey)
+        e.preventDefault?.()
+        e.stopPropagation?.()
+        selectAlreadySelected = false
+        return
+      }
+
       // Shift+클릭 범위 선택 (No. 컬럼만)
       if (coords.col === 0 && e.shiftKey && rendererBridge.lastCheckedRowRef?.current !== null) {
         const lastCheckedRef = rendererBridge.lastCheckedRowRef
@@ -1059,11 +1265,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         const currentRow = coords.row
         const start = Math.min(lastCheckedRef.current, currentRow)
         const end = Math.max(lastCheckedRef.current, currentRow)
-        const data = hot.getSourceData() as Row[]
+        const data = hot.getSourceData() as DisplayRow[]
 
-        // 범위 내 모든 행의 id를 checkedRowsRef에 추가
+        // 범위 내 모든 행의 id를 checkedRowsRef에 추가. Group-header
+        // rows are skipped so shift-click across a group boundary
+        // doesn't mark the synthetic header id.
         for (let i = start; i <= end; i++) {
-          const id = data[i]?.id
+          const entry = data[i]
+          if (!entry || isGroupHeader(entry)) continue
+          const id = entry.id
           if (!id) continue
           checkedRef?.current.add(id)
 
@@ -1173,9 +1383,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       const minR = Math.min(r1, r2)
       const maxR = Math.max(r1, r2)
       if (minR === maxR) { setSelectedRowIndices(null); return }
+      // Translate HOT visual row indices → raw-rows indices (SummaryBar
+      // reads from the raw rows array), skipping group-header rows so
+      // the summary doesn't treat synthetic headers as data.
       const indices: number[] = []
-      for (let i = minR; i <= maxR; i++) indices.push(i)
-      setSelectedRowIndices(indices)
+      for (let i = minR; i <= maxR; i++) {
+        const d = displayRowsRef.current[i]
+        if (!d || isGroupHeader(d)) continue
+        const rawIdx = rowsRef.current.findIndex(r => r.id === d.id)
+        if (rawIdx >= 0) indices.push(rawIdx)
+      }
+      setSelectedRowIndices(indices.length > 0 ? indices : null)
     })
     hotRef.current.addHook('afterDeselect', () => setSelectedRowIndices(null))
     // Copy: overwrite clipboard with plain TSV + show toast
@@ -1354,6 +1572,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       hiddenColumns: hiddenProps,
       frozenCount: frozenNow,
       rowHeight: rowHeightRef.current,
+      groupBy: groupByColumnRef.current,
     }
     return {
       filters: filterStateRef.current,
@@ -1462,6 +1681,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       setHiddenColumns(new Set(view.hiddenColumns))
       setFrozenCount(view.frozenCount)
       setRowHeight(view.rowHeight)
+      // Restore group-by column. Also re-hydrate collapsedGroups from
+      // localStorage for this column so the last collapse state in
+      // this tab survives a preset switch.
+      const nextGroup = typeof view.groupBy === 'string' && view.groupBy ? view.groupBy : null
+      setGroupByColumn(nextGroup)
+      if (nextGroup && typeof window !== 'undefined') {
+        try {
+          const raw = JSON.parse(window.localStorage.getItem(COLLAPSED_LS_KEY) ?? '{}')
+          const arr = raw?.[nextGroup]
+          setCollapsedGroups(Array.isArray(arr) ? new Set(arr.filter((x: unknown): x is string => typeof x === 'string')) : new Set())
+        } catch {
+          setCollapsedGroups(new Set())
+        }
+      } else {
+        setCollapsedGroups(new Set())
+      }
       // Nudge managedColumns / dependent memos that key off column order.
       setColumnOrderVersion(v => v + 1)
     } else {
@@ -1481,9 +1716,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       setHiddenColumns(new Set())
       setFrozenCount(0)
       setRowHeight('short')
+      setGroupByColumn(pageConfig.groupBy?.defaultColumn ?? null)
+      setCollapsedGroups(new Set())
       setColumnOrderVersion(v => v + 1)
     }
-  }, [COLUMNS, PROP_TO_COL])
+  }, [COLUMNS, PROP_TO_COL, pageConfig.groupBy?.defaultColumn, COLLAPSED_LS_KEY])
 
   useEffect(() => {
     let cancelled = false
@@ -1549,7 +1786,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         saveTimerRef.current = null
       }
     }
-  }, [rowHeight, hiddenColumns, frozenCount, colWidths, columnOrderVersion, filterState, sortConditions, VIEW_PAGE_KEY])
+  }, [rowHeight, hiddenColumns, frozenCount, colWidths, columnOrderVersion, filterState, sortConditions, groupByColumn, VIEW_PAGE_KEY])
 
   // Register a window-level snapshot hook so the LNB ("+ 새 뷰") can read
   // the live view state synchronously, and a beforeunload flush so a
@@ -1721,16 +1958,46 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
 
   // Close toolbar dropdowns on outside click.
   useEffect(() => {
-    if (!showColumnManager && !showRowHeightMenu && !showExportMenu) return
+    if (!showColumnManager && !showRowHeightMenu && !showExportMenu && !showGroupMenu) return
     const handler = (e: MouseEvent) => {
       const t = e.target as Node
       if (showColumnManager && !columnManagerRef.current?.contains(t)) setShowColumnManager(false)
       if (showRowHeightMenu && !rowHeightMenuRef.current?.contains(t)) setShowRowHeightMenu(false)
       if (showExportMenu && !exportMenuRef.current?.contains(t)) setShowExportMenu(false)
+      if (showGroupMenu && !groupMenuRef.current?.contains(t)) setShowGroupMenu(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [showColumnManager, showRowHeightMenu, showExportMenu])
+  }, [showColumnManager, showRowHeightMenu, showExportMenu, showGroupMenu])
+
+  // Columns eligible for group-by. Filtered by fieldType against the
+  // pageConfig.groupBy.allowedTypes whitelist — no per-page wiring
+  // needed; a new grouping-capable type is one array entry away.
+  const groupableColumns = useMemo<Array<{ data: string; title: string }>>(() => {
+    const gb = pageConfig.groupBy
+    if (!gb?.enabled) return []
+    const allowed = new Set(gb.allowedTypes)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (COLUMNS as any[])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((c: any) => typeof c.data === 'string' && c.data && c.fieldType && allowed.has(c.fieldType))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((c: any) => ({ data: c.data as string, title: (c.title as string) ?? c.data }))
+  }, [COLUMNS, pageConfig.groupBy])
+
+  const handlePickGroupColumn = useCallback((column: string | null) => {
+    setGroupByColumn(column)
+    // Reset collapse state to the one stored for this column (or empty).
+    if (!column) { setCollapsedGroups(new Set()); return }
+    if (typeof window === 'undefined') { setCollapsedGroups(new Set()); return }
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(COLLAPSED_LS_KEY) ?? '{}')
+      const arr = raw?.[column]
+      setCollapsedGroups(Array.isArray(arr) ? new Set(arr.filter((x: unknown): x is string => typeof x === 'string')) : new Set())
+    } catch {
+      setCollapsedGroups(new Set())
+    }
+  }, [COLLAPSED_LS_KEY])
 
   // Cmd/Ctrl+Enter inside the filter modal → apply filter.
   // Kept in its own effect so it rebinds when showFilterModal flips without disturbing the undo listener.
@@ -1890,7 +2157,10 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     return result
   }, [columnOrderVersion])
 
-  // Update grid data
+  // Update grid data. Loads `displayRows` (raw rows + synthetic group
+  // headers) into HOT. When grouping is off displayRows === rows so
+  // there's no extra overhead. Re-fires on every group toggle / change
+  // because `displayRows` is derived from collapsedGroups + groupByColumn.
   useEffect(() => {
     if (!hotRef.current) return
     if (skipNextLoadRef.current) {
@@ -1899,9 +2169,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       skipNextLoadRef.current = false
       return
     }
-    hotRef.current.loadData(rows)
-    if (rows.length > 0) hotRef.current.refreshDimensions()
-  }, [rows])
+    hotRef.current.loadData(displayRows)
+    if (displayRows.length > 0) hotRef.current.refreshDimensions()
+  }, [displayRows])
 
   // Post-loadData view re-apply. Must be declared AFTER the loadData effect
   // above so React runs it later in the same commit — that's the point where
@@ -1968,7 +2238,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     }
 
     hot.render()
-  }, [rows])
+  }, [displayRows])
 
   // Custom Cmd+Z / Cmd+Shift+Z undo/redo.
   // Drives the same afterChange PATCH pipeline via setDataAtCell with a custom source,
@@ -1989,11 +2259,16 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         const tuples: Array<[number, number, unknown]> = []
         const validItems: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> = []
         for (const item of entry.items) {
-          const rowIdx = rowsRef.current.findIndex(r => r.id === item.rowId)
-          if (rowIdx === -1) continue
+          // setDataAtCell expects HOT visual row idx. When grouping is
+          // active we must find the row inside displayRows (which
+          // injects group headers), not the raw rows array. Skip rows
+          // whose group is currently collapsed — the user has to
+          // expand the group before undo can re-touch those cells.
+          const displayIdx = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === item.rowId)
+          if (displayIdx === -1) continue
           const col = propToColRef.current[item.prop] ?? -1
           if (col < 0) continue
-          tuples.push([rowIdx, col, pickValue(item)])
+          tuples.push([displayIdx, col, pickValue(item)])
           validItems.push(item)
         }
         if (tuples.length === 0) continue
@@ -2292,6 +2567,49 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             </div>
           )}
         </div>
+
+        {/* Group-by selector — fieldType-filtered from pageConfig.groupBy.
+            Visible only when the page enables grouping. */}
+        {pageConfig.groupBy?.enabled && (
+          <div className="relative flex-shrink-0" ref={groupMenuRef}>
+            <button
+              type="button"
+              onClick={() => { setShowGroupMenu(v => !v); setShowColumnManager(false); setShowRowHeightMenu(false); setShowExportMenu(false) }}
+              title="그룹"
+              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3.5h10M3.5 7h9M5 10.5h7" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              그룹
+              {groupByColumn && (
+                <span className="text-[#2D7FF9]">
+                  · {groupableColumns.find(c => c.data === groupByColumn)?.title ?? groupByColumn}
+                </span>
+              )}
+            </button>
+            {showGroupMenu && (
+              <div className="absolute right-0 top-[34px] z-[1000] w-[200px] rounded-[6px] border border-[#E2E8F0] bg-white py-1 shadow-[0_4px_16px_rgba(0,0,0,0.12)] max-h-[320px] overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => { handlePickGroupColumn(null); setShowGroupMenu(false) }}
+                  className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${!groupByColumn ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                >
+                  그룹 없음
+                </button>
+                {groupableColumns.length > 0 && <div className="my-1 h-px bg-[#E2E8F0]" />}
+                {groupableColumns.map(c => (
+                  <button
+                    key={c.data}
+                    type="button"
+                    onClick={() => { handlePickGroupColumn(c.data); setShowGroupMenu(false) }}
+                    className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${groupByColumn === c.data ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                  >
+                    {c.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Column manager */}
         <div className="relative flex-shrink-0" ref={columnManagerRef}>

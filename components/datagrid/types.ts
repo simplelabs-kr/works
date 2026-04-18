@@ -14,7 +14,7 @@
 // `PageConfig<TItem, TRow>`. The prop surface won't change — callers will
 // just start supplying the new shapes — so it is a non-breaking follow-up.
 
-import type { Item, Row } from '@/features/works/worksTypes'
+import type { FieldType, Item, Row } from '@/features/works/worksTypes'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DataGridColumn = any
@@ -88,6 +88,18 @@ export type PageConfig = {
   // recomputed; returning the same reference signals "no change" and lets
   // DataGrid keep React state stable when the page has no such fields.
   recomputeDerivedOnHolidayChange?: (row: Row, holidays: Set<string>) => Row
+
+  // Group-by feature. `allowedTypes` lists which fieldTypes are eligible
+  // to be used as grouping keys — the "그룹" dropdown filters the column
+  // catalog against this set, so extending the feature to a new type is
+  // just appending to the array (no per-column wiring). `defaultColumn`
+  // is the initial grouping column (data prop) when no saved setting
+  // exists; undefined means "no grouping by default".
+  groupBy?: {
+    enabled: boolean
+    allowedTypes: FieldType[]
+    defaultColumn?: string
+  }
 
   // When true, DataGrid renders a trash-only variant:
   //   - fetch endpoint receives `trashed_only: true`

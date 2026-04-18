@@ -21,6 +21,10 @@ export type PersistedView = {
   hiddenColumns: string[]
   frozenCount: number
   rowHeight: 'short' | 'medium' | 'tall' | 'extra-tall'
+  // Active group-by column data prop, or null when grouping is off.
+  // Persisted alongside column view settings so switching presets/tabs
+  // restores grouping together with widths/order.
+  groupBy?: string | null
 }
 
 export type PersistedSettings = {
@@ -146,5 +150,7 @@ function normalizeView(raw: unknown): PersistedView | null {
       ? r.rowHeight
       : 'short'
 
-  return { columnOrder, columnWidths, hiddenColumns, frozenCount, rowHeight }
+  const groupBy = typeof r.groupBy === 'string' && r.groupBy ? r.groupBy : null
+
+  return { columnOrder, columnWidths, hiddenColumns, frozenCount, rowHeight, groupBy }
 }

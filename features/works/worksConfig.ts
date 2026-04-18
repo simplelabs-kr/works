@@ -349,6 +349,14 @@ export const worksPageConfig: PageConfig = {
   mergeRealtimeUpdate: worksMergeRealtimeUpdate,
   recomputeDerivedAfterEdit: worksRecomputeDerivedAfterEdit,
   recomputeDerivedOnHolidayChange: worksRecomputeDerivedOnHolidayChange,
+  // Group-by catalog is fieldType-driven: every column whose fieldType
+  // is in allowedTypes automatically becomes a valid grouping key.
+  // Adding 'text' or 'date' later is a one-word change here.
+  groupBy: {
+    enabled: true,
+    allowedTypes: ['select', 'checkbox'],
+    defaultColumn: undefined,
+  },
 }
 
 // Trash variant — same columns, same fetch endpoint, but switched into
