@@ -75,6 +75,11 @@ export type ViewPreset = {
   sort: unknown | null
   view: unknown | null
   starred: boolean
+  // Manual ordering within a page's preset list. Populated by LNB
+  // drag-reorder; null for presets that have never been reordered.
+  // The GET endpoint sorts by sort_order ASC NULLS LAST, then
+  // created_at ASC as tiebreaker for nulls and equal values.
+  sort_order: number | null
   created_at: string
   updated_at: string
 }
@@ -118,7 +123,7 @@ export async function createPreset(input: {
 
 export async function updatePreset(
   id: string,
-  patch: { name?: string; starred?: boolean; filters?: unknown; sort?: unknown; view?: unknown }
+  patch: { name?: string; starred?: boolean; filters?: unknown; sort?: unknown; view?: unknown; sort_order?: number | null }
 ): Promise<ViewPreset | null> {
   try {
     const res = await fetch(`${ENDPOINT}/${encodeURIComponent(id)}`, {
@@ -143,6 +148,17 @@ export async function deletePreset(id: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// Assign sort_order = 0..N-1 in the given id order and PATCH each
+// preset in parallel. Used by LNB drag-reorder. We rewrite every
+// affected row rather than computing fractional indices so the DB
+// column stays dense; it's a small number of presets per user so
+// the extra writes are not a concern.
+export async function reorderPresets(idsInOrder: string[]): Promise<void> {
+  await Promise.all(
+    idsInOrder.map((id, idx) => updatePreset(id, { sort_order: idx })),
+  )
 }
 
 // Apply a preset to the grid + mark it active for its page.

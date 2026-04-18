@@ -10,6 +10,25 @@ body {
   background: #ffffff !important;
 }
 
+/* ── LNB collapse: pre-hydration paint ───────────────────────────
+ * The inline script in app/works/layout.tsx mirrors
+ * localStorage['works_lnb_collapsed'] onto <html data-lnb-collapsed="true">
+ * before React hydrates. These rules collapse the sidebar width and
+ * hide its expanded content on the very first paint, so a returning
+ * user with the sidebar collapsed doesn't see it flash open before
+ * React state catches up.
+ *
+ * After hydration, React renders the proper collapsed tree (just the
+ * toggle rail) and these overrides become redundant — the width and
+ * content-hiding both match what React would produce anyway. */
+html[data-lnb-collapsed="true"] aside[data-worksy-lnb] {
+  width: 36px !important;
+  overflow: hidden !important;
+}
+html[data-lnb-collapsed="true"] aside[data-worksy-lnb] > *:not([data-worksy-lnb-toggle]) {
+  display: none !important;
+}
+
 body {
   color: #0F172A;
   -webkit-font-smoothing: antialiased;

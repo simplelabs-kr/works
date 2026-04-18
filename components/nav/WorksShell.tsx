@@ -5,12 +5,14 @@
 // both drive the same instance, and wires the GNB + LNB + content slot
 // layout. Rendered from the server-side app/works/layout.tsx.
 //
-// Also owns the LNB collapsed state. Persisted in a cookie (read by
-// app/works/layout.tsx on the server and passed in as initialCollapsed)
-// so the first paint reflects the user's preferred width — no expanded
-// → collapsed flash on refresh, which is what the old localStorage-
-// only path produced because localStorage isn't readable on the
-// server render.
+// LNB collapse state:
+//   - Persisted in localStorage key 'works_lnb_collapsed' ('true'/'false').
+//   - app/works/layout.tsx injects an inline <script> that mirrors the
+//     flag onto <html data-lnb-collapsed="true"> before React hydrates,
+//     which CSS can use to paint the correct width on first frame.
+//   - This component seeds its state lazily from localStorage on mount
+//     so the React tree agrees with the attribute after hydration, and
+//     writes back on toggle.
 
 import { useCallback, useEffect, useState } from 'react'
 import GNB from './GNB'
@@ -18,33 +20,36 @@ import LNB from './LNB'
 import CommandPalette from './CommandPalette'
 import { PresetsProvider } from './PresetsContext'
 
-// Cookie name uses underscores, not colons. RFC 6265 defines cookie
-// names as a `token` (RFC 7230) which explicitly excludes `:`. Safari
-// silently drops Set-Cookie headers with invalid tokens in the name,
-// which caused the collapse state to never persist across refreshes
-// even though document.cookie appeared to accept the assignment.
-export const LNB_COLLAPSED_COOKIE = 'works_lnb_collapsed'
+const LNB_COLLAPSED_LS_KEY = 'works_lnb_collapsed'
 
-type Props = {
-  children: React.ReactNode
-  // Read from cookie on the server so the first client paint matches
-  // the server HTML. Undefined on first-ever visit (no cookie yet) →
-  // expanded.
-  initialCollapsed?: boolean
+function readCollapsedFromStorage(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(LNB_COLLAPSED_LS_KEY) === 'true'
+  } catch {
+    return false
+  }
 }
 
-export default function WorksShell({ children, initialCollapsed = false }: Props) {
+export default function WorksShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
-  // Seed from the cookie-read prop so the server render and the first
-  // client commit agree — avoids the hydration-time width flash.
-  const [lnbCollapsed, setLnbCollapsed] = useState(initialCollapsed)
+  // State init is ALWAYS false to match the SSR render (which has no
+  // localStorage access) — this avoids a React hydration mismatch
+  // warning. The "no flash" promise is kept by the inline script in
+  // app/works/layout.tsx, which mirrors localStorage onto
+  // <html data-lnb-collapsed="true"> before hydration. globals.css
+  // uses that attribute to paint the collapsed width on the very
+  // first frame. After hydration, the useEffect below reads
+  // localStorage and flips React state to match — the CSS override
+  // remains consistent with React's output throughout.
+  const [lnbCollapsed, setLnbCollapsed] = useState<boolean>(false)
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    // Flip the animated flag on after hydration so width transitions
-    // don't play on the first paint. (The initial width is already
-    // correct via initialCollapsed, so we don't need to re-read the
-    // cookie here.)
+    // Post-hydration: sync React state from localStorage and enable
+    // width transitions (disabled on first paint so the hydration-
+    // time flip from collapsed=false → true doesn't animate).
+    setLnbCollapsed(readCollapsedFromStorage())
     setHydrated(true)
   }, [])
 
@@ -52,11 +57,10 @@ export default function WorksShell({ children, initialCollapsed = false }: Props
     setLnbCollapsed(prev => {
       const next = !prev
       try {
-        // 1-year persistent cookie, path=/ so every /works route reads
-        // the same value. SameSite=Lax is the safe default for nav-
-        // driven state. No HttpOnly — this needs to be client-writable.
-        document.cookie = `${LNB_COLLAPSED_COOKIE}=${next ? '1' : '0'}; path=/; max-age=31536000; samesite=lax`
-      } catch { /* ignore — e.g. cookies disabled */ }
+        window.localStorage.setItem(LNB_COLLAPSED_LS_KEY, String(next))
+        if (next) document.documentElement.setAttribute('data-lnb-collapsed', 'true')
+        else document.documentElement.removeAttribute('data-lnb-collapsed')
+      } catch { /* storage disabled — in-memory state still works */ }
       return next
     })
   }, [])
@@ -80,10 +84,6 @@ export default function WorksShell({ children, initialCollapsed = false }: Props
       <div className="flex flex-col h-screen overflow-hidden bg-white">
         <GNB onOpenPalette={() => setPaletteOpen(true)} />
         <div className="flex flex-1 min-h-0">
-          {/* Suppress the first-paint flash of the wrong width: until
-              localStorage has been read we leave lnbCollapsed=false which
-              matches the server render. `hydrated` just gates whether
-              transitions kick in — they'd be distracting on first paint. */}
           <LNB collapsed={lnbCollapsed} animated={hydrated} onToggle={toggleLnb} />
           <div className="flex-1 min-w-0 min-h-0">
             {children}

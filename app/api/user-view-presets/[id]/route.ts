@@ -27,6 +27,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     filters?: unknown
     sort?: unknown
     view?: unknown
+    sort_order?: unknown
   }
   try {
     body = await req.json()
@@ -49,6 +50,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ('filters' in body) patch.filters = body.filters ?? null
   if ('sort' in body) patch.sort = body.sort ?? null
   if ('view' in body) patch.view = body.view ?? null
+  if ('sort_order' in body) {
+    if (body.sort_order === null) {
+      patch.sort_order = null
+    } else if (typeof body.sort_order === 'number' && Number.isFinite(body.sort_order)) {
+      patch.sort_order = body.sort_order
+    } else {
+      return NextResponse.json({ error: 'invalid sort_order' }, { status: 400 })
+    }
+  }
   patch.updated_at = new Date().toISOString()
 
   if (Object.keys(patch).length === 1) {
@@ -60,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     .update(patch)
     .eq('id', id)
     .eq('owner_user_key', user_key)
-    .select('id, page_key, name, filters, sort, view, starred, created_at, updated_at')
+    .select('id, page_key, name, filters, sort, view, starred, sort_order, created_at, updated_at')
     .maybeSingle()
 
   if (error) {

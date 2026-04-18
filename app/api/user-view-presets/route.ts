@@ -28,11 +28,16 @@ export async function GET(req: NextRequest) {
   // creator identity; user_key was added later as a convenience column.
   // We guard on owner_user_key so rows without user_key are still
   // reachable by their owner.
+  // Ordering: manual sort_order first (ASC, nulls last so
+  // un-reordered presets drop below manually-ordered ones), then
+  // created_at ASC as a stable tiebreaker. Starred state deliberately
+  // does NOT influence order — starring is a pin (duplicates the row
+  // into the 즐겨찾기 section) rather than a move to the top.
   let q = supabaseAdmin
     .from('user_view_presets')
-    .select('id, page_key, name, filters, sort, view, starred, created_at, updated_at')
+    .select('id, page_key, name, filters, sort, view, starred, sort_order, created_at, updated_at')
     .eq('owner_user_key', user_key)
-    .order('starred', { ascending: false })
+    .order('sort_order', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: true })
 
   if (page_key) q = q.eq('page_key', page_key)
@@ -97,7 +102,7 @@ export async function POST(req: NextRequest) {
       sort: body.sort ?? null,
       view: body.view ?? null,
     })
-    .select('id, page_key, name, filters, sort, view, starred, created_at, updated_at')
+    .select('id, page_key, name, filters, sort, view, starred, sort_order, created_at, updated_at')
     .single()
 
   if (error || !data) {

@@ -9,7 +9,9 @@
 //      pinning affordance, not a move.
 //   2. 현재 페이지 — every preset scoped to the currently-active page,
 //      plus a "+ 새 뷰" button that opens NewPresetModal. The preset
-//      most recently applied/created is highlighted as "active".
+//      most recently applied/created is highlighted as "active". Rows
+//      are drag-reorderable; the new order persists to
+//      user_view_presets.sort_order.
 //   3. 페이지 목록 — static list from WORKS_PAGES. Coming-soon pages
 //      render muted; clicking them is a no-op.
 //   4. 휴지통 — separate section, navigates to /works/trash.
@@ -29,6 +31,7 @@ import {
   createPreset,
   deletePreset,
   loadEffectiveSettings,
+  reorderPresets,
   snapshotLiveView,
   updatePreset,
   type ViewPreset,
@@ -65,21 +68,75 @@ function StarIcon({ filled }: { filled: boolean }) {
   )
 }
 
+// ⠿ drag handle glyph — six-dot grip rendered as SVG so it scales with
+// the row height consistently across platforms.
+function DragHandleIcon() {
+  return (
+    <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden="true">
+      <circle cx="2.5" cy="2.5" r="1" />
+      <circle cx="2.5" cy="6" r="1" />
+      <circle cx="2.5" cy="9.5" r="1" />
+      <circle cx="7.5" cy="2.5" r="1" />
+      <circle cx="7.5" cy="6" r="1" />
+      <circle cx="7.5" cy="9.5" r="1" />
+    </svg>
+  )
+}
+
 type PresetRowProps = {
   preset: ViewPreset
   active: boolean
   onApply: () => void
   onToggleStar: () => void
   onDelete: () => void
+  // Drag props — omitted for the 즐겨찾기 section (reorder is only
+  // supported on the 현재 페이지 list; favorites inherit that order).
+  draggable?: boolean
+  isDragging?: boolean
+  isDragOver?: boolean
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragOver?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragLeave?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDrop?: (e: React.DragEvent<HTMLDivElement>) => void
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void
 }
 
-function PresetRow({ preset, active, onApply, onToggleStar, onDelete }: PresetRowProps) {
+function PresetRow({
+  preset,
+  active,
+  onApply,
+  onToggleStar,
+  onDelete,
+  draggable,
+  isDragging,
+  isDragOver,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
+}: PresetRowProps) {
   return (
     <div
-      className={`group flex items-center gap-1 rounded-[6px] px-2 py-1 ${
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+      className={`group flex items-center gap-1 rounded-[6px] px-1 py-1 ${
         active ? 'bg-[#DBEAFE] hover:bg-[#BFDBFE]' : 'hover:bg-[#E2E8F0]'
-      }`}
+      } ${isDragging ? 'opacity-40' : ''} ${isDragOver ? 'outline outline-2 outline-[#2D7FF9] outline-offset-[-2px]' : ''}`}
     >
+      {draggable && (
+        <span
+          aria-label="순서 변경"
+          title="드래그하여 순서 변경"
+          className="flex-shrink-0 flex items-center justify-center w-[12px] h-[16px] text-[#CBD5E1] group-hover:text-[#64748B] cursor-grab active:cursor-grabbing"
+        >
+          <DragHandleIcon />
+        </span>
+      )}
       <button
         type="button"
         onClick={onToggleStar}
@@ -179,6 +236,32 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     view: any
   } | null>(null)
 
+  // Drag-reorder state — scoped to the 현재 페이지 list. `draggingId`
+  // is the row being dragged; `dragOverId` is the row the pointer is
+  // currently over (used to draw the drop indicator).
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Optimistic override of the 현재 페이지 order during/after drop. On
+  // drop we set this immediately so the UI reflects the new order
+  // before refresh() completes; cleared once refresh() returns with
+  // the server-confirmed order.
+  const [optimisticOrder, setOptimisticOrder] = useState<string[] | null>(null)
+
+  const orderedCurrentPagePresets = useMemo(() => {
+    if (!optimisticOrder) return currentPagePresets
+    const byId = new Map(currentPagePresets.map(p => [p.id, p]))
+    const out: ViewPreset[] = []
+    for (const id of optimisticOrder) {
+      const p = byId.get(id)
+      if (p) { out.push(p); byId.delete(id) }
+    }
+    // Any presets not covered by the optimistic order (e.g. a new
+    // preset created in another tab since drop) fall through at the
+    // bottom in their server order.
+    byId.forEach(p => out.push(p))
+    return out
+  }, [currentPagePresets, optimisticOrder])
+
   const openNewPresetModal = async () => {
     if (!activePresetKey || saving) return
     // Prefer the in-memory snapshot from the mounted DataGrid (always
@@ -226,19 +309,24 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     }
   }
 
-  const handleApplyPreset = async (preset: ViewPreset) => {
-    // applyPreset caches the preset, cancels any pending grid save,
-    // and bumps the remount version for preset.page_key so a grid
-    // already mounted on that page re-keys and re-reads from cache.
-    // No hard reload — WorksShell/LNB stay mounted across the switch,
-    // which is what keeps the collapse state and avoids the flicker.
-    await applyPreset(preset)
-    // Also update the context synchronously so the active-row highlight
-    // reflects the new preset without waiting for a storage event.
+  const handleApplyPreset = (preset: ViewPreset) => {
+    // Instant highlight: update the context's active id synchronously
+    // BEFORE awaiting applyPreset so the clicked row switches to the
+    // active style on the very same tick as the click. applyPreset
+    // does a DB fetch inside (to grab the latest preset state) which
+    // can take a few hundred ms — without this optimistic update the
+    // highlight would lag behind the click.
     setActivePreset(preset.page_key, preset.id)
 
+    // Fire-and-forget: applyPreset caches the preset, cancels any
+    // pending grid save, and either drives the mounted grid via
+    // applyRuntime or bumps the remount version for cross-page applies.
+    // No hard reload — WorksShell/LNB stay mounted across the switch,
+    // which is what keeps the collapse state and avoids the flicker.
+    void applyPreset(preset)
+
     // Cross-page applies need a route change; same-page applies are
-    // handled entirely by the remount bump above.
+    // handled entirely by the applyPreset path above.
     const href = resolvePageHrefForKey(preset.page_key)
     if (href && href !== pathname) router.push(href)
   }
@@ -258,6 +346,64 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     await refresh()
   }
 
+  // ── Drag-reorder handlers ────────────────────────────────────────
+  const handleDragStart = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    setDraggingId(preset.id)
+    // Firefox requires setData to actually initiate the drag.
+    try { e.dataTransfer.setData('text/plain', preset.id) } catch { /* ignore */ }
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleDragOver = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    if (!draggingId || draggingId === preset.id) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverId(preset.id)
+  }
+
+  const handleDragLeave = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    // Only clear if we're leaving the row we last entered — prevents
+    // flicker when the cursor crosses between row and its buttons.
+    if (dragOverId === preset.id) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _ = e
+      setDragOverId(null)
+    }
+  }
+
+  const handleDrop = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const sourceId = draggingId
+    setDraggingId(null)
+    setDragOverId(null)
+    if (!sourceId || sourceId === target.id) return
+
+    const currentOrder = orderedCurrentPagePresets.map(p => p.id)
+    const fromIdx = currentOrder.indexOf(sourceId)
+    const toIdx = currentOrder.indexOf(target.id)
+    if (fromIdx < 0 || toIdx < 0) return
+
+    const nextOrder = currentOrder.slice()
+    const [moved] = nextOrder.splice(fromIdx, 1)
+    nextOrder.splice(toIdx, 0, moved)
+
+    // Optimistic: render the new order right away so the drop feels
+    // instant. The server PATCH storm runs in the background; once
+    // refresh() returns with the server-confirmed order we drop the
+    // override.
+    setOptimisticOrder(nextOrder)
+    void (async () => {
+      await reorderPresets(nextOrder)
+      await refresh()
+      setOptimisticOrder(null)
+    })()
+  }
+
+  const handleDragEnd = () => {
+    setDraggingId(null)
+    setDragOverId(null)
+  }
+
   const widthClass = collapsed ? 'w-[36px]' : 'w-[220px]'
   const transitionClass = animated ? 'transition-[width] duration-200 ease-out' : ''
 
@@ -268,19 +414,25 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     // a content-area reflow while the transition animates.
     return (
       <aside
+        data-worksy-lnb
         aria-label="사이드바 (접힘)"
         className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col items-center pt-2 overflow-hidden`}
       >
-        <ToggleButton collapsed={collapsed} onToggle={onToggle} />
+        <div data-worksy-lnb-toggle>
+          <ToggleButton collapsed={collapsed} onToggle={onToggle} />
+        </div>
       </aside>
     )
   }
 
   return (
-    <aside className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto`}>
+    <aside
+      data-worksy-lnb
+      className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto`}
+    >
       {/* Top row: collapse toggle, flush-right so it sits on the edge
           nearest the content area (the side it'll slide toward). */}
-      <div className="flex items-center justify-end px-2 pt-2 pb-1">
+      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-1">
         <ToggleButton collapsed={collapsed} onToggle={onToggle} />
       </div>
 
@@ -314,12 +466,12 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
             뷰를 지원하지 않는 페이지입니다
           </div>
         )}
-        {activePresetKey && currentPagePresets.length === 0 && (
+        {activePresetKey && orderedCurrentPagePresets.length === 0 && (
           <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
             저장된 뷰가 없습니다
           </div>
         )}
-        {currentPagePresets.map(p => (
+        {orderedCurrentPagePresets.map(p => (
           <PresetRow
             key={p.id}
             preset={p}
@@ -327,6 +479,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
             onApply={() => handleApplyPreset(p)}
             onToggleStar={() => handleToggleStar(p)}
             onDelete={() => handleDelete(p)}
+            draggable
+            isDragging={draggingId === p.id}
+            isDragOver={dragOverId === p.id && draggingId !== p.id}
+            onDragStart={handleDragStart(p)}
+            onDragOver={handleDragOver(p)}
+            onDragLeave={handleDragLeave(p)}
+            onDrop={handleDrop(p)}
+            onDragEnd={handleDragEnd}
           />
         ))}
       </div>
