@@ -1430,6 +1430,19 @@ export default function WorksGrid() {
       }
     })
 
+    // Clear the `data-select-col` marker on every cell before its renderer
+    // runs. HOT recycles TDs across columns during virtualization, so a td
+    // that last rendered a select column keeps `data-select-col="true"`
+    // when it gets reused for a checkbox/image/text column — and the CSS
+    // `td[data-select-col].current::after` rule then paints a chevron on
+    // non-select cells. Clearing here guarantees only the select renderer
+    // (renderSelectBadge with editable=true) can re-set the marker, so
+    // the chevron appears exclusively on editable select cells.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    hotRef.current.addHook('beforeRenderer', (td: HTMLTableCellElement) => {
+      if (td.dataset.selectCol) delete td.dataset.selectCol
+    })
+
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
