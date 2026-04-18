@@ -3,27 +3,40 @@
 // Left Nav Bar — per-workspace navigation. 220px column on the left
 // edge of every /works route, collapsible to a 36px rail.
 //
-// Section order (top → bottom):
-//   1. 즐겨찾기   — starred presets (cross-page, read-only pins)
-//   2. 공유 뷰    — collaborative presets + folders for active page
-//   3. 내 뷰      — private presets + folders for active page
-//   4. 페이지     — static page list from WORKS_PAGES
-//   5. 휴지통     — pinned to the bottom with a trash icon; a divider
-//                  above it separates it from the scrolling content.
+// Section layout (top → bottom):
+//   1. 즐겨찾기 — starred presets (cross-page pins)
+//   2. 공유 뷰  — collaborative presets + folders for active page.
+//                TOP-LEVEL presets render FIRST (above folders) so
+//                that dropping a preset "above a folder row" lands
+//                it at a slot that actually exists in the layout.
+//   3. 내 뷰    — private presets + folders for active page
+//   4. 페이지   — static page list from WORKS_PAGES
+//   5. 휴지통   — pinned to the bottom with a trash icon; a divider
+//                above it separates it from the scrolling content.
 //
-// Ownership model on collaborative rows:
-//   - Everyone sees the row.
-//   - Only the owner sees star / delete / drag-handle / rename
-//     affordances. Non-owners see a "내 뷰로 복사" option in the
-//     right-click menu that POSTs a new private preset with the same
-//     filters/sort/view.
+// ── Drag-and-drop model ────────────────────────────────────────────
+// A section is modeled as a FLAT ordered list of rows:
+//   [ top-level preset, ... ][ folder, member, member, ... folder, ... ]
 //
-// Folders: a preset can be filed inside a folder (folder_id FK). When
-// a folder is collapsed, its nested presets hide. Folder collapse
-// state is localStorage-scoped and per-id so it survives reload. The
-// +폴더 button appends a new folder to the active section. Folder
-// rename is via double-click; folder delete is via the right-click
-// menu and detaches (does NOT cascade-delete) any contained presets.
+// On drop we:
+//   1. Compute an `insertAt` index into this flat list from the drop
+//      target (row + above/below, or "into folder", or end-of-section).
+//   2. Splice the dragged row (or folder block) into the new index.
+//   3. Walk the spliced flat list and assign each preset a new
+//      (folder_id, sort_order) based on the folder row that most
+//      recently preceded it, and each folder a new sort_order. This
+//      deterministically encodes the visual order as DB state.
+//   4. Apply the derived state as a LOCAL OVERRIDE (optimistic) so
+//      the UI shifts immediately, then fire PATCHes for every changed
+//      row in parallel, then refresh() and clear the override.
+//
+// If any PATCH fails, we alert the user and fall back to the
+// server-confirmed state from refresh().
+//
+// Ownership: only the owner can drag/star/rename/delete a row.
+// Non-owners see a "내 뷰로 복사" option in the right-click menu on
+// collaborative rows. The server enforces ownership via
+// owner_user_key equality on every update.
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -42,8 +55,6 @@ import {
   deleteFolder,
   deletePreset,
   loadEffectiveSettings,
-  reorderFolders,
-  reorderPresets,
   snapshotLiveView,
   updateFolder,
   updatePreset,
@@ -54,17 +65,13 @@ import {
 import NewPresetModal from './NewPresetModal'
 
 // ── Page key mapping ────────────────────────────────────────────────
-// presets/folders are keyed by the legacy page_key; nav pages use the
-// newer slug. Keep aligned with worksPageConfig.
 function presetKeyForActivePage(activeKey: string | null): string | null {
   if (activeKey === 'production') return 'works'
   if (activeKey === 'trash') return 'works-trash'
   return null
 }
 
-// ── Collapse persistence ────────────────────────────────────────────
-// Folder open/closed state per id, stored in localStorage. Default is
-// expanded (so new folders with no LS entry render open).
+// ── Folder collapse persistence ─────────────────────────────────────
 const FOLDER_COLLAPSE_LS = 'works:folder-collapsed'
 function readFolderCollapseSet(): Set<string> {
   if (typeof window === 'undefined') return new Set()
@@ -72,7 +79,7 @@ function readFolderCollapseSet(): Set<string> {
     const raw = window.localStorage.getItem(FOLDER_COLLAPSE_LS)
     if (!raw) return new Set()
     const arr = JSON.parse(raw)
-    return new Set(Array.isArray(arr) ? arr.filter(x => typeof x === 'string') : [])
+    return new Set(Array.isArray(arr) ? arr.filter((x: unknown) => typeof x === 'string') : [])
   } catch {
     return new Set()
   }
@@ -155,7 +162,7 @@ function FolderIcon() {
   )
 }
 
-// ── Right-click context menu ────────────────────────────────────────
+// ── Context menu ────────────────────────────────────────────────────
 type MenuItem =
   | { kind: 'action'; label: string; onClick: () => void; danger?: boolean; disabled?: boolean }
   | { kind: 'separator' }
@@ -172,7 +179,6 @@ function ContextMenu({
       if (!ref.current.contains(e.target as Node)) onClose()
     }
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    // Defer so the triggering contextmenu event doesn't immediately close us.
     const t = setTimeout(() => {
       window.addEventListener('mousedown', handler)
       window.addEventListener('keydown', esc)
@@ -218,16 +224,22 @@ function ContextMenu({
   )
 }
 
-// ── Preset row ──────────────────────────────────────────────────────
+// ── Drag-drop types ────────────────────────────────────────────────
 type DragData =
-  | { kind: 'preset'; id: string }
+  | { kind: 'preset'; id: string; section: PresetScope }
   | { kind: 'folder'; id: string; section: PresetScope }
+
 type DropTarget =
   | { kind: 'preset'; id: string; position: 'above' | 'below' }
   | { kind: 'folder-row'; id: string; position: 'above' | 'below' }
   | { kind: 'folder-into'; id: string }
   | { kind: 'section'; section: PresetScope }
 
+type FlatRow =
+  | { kind: 'folder'; id: string; folder: ViewFolder }
+  | { kind: 'preset'; id: string; preset: ViewPreset; inFolder: string | null }
+
+// ── Preset / folder rows ────────────────────────────────────────────
 type PresetRowProps = {
   preset: ViewPreset
   active: boolean
@@ -263,7 +275,7 @@ function PresetRow({
   useEffect(() => { if (renaming) setEditName(preset.name) }, [renaming, preset.name])
   const showStar = ownedByMe && onToggleStar != null
   const showDelete = ownedByMe && onDelete != null
-  const showShareTag = preset.scope === 'collaborative' && ownedByMe
+  const showShareTag = preset.scope === 'collaborative'
 
   return (
     <div
@@ -356,17 +368,10 @@ function PresetRow({
 
       {showShareTag && !renaming && (
         <span
-          className="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[#0EA5E9] bg-[#E0F2FE] rounded-[3px] px-1 py-px"
-          title="팀 공유 뷰"
-        >
-          공유
-        </span>
-      )}
-
-      {!ownedByMe && onCopyToMine && !renaming && (
-        <span
-          className="flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider text-[#64748B] bg-[#E2E8F0] rounded-[3px] px-1 py-px"
-          title="다른 사람의 뷰"
+          className={`flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider rounded-[3px] px-1 py-px ${
+            ownedByMe ? 'text-[#0EA5E9] bg-[#E0F2FE]' : 'text-[#64748B] bg-[#E2E8F0]'
+          }`}
+          title={ownedByMe ? '팀 공유 뷰' : '다른 사람의 공유 뷰'}
         >
           공유
         </span>
@@ -384,11 +389,12 @@ function PresetRow({
           </svg>
         </button>
       )}
+      {/* unused prop to silence lints; copy flow is exposed via right-click menu */}
+      {onCopyToMine ? null : null}
     </div>
   )
 }
 
-// ── Folder row ──────────────────────────────────────────────────────
 type FolderRowProps = {
   folder: ViewFolder
   ownedByMe: boolean
@@ -505,7 +511,7 @@ function FolderRow({
   )
 }
 
-// ── Props ───────────────────────────────────────────────────────────
+// ── Shell ───────────────────────────────────────────────────────────
 type Props = {
   collapsed: boolean
   animated: boolean
@@ -538,6 +544,61 @@ function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
   )
 }
 
+// ── Helpers ────────────────────────────────────────────────────────
+type OrderableRow = { sort_order: number | null; created_at: string }
+function byOrder<T extends OrderableRow>(a: T, b: T): number {
+  const ao = a.sort_order ?? Number.POSITIVE_INFINITY
+  const bo = b.sort_order ?? Number.POSITIVE_INFINITY
+  if (ao !== bo) return ao - bo
+  return a.created_at.localeCompare(b.created_at)
+}
+
+// Build the flat row list for a section: top-level presets first,
+// then folders with their members. Indices in this list are the
+// insertion slots the drop handlers use.
+function buildFlat(
+  sectionPresets: ViewPreset[],
+  sectionFolders: ViewFolder[],
+): FlatRow[] {
+  const sortedPresets = [...sectionPresets].sort(byOrder)
+  const sortedFolders = [...sectionFolders].sort(byOrder)
+  const flat: FlatRow[] = []
+  for (const p of sortedPresets.filter(p => !p.folder_id)) {
+    flat.push({ kind: 'preset', id: p.id, preset: p, inFolder: null })
+  }
+  for (const f of sortedFolders) {
+    flat.push({ kind: 'folder', id: f.id, folder: f })
+    for (const m of sortedPresets.filter(p => p.folder_id === f.id)) {
+      flat.push({ kind: 'preset', id: m.id, preset: m, inFolder: f.id })
+    }
+  }
+  return flat
+}
+
+// Walk the flat list and derive each row's (folder_id, sort_order).
+// A preset's folder_id is the id of the most recent folder row that
+// precedes it; presets before any folder row are top-level (null).
+type DerivedState = {
+  presets: Map<string, { folder_id: string | null; sort_order: number }>
+  folders: Map<string, { sort_order: number }>
+}
+function deriveState(flat: FlatRow[]): DerivedState {
+  let currentFolder: string | null = null
+  let presetIdx = 0
+  let folderIdx = 0
+  const presets = new Map<string, { folder_id: string | null; sort_order: number }>()
+  const folders = new Map<string, { sort_order: number }>()
+  for (const r of flat) {
+    if (r.kind === 'folder') {
+      currentFolder = r.folder.id
+      folders.set(r.folder.id, { sort_order: folderIdx++ })
+    } else {
+      presets.set(r.preset.id, { folder_id: currentFolder, sort_order: presetIdx++ })
+    }
+  }
+  return { presets, folders }
+}
+
 // ── Main ────────────────────────────────────────────────────────────
 export default function LNB({ collapsed, animated, onToggle }: Props) {
   const pathname = usePathname()
@@ -554,23 +615,53 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     [currentUserKey],
   )
 
-  const starredPresets = useMemo(() => presets.filter(p => p.starred), [presets])
+  // ── Optimistic override ────────────────────────────────────────────
+  // When a drop commits we set this immediately; the visible list uses
+  // the override-merged data. Cleared after refresh() confirms the
+  // server has accepted the new state (or we roll back on failure).
+  const [override, setOverride] = useState<DerivedState | null>(null)
+
+  const overriddenPresets = useMemo(() => {
+    if (!override) return presets
+    return presets.map(p => {
+      const o = override.presets.get(p.id)
+      return o ? { ...p, folder_id: o.folder_id, sort_order: o.sort_order } : p
+    })
+  }, [presets, override])
+
+  const overriddenFolders = useMemo(() => {
+    if (!override) return folders
+    return folders.map(f => {
+      const o = override.folders.get(f.id)
+      return o ? { ...f, sort_order: o.sort_order } : f
+    })
+  }, [folders, override])
+
+  const starredPresets = useMemo(() => overriddenPresets.filter(p => p.starred), [overriddenPresets])
   const pagePresets = useMemo(
-    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey) : [],
-    [presets, activePresetKey],
+    () => activePresetKey ? overriddenPresets.filter(p => p.page_key === activePresetKey) : [],
+    [overriddenPresets, activePresetKey],
   )
   const pageFolders = useMemo(
-    () => activePresetKey ? folders.filter(f => f.page_key === activePresetKey) : [],
-    [folders, activePresetKey],
+    () => activePresetKey ? overriddenFolders.filter(f => f.page_key === activePresetKey) : [],
+    [overriddenFolders, activePresetKey],
   )
 
-  // Split by scope for the two middle sections.
   const sharedPresets = useMemo(() => pagePresets.filter(p => p.scope === 'collaborative'), [pagePresets])
-  const privatePresets = useMemo(() => pagePresets.filter(p => p.scope === 'private' && isMine(p.owner_user_key)), [pagePresets, isMine])
+  const privatePresets = useMemo(
+    () => pagePresets.filter(p => p.scope === 'private' && isMine(p.owner_user_key)),
+    [pagePresets, isMine],
+  )
   const sharedFolders = useMemo(() => pageFolders.filter(f => f.scope === 'collaborative'), [pageFolders])
-  const privateFolders = useMemo(() => pageFolders.filter(f => f.scope === 'private' && isMine(f.owner_user_key)), [pageFolders, isMine])
+  const privateFolders = useMemo(
+    () => pageFolders.filter(f => f.scope === 'private' && isMine(f.owner_user_key)),
+    [pageFolders, isMine],
+  )
 
-  // Modal state
+  const sharedFlat = useMemo(() => buildFlat(sharedPresets, sharedFolders), [sharedPresets, sharedFolders])
+  const privateFlat = useMemo(() => buildFlat(privatePresets, privateFolders), [privatePresets, privateFolders])
+
+  // ── Modal / rename / menu / collapse state ────────────────────────
   const [modalOpen, setModalOpen] = useState(false)
   const [modalTargetFolderId, setModalTargetFolderId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -581,11 +672,9 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     view: any
   } | null>(null)
 
-  // Rename state (preset / folder). Mutually exclusive.
   const [renamingPresetId, setRenamingPresetId] = useState<string | null>(null)
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null)
 
-  // Folder collapse state
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set())
   useEffect(() => { setCollapsedFolders(readFolderCollapseSet()) }, [])
   const toggleFolder = useCallback((id: string) => {
@@ -598,70 +687,13 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     })
   }, [])
 
-  // Context menu state
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
-  // ── Drag state ─────────────────────────────────────────────────────
+  // ── Drag state ────────────────────────────────────────────────────
   const [drag, setDrag] = useState<DragData | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
-  // Optimistic order override for each list we reorder.
-  const [optPresetOrder, setOptPresetOrder] = useState<Record<PresetScope, string[] | null>>({
-    private: null, collaborative: null,
-  })
-  const [optFolderOrder, setOptFolderOrder] = useState<Record<PresetScope, string[] | null>>({
-    private: null, collaborative: null,
-  })
 
-  // ── Helpers: grouping presets by folder per section ───────────────
-  type Grouped = { topLevel: ViewPreset[]; byFolder: Record<string, ViewPreset[]> }
-  const groupPresets = useCallback((list: ViewPreset[]): Grouped => {
-    const topLevel: ViewPreset[] = []
-    const byFolder: Record<string, ViewPreset[]> = {}
-    for (const p of list) {
-      if (p.folder_id) {
-        if (!byFolder[p.folder_id]) byFolder[p.folder_id] = []
-        byFolder[p.folder_id].push(p)
-      } else {
-        topLevel.push(p)
-      }
-    }
-    return { topLevel, byFolder }
-  }, [])
-
-  // Apply optimistic preset order within a section (both top-level
-  // and folder members are reordered by the same id list).
-  const applyOptPresetOrder = useCallback((list: ViewPreset[], section: PresetScope): ViewPreset[] => {
-    const order = optPresetOrder[section]
-    if (!order) return list
-    const byId = new Map(list.map(p => [p.id, p]))
-    const out: ViewPreset[] = []
-    for (const id of order) {
-      const p = byId.get(id)
-      if (p) { out.push(p); byId.delete(id) }
-    }
-    byId.forEach(p => out.push(p))
-    return out
-  }, [optPresetOrder])
-
-  const applyOptFolderOrder = useCallback((list: ViewFolder[], section: PresetScope): ViewFolder[] => {
-    const order = optFolderOrder[section]
-    if (!order) return list
-    const byId = new Map(list.map(f => [f.id, f]))
-    const out: ViewFolder[] = []
-    for (const id of order) {
-      const f = byId.get(id)
-      if (f) { out.push(f); byId.delete(id) }
-    }
-    byId.forEach(f => out.push(f))
-    return out
-  }, [optFolderOrder])
-
-  const orderedShared = useMemo(() => applyOptPresetOrder(sharedPresets, 'collaborative'), [sharedPresets, applyOptPresetOrder])
-  const orderedPrivate = useMemo(() => applyOptPresetOrder(privatePresets, 'private'), [privatePresets, applyOptPresetOrder])
-  const orderedSharedFolders = useMemo(() => applyOptFolderOrder(sharedFolders, 'collaborative'), [sharedFolders, applyOptFolderOrder])
-  const orderedPrivateFolders = useMemo(() => applyOptFolderOrder(privateFolders, 'private'), [privateFolders, applyOptFolderOrder])
-
-  // ── Modal submit / create preset ──────────────────────────────────
+  // ── Modal ─────────────────────────────────────────────────────────
   const openNewPresetModal = async (folderId: string | null) => {
     if (!activePresetKey || saving) return
     let snap = snapshotLiveView(activePresetKey)
@@ -703,7 +735,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     }
   }
 
-  // ── Preset actions ────────────────────────────────────────────────
+  // ── Preset / folder actions ───────────────────────────────────────
   const handleApplyPreset = (preset: ViewPreset) => {
     setActivePreset(preset.page_key, preset.id)
     void applyPreset(preset)
@@ -730,10 +762,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     if (res) await refresh()
   }
 
-  // Scope toggle: private → collaborative (share with team) or
-  // collaborative → private (unshare). Owner-only. The PATCH endpoint
-  // already supports scope; here we just surface the affordance and
-  // re-fetch so LNB relocates the row into the correct section.
   const handleToggleScope = async (preset: ViewPreset) => {
     const next: PresetScope = preset.scope === 'collaborative' ? 'private' : 'collaborative'
     if (next === 'collaborative') {
@@ -741,8 +769,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     } else {
       if (!window.confirm(`'${preset.name}' 뷰를 개인 뷰로 전환할까요? 팀원에게 더 이상 보이지 않습니다.`)) return
     }
-    // When moving out of a shared folder (or into private), we also
-    // detach from the folder if the folder scope no longer matches.
     const folder = preset.folder_id ? folders.find(f => f.id === preset.folder_id) : null
     const detachFolder = folder && folder.scope !== next
     const res = await updatePreset(preset.id, {
@@ -757,7 +783,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   }
 
   const handleCopyToMine = async (preset: ViewPreset) => {
-    if (!activePresetKey) return
     const created = await createPreset({
       page_key: preset.page_key,
       name: `${preset.name} (복사본)`,
@@ -775,7 +800,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     await refresh()
   }
 
-  // ── Folder actions ───────────────────────────────────────────────
   const handleCreateFolder = async (scope: PresetScope) => {
     if (!activePresetKey) return
     const name = window.prompt('새 폴더 이름', '새 폴더')?.trim()
@@ -786,8 +810,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       return
     }
     await refresh()
-    // Immediately enter rename mode? We use the prompt result as name;
-    // user can double-click later if they want to change.
   }
 
   const handleRenameFolder = async (folder: ViewFolder, next: string) => {
@@ -803,9 +825,94 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     await refresh()
   }
 
-  // ── Drag handlers ─────────────────────────────────────────────────
+  // ── Unified drop commit ───────────────────────────────────────────
+  // Splices the dragged row (or folder-block) into the flat list,
+  // derives the new (folder_id, sort_order) map, applies it as an
+  // optimistic override, and issues PATCHes only for rows whose
+  // state actually changed. After all PATCHes resolve (or any
+  // reject), we refresh from the server and clear the override.
+  const commitFlat = useCallback((section: PresetScope, newFlat: FlatRow[]) => {
+    const derived = deriveState(newFlat)
+    setOverride(derived)
+
+    const patches: Array<Promise<unknown>> = []
+    derived.presets.forEach((state, id) => {
+      const orig = presets.find(p => p.id === id)
+      if (!orig) return
+      const sameFolder = orig.folder_id === state.folder_id
+      const sameOrder = (orig.sort_order ?? -1) === state.sort_order
+      if (!sameFolder || !sameOrder) {
+        patches.push(updatePreset(id, {
+          folder_id: state.folder_id,
+          sort_order: state.sort_order,
+        }))
+      }
+    })
+    derived.folders.forEach((state, id) => {
+      const orig = folders.find(f => f.id === id)
+      if (!orig) return
+      if ((orig.sort_order ?? -1) !== state.sort_order) {
+        patches.push(updateFolder(id, { sort_order: state.sort_order }))
+      }
+    })
+    if (patches.length === 0) {
+      setOverride(null)
+      return
+    }
+
+    void (async () => {
+      try {
+        const results = await Promise.all(patches)
+        const anyFailed = results.some(r => r == null)
+        if (anyFailed) window.alert('일부 항목 저장에 실패했습니다. 원래 상태로 되돌립니다.')
+      } catch {
+        window.alert('저장 중 오류가 발생했습니다. 원래 상태로 되돌립니다.')
+      } finally {
+        await refresh()
+        setOverride(null)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presets, folders, refresh])
+
+  // Splice a preset into the flat list at a new insertion index.
+  const dropPreset = useCallback((section: PresetScope, presetId: string, insertAt: number) => {
+    const flat = section === 'collaborative' ? sharedFlat.slice() : privateFlat.slice()
+    const dragIdx = flat.findIndex(r => r.kind === 'preset' && r.id === presetId)
+    if (dragIdx < 0) return
+    const [dragged] = flat.splice(dragIdx, 1)
+    const adjusted = dragIdx < insertAt ? insertAt - 1 : insertAt
+    flat.splice(adjusted, 0, dragged)
+    // Compare adjusted flat to original — if identical AND folder_id
+    // assignment doesn't change (because target slot has same context),
+    // commitFlat will skip API calls anyway.
+    commitFlat(section, flat)
+  }, [sharedFlat, privateFlat, commitFlat])
+
+  // Splice a folder (plus its member block) to a new insertion index.
+  const dropFolder = useCallback((section: PresetScope, folderId: string, insertAt: number) => {
+    const flat = section === 'collaborative' ? sharedFlat.slice() : privateFlat.slice()
+    const dragIdx = flat.findIndex(r => r.kind === 'folder' && r.id === folderId)
+    if (dragIdx < 0) return
+    // Block = folder row plus all contiguous member rows immediately after it.
+    let blockEnd = dragIdx + 1
+    while (
+      blockEnd < flat.length &&
+      flat[blockEnd].kind === 'preset' &&
+      (flat[blockEnd] as Extract<FlatRow, { kind: 'preset' }>).inFolder === folderId
+    ) blockEnd++
+    // Cannot drop inside own block.
+    if (insertAt > dragIdx && insertAt <= blockEnd) return
+    const blockSize = blockEnd - dragIdx
+    const block = flat.splice(dragIdx, blockSize)
+    const adjusted = insertAt > dragIdx ? insertAt - blockSize : insertAt
+    flat.splice(adjusted, 0, ...block)
+    commitFlat(section, flat)
+  }, [sharedFlat, privateFlat, commitFlat])
+
+  // ── Drag event handlers ───────────────────────────────────────────
   const startPresetDrag = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    setDrag({ kind: 'preset', id: preset.id })
+    setDrag({ kind: 'preset', id: preset.id, section: preset.scope })
     try { e.dataTransfer.setData('text/plain', preset.id) } catch { /* ignore */ }
     e.dataTransfer.effectAllowed = 'move'
   }
@@ -816,30 +923,20 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  // Hit-test rules (per UX spec):
-  //   preset (non-folder item): top 40% → line above, bottom 40% →
-  //     line below. Middle 20% is a quiet zone — we keep whichever
-  //     indicator was last set so the user's commit isn't ambiguous
-  //     but we also don't jitter mid-move.
-  //   folder row (preset being dragged): top 40% → line above folder
-  //     (drop as top-level sibling above), middle 20% → file INTO
-  //     folder (ring highlight), bottom 40% → line below.
-  //   folder row (folder being dragged = reorder): 50/50 above/below
-  //     since "into" isn't meaningful for folders-into-folders.
+  // Preset rows receive preset drags only; folder-drags ignore them.
   const overPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!drag) return
-    // Folders can't drop onto preset rows.
     if (drag.kind !== 'preset') return
     if (drag.id === target.id) return
+    if (drag.section !== target.scope) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
+    // 40/20/40 — middle 20% is a quiet band to avoid jitter.
     const topZone = h * 0.4
     const bottomZone = h * 0.6
-    // Quiet 20% middle band: don't change the indicator — keeps the
-    // line from jittering while the cursor is mid-row.
     if (y >= topZone && y <= bottomZone) return
     const position: 'above' | 'below' = y < topZone ? 'above' : 'below'
     setDropTarget(prev =>
@@ -849,16 +946,17 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     )
   }
 
+  // Folder rows accept both preset drags (above/into/below) and
+  // folder drags (reorder with above/below only).
   const overFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!drag) return
+    if (drag.section !== folder.scope) return
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
 
     if (drag.kind === 'folder') {
-      // Folder-to-folder = reorder, no "into".
       if (drag.id === folder.id) return
-      if (drag.section !== folder.scope) return
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       const position: 'above' | 'below' = y < h / 2 ? 'above' : 'below'
@@ -870,7 +968,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       return
     }
 
-    // Preset drag over a folder — 40/20/40 split.
+    // Preset over folder row — 40/20/40.
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     const topZone = h * 0.4
@@ -896,127 +994,11 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     }
   }
 
-  const leaveRow = () => {
-    // We don't clear aggressively; if the cursor moves to a new valid
-    // target that handler will replace dropTarget. Aggressive clearing
-    // causes flicker between rows.
-  }
-
-  // Drop onto a preset row — only reorders within the same section.
-  const dropOnPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const d = drag
-    const t = dropTarget
-    setDrag(null); setDropTarget(null)
-    if (!d || d.kind !== 'preset') return
-    if (d.id === target.id) return
-    const section: PresetScope = target.scope
-    // Only allow reorder if source preset is in the same section.
-    const sourcePreset = presets.find(p => p.id === d.id)
-    if (!sourcePreset || sourcePreset.scope !== section) return
-    // Reorder within section: union of top-level + all folder members,
-    // since sort_order is global per-section.
-    const sectionList = section === 'collaborative' ? orderedShared : orderedPrivate
-    const currentOrder = sectionList.map(p => p.id)
-    const fromIdx = currentOrder.indexOf(d.id)
-    const targetIdx = currentOrder.indexOf(target.id)
-    if (fromIdx < 0 || targetIdx < 0) return
-    const position = t && t.kind === 'preset' && t.id === target.id ? t.position : 'above'
-    let insertAt = position === 'above' ? targetIdx : targetIdx + 1
-    const nextOrder = currentOrder.slice()
-    nextOrder.splice(fromIdx, 1)
-    if (fromIdx < insertAt) insertAt -= 1
-    nextOrder.splice(insertAt, 0, d.id)
-    if (nextOrder.every((id, i) => id === currentOrder[i])) {
-      // Same order but maybe moving across folder boundaries — if
-      // source.folder_id != target.folder_id, treat as move.
-      if (sourcePreset.folder_id !== target.folder_id) {
-        const folderId = target.folder_id
-        setOptPresetOrder(prev => ({ ...prev, [section]: nextOrder }))
-        void (async () => {
-          await updatePreset(d.id, { folder_id: folderId })
-          await refresh()
-          setOptPresetOrder(prev => ({ ...prev, [section]: null }))
-        })()
-      }
-      return
-    }
-
-    setOptPresetOrder(prev => ({ ...prev, [section]: nextOrder }))
-    const folderId = target.folder_id
-    const folderChanged = sourcePreset.folder_id !== folderId
-    void (async () => {
-      if (folderChanged) await updatePreset(d.id, { folder_id: folderId })
-      await reorderPresets(nextOrder)
-      await refresh()
-      setOptPresetOrder(prev => ({ ...prev, [section]: null }))
-    })()
-  }
-
-  // Drop onto a folder row — either reorders folders or files a preset into it.
-  const dropOnFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const d = drag
-    const t = dropTarget
-    setDrag(null); setDropTarget(null)
-    if (!d) return
-
-    if (d.kind === 'folder') {
-      if (d.id === folder.id || d.section !== folder.scope) return
-      const sectionList = folder.scope === 'collaborative' ? orderedSharedFolders : orderedPrivateFolders
-      const currentOrder = sectionList.map(f => f.id)
-      const fromIdx = currentOrder.indexOf(d.id)
-      const targetIdx = currentOrder.indexOf(folder.id)
-      if (fromIdx < 0 || targetIdx < 0) return
-      const position = t && t.kind === 'folder-row' && t.id === folder.id ? t.position : 'above'
-      let insertAt = position === 'above' ? targetIdx : targetIdx + 1
-      const nextOrder = currentOrder.slice()
-      nextOrder.splice(fromIdx, 1)
-      if (fromIdx < insertAt) insertAt -= 1
-      nextOrder.splice(insertAt, 0, d.id)
-      if (nextOrder.every((id, i) => id === currentOrder[i])) return
-      setOptFolderOrder(prev => ({ ...prev, [folder.scope]: nextOrder }))
-      void (async () => {
-        await reorderFolders(nextOrder)
-        await refresh()
-        setOptFolderOrder(prev => ({ ...prev, [folder.scope]: null }))
-      })()
-      return
-    }
-
-    // Preset dropped on a folder row. Two cases, distinguished by the
-    // indicator position at drop time:
-    //   folder-into  → file preset inside the folder (folder_id = folder.id)
-    //   folder-row   → drop as a top-level sibling (folder_id = null).
-    //                  Positioning within top-level isn't tracked here;
-    //                  the row appears at its current sort_order after refresh.
-    if (d.kind === 'preset') {
-      const source = presets.find(p => p.id === d.id)
-      if (!source) return
-      // Scope guard: a private preset may only interact with a private
-      // folder (and vice versa). Keeps sort_order pools disjoint.
-      if (source.scope !== folder.scope) {
-        window.alert('공개 범위가 다른 폴더에는 이동할 수 없습니다')
-        return
-      }
-      const intoFolder = t?.kind === 'folder-into' && t.id === folder.id
-      const targetFolderId = intoFolder ? folder.id : null
-      if (source.folder_id === targetFolderId) return
-      void (async () => {
-        await updatePreset(d.id, { folder_id: targetFolderId })
-        await refresh()
-      })()
-    }
-  }
-
-  // Drop on empty section area → move preset to top-level (folder_id=null).
-  const overSection = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
+  // Section background — always a valid preset drop (append to end of
+  // the flat list). Enables "drag out of folder to section bottom".
+  const overSectionBg = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
     if (!drag || drag.kind !== 'preset') return
-    const source = presets.find(p => p.id === drag.id)
-    if (!source || source.scope !== section) return
-    // Only highlight the section if the source is currently in a folder;
-    // dragging within top-level already handled by preset-row handler.
-    if (!source.folder_id) return
+    if (drag.section !== section) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     setDropTarget(prev =>
@@ -1025,18 +1007,79 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         : { kind: 'section', section }
     )
   }
-  const dropOnSection = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
+
+  // Drop executors — translate current drop target into an insertAt
+  // index and call dropPreset / dropFolder.
+  const flatFor = (section: PresetScope) => section === 'collaborative' ? sharedFlat : privateFlat
+
+  const executeDrop = useCallback((section: PresetScope) => {
     const d = drag
+    const t = dropTarget
     setDrag(null); setDropTarget(null)
-    if (!d || d.kind !== 'preset') return
-    const source = presets.find(p => p.id === d.id)
-    if (!source || source.scope !== section || !source.folder_id) return
-    void (async () => {
-      await updatePreset(d.id, { folder_id: null })
-      await refresh()
-    })()
-  }
+    if (!d || d.section !== section || !t) return
+    const flat = flatFor(section)
+
+    if (d.kind === 'preset') {
+      let insertAt = -1
+      if (t.kind === 'preset') {
+        const idx = flat.findIndex(r => r.kind === 'preset' && r.id === t.id)
+        if (idx < 0) return
+        insertAt = t.position === 'above' ? idx : idx + 1
+      } else if (t.kind === 'folder-row') {
+        const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
+        if (idx < 0) return
+        if (t.position === 'above') {
+          insertAt = idx
+        } else {
+          // Just below folder row = end of its member block (last member).
+          let j = idx + 1
+          while (
+            j < flat.length &&
+            flat[j].kind === 'preset' &&
+            (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
+          ) j++
+          insertAt = j
+        }
+      } else if (t.kind === 'folder-into') {
+        const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
+        if (idx < 0) return
+        // End of members (appends to folder).
+        let j = idx + 1
+        while (
+          j < flat.length &&
+          flat[j].kind === 'preset' &&
+          (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
+        ) j++
+        insertAt = j
+      } else if (t.kind === 'section') {
+        insertAt = flat.length
+      }
+      if (insertAt < 0) return
+      dropPreset(section, d.id, insertAt)
+      return
+    }
+
+    // Folder drag — only folder-row targets apply.
+    if (d.kind === 'folder') {
+      if (t.kind !== 'folder-row') return
+      const idx = flat.findIndex(r => r.kind === 'folder' && r.id === t.id)
+      if (idx < 0) return
+      let insertAt: number
+      if (t.position === 'above') {
+        insertAt = idx
+      } else {
+        // Just below the whole folder block.
+        let j = idx + 1
+        while (
+          j < flat.length &&
+          flat[j].kind === 'preset' &&
+          (flat[j] as Extract<FlatRow, { kind: 'preset' }>).inFolder === t.id
+        ) j++
+        insertAt = j
+      }
+      dropFolder(section, d.id, insertAt)
+    }
+  }, [drag, dropTarget, sharedFlat, privateFlat, dropPreset, dropFolder])
 
   const endDrag = () => {
     setDrag(null)
@@ -1078,15 +1121,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     setMenu({ x: e.clientX, y: e.clientY, items })
   }
 
-  // ── Render helpers ────────────────────────────────────────────────
+  // ── Section renderer ──────────────────────────────────────────────
   const renderPresetSection = (
     section: PresetScope,
     label: string,
-    presetsList: ViewPreset[],
-    foldersList: ViewFolder[],
+    flat: FlatRow[],
   ) => {
-    const grouped = groupPresets(presetsList)
     const canCreate = !!activePresetKey
+    const sectionHighlight = dropTarget?.kind === 'section' && dropTarget.section === section
     return (
       <>
         <SectionLabel
@@ -1116,45 +1158,46 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
           {label}
         </SectionLabel>
         <div
-          className={`relative px-2 pb-1 ${dropTarget?.kind === 'section' && dropTarget.section === section ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
-          onDragOver={overSection(section)}
-          onDrop={dropOnSection(section)}
+          className={`relative px-2 pb-1 ${sectionHighlight ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
+          onDragOver={overSectionBg(section)}
+          onDrop={() => executeDrop(section)}
         >
-          {/* Section-level drop indicator: a 2px blue line flush with
-              the bottom edge of this section's content area. Signals
-              "drop here → preset becomes a top-level row in this
-              section" when the user drags out of a folder. */}
-          {dropTarget?.kind === 'section' && dropTarget.section === section && (
+          {/* Bottom-of-section drop indicator line. */}
+          {sectionHighlight && (
             <div
               aria-hidden="true"
               className="pointer-events-none absolute left-2 right-2 bottom-0 h-[2px] bg-[#2D7FF9]"
             />
           )}
+
           {!activePresetKey && (
             <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
               뷰를 지원하지 않는 페이지입니다
             </div>
           )}
-          {activePresetKey && presetsList.length === 0 && foldersList.length === 0 && (
+          {activePresetKey && flat.length === 0 && (
             <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
               {section === 'collaborative' ? '공유된 뷰가 없습니다' : '저장된 뷰가 없습니다'}
             </div>
           )}
 
-          {/* Folders first, then top-level presets. */}
-          {foldersList.map(folder => {
-            const mine = isMine(folder.owner_user_key)
-            const open = !collapsedFolders.has(folder.id)
-            const members = grouped.byFolder[folder.id] ?? []
-            const folderDropLine =
-              dropTarget?.kind === 'folder-row' && dropTarget.id === folder.id
-                ? dropTarget.position
-                : null
-            const folderDropInto =
-              dropTarget?.kind === 'folder-into' && dropTarget.id === folder.id
-            return (
-              <div key={folder.id}>
+          {flat.map(row => {
+            if (row.kind === 'folder') {
+              const folder = row.folder
+              const mine = isMine(folder.owner_user_key)
+              const open = !collapsedFolders.has(folder.id)
+              const folderDropLine =
+                dropTarget?.kind === 'folder-row' && dropTarget.id === folder.id
+                  ? dropTarget.position
+                  : null
+              const folderDropInto =
+                dropTarget?.kind === 'folder-into' && dropTarget.id === folder.id
+              // If this folder is collapsed, don't render its members
+              // — but members still exist in the flat list, so we skip
+              // them during render via the `open` gate below.
+              return (
                 <FolderRow
+                  key={folder.id}
                   folder={folder}
                   ownedByMe={mine}
                   open={open}
@@ -1169,77 +1212,45 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                   dropInto={folderDropInto}
                   onDragStart={mine ? startFolderDrag(folder) : undefined}
                   onDragOver={overFolderRow(folder)}
-                  onDragLeave={leaveRow}
-                  onDrop={dropOnFolderRow(folder)}
+                  onDrop={() => executeDrop(section)}
                   onDragEnd={endDrag}
                   onContextMenu={e => openFolderMenu(folder, e)}
                 />
-                {open && members.map(p => {
-                  const pMine = isMine(p.owner_user_key)
-                  const dropLine =
-                    dropTarget?.kind === 'preset' && dropTarget.id === p.id
-                      ? dropTarget.position
-                      : null
-                  return (
-                    <PresetRow
-                      key={p.id}
-                      preset={p}
-                      active={activePresetId === p.id}
-                      ownedByMe={pMine}
-                      indented
-                      onApply={() => handleApplyPreset(p)}
-                      onToggleStar={pMine ? () => void handleToggleStar(p) : undefined}
-                      onDelete={pMine ? () => void handleDeletePreset(p) : undefined}
-                      onCopyToMine={!pMine ? () => void handleCopyToMine(p) : undefined}
-                      onRename={next => void handleRenamePreset(p, next)}
-                      renaming={renamingPresetId === p.id}
-                      onRequestRename={() => setRenamingPresetId(p.id)}
-                      onCancelRename={() => setRenamingPresetId(null)}
-                      draggable={pMine}
-                      isDragging={drag?.kind === 'preset' && drag.id === p.id}
-                      dropLinePosition={dropLine}
-                      onDragStart={pMine ? startPresetDrag(p) : undefined}
-                      onDragOver={overPresetRow(p)}
-                      onDragLeave={leaveRow}
-                      onDrop={dropOnPresetRow(p)}
-                      onDragEnd={endDrag}
-                      onContextMenu={e => openPresetMenu(p, e)}
-                    />
-                  )
-                })}
-              </div>
-            )
-          })}
+              )
+            }
 
-          {grouped.topLevel.map(p => {
-            const pMine = isMine(p.owner_user_key)
+            // Preset row. If it's a folder member and the folder is
+            // collapsed, skip rendering.
+            const preset = row.preset
+            if (row.inFolder && collapsedFolders.has(row.inFolder)) return null
+            const pMine = isMine(preset.owner_user_key)
             const dropLine =
-              dropTarget?.kind === 'preset' && dropTarget.id === p.id
+              dropTarget?.kind === 'preset' && dropTarget.id === preset.id
                 ? dropTarget.position
                 : null
             return (
               <PresetRow
-                key={p.id}
-                preset={p}
-                active={activePresetId === p.id}
+                key={preset.id}
+                preset={preset}
+                active={activePresetId === preset.id}
                 ownedByMe={pMine}
-                onApply={() => handleApplyPreset(p)}
-                onToggleStar={pMine ? () => void handleToggleStar(p) : undefined}
-                onDelete={pMine ? () => void handleDeletePreset(p) : undefined}
-                onCopyToMine={!pMine ? () => void handleCopyToMine(p) : undefined}
-                onRename={next => void handleRenamePreset(p, next)}
-                renaming={renamingPresetId === p.id}
-                onRequestRename={() => setRenamingPresetId(p.id)}
+                indented={!!row.inFolder}
+                onApply={() => handleApplyPreset(preset)}
+                onToggleStar={pMine ? () => void handleToggleStar(preset) : undefined}
+                onDelete={pMine ? () => void handleDeletePreset(preset) : undefined}
+                onCopyToMine={!pMine ? () => void handleCopyToMine(preset) : undefined}
+                onRename={next => void handleRenamePreset(preset, next)}
+                renaming={renamingPresetId === preset.id}
+                onRequestRename={() => setRenamingPresetId(preset.id)}
                 onCancelRename={() => setRenamingPresetId(null)}
                 draggable={pMine}
-                isDragging={drag?.kind === 'preset' && drag.id === p.id}
+                isDragging={drag?.kind === 'preset' && drag.id === preset.id}
                 dropLinePosition={dropLine}
-                onDragStart={pMine ? startPresetDrag(p) : undefined}
-                onDragOver={overPresetRow(p)}
-                onDragLeave={leaveRow}
-                onDrop={dropOnPresetRow(p)}
+                onDragStart={pMine ? startPresetDrag(preset) : undefined}
+                onDragOver={overPresetRow(preset)}
+                onDrop={() => executeDrop(section)}
                 onDragEnd={endDrag}
-                onContextMenu={e => openPresetMenu(p, e)}
+                onContextMenu={e => openPresetMenu(preset, e)}
               />
             )
           })}
@@ -1248,6 +1259,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     )
   }
 
+  // ── Layout ────────────────────────────────────────────────────────
   const widthClass = collapsed ? 'w-[36px]' : 'w-[220px]'
   const transitionClass = animated ? 'transition-[width] duration-200 ease-out' : ''
 
@@ -1274,7 +1286,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         <ToggleButton collapsed={collapsed} onToggle={onToggle} />
       </div>
 
-      {/* Scrolling content: everything except the bottom 휴지통 pin. */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {/* 즐겨찾기 */}
         <SectionLabel>즐겨찾기</SectionLabel>
@@ -1304,13 +1315,11 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
         <Divider />
 
-        {/* 공유 뷰 */}
-        {renderPresetSection('collaborative', '공유 뷰', orderedShared, orderedSharedFolders)}
+        {renderPresetSection('collaborative', '공유 뷰', sharedFlat)}
 
         <Divider />
 
-        {/* 내 뷰 */}
-        {renderPresetSection('private', '내 뷰', orderedPrivate, orderedPrivateFolders)}
+        {renderPresetSection('private', '내 뷰', privateFlat)}
 
         <Divider />
 
@@ -1349,8 +1358,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         </nav>
       </div>
 
-      {/* 휴지통 — pinned to bottom with a divider above. flex-shrink-0
-          keeps it fixed while the section above scrolls. */}
+      {/* 휴지통 — pinned bottom */}
       <div className="flex-shrink-0">
         <Divider />
         <nav className="flex flex-col px-2 pb-3">
