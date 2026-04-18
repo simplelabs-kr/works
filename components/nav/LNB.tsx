@@ -78,18 +78,10 @@ function writeSectionCollapseSet(s: Set<SectionKey>) {
 }
 
 // ── Atoms ───────────────────────────────────────────────────────────
-// Page header — the topmost LNB element identifying which workspace
-// page the user is looking at. Label is driven by pages.ts so any new
-// page (products, bundles, ...) gets a header with zero LNB changes.
-function PageHeader({ label }: { label: string | null }) {
-  return (
-    <div className="px-3 pt-3 pb-2">
-      <div className="text-[14px] font-semibold text-[#0F172A] truncate" title={label ?? undefined}>
-        {label ?? '\u00A0'}
-      </div>
-    </div>
-  )
-}
+// The page name header lives inline in the main render (same row as
+// the collapse toggle). Kept here as a comment anchor: the label is
+// driven by pages.ts so any new page (products, bundles, ...) gets a
+// header with zero LNB changes.
 
 function SectionHeader({
   label,
@@ -825,11 +817,18 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       data-worksy-lnb
       className={`flex-shrink-0 ${widthClass} ${transitionClass} h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-hidden`}
     >
-      <div data-worksy-lnb-toggle className="flex items-center justify-end px-2 pt-2 pb-0 flex-shrink-0">
+      <div
+        data-worksy-lnb-toggle
+        className="flex items-center gap-1.5 px-2 py-2 flex-shrink-0"
+      >
         <ToggleButton collapsed={collapsed} onToggle={onToggle} />
+        <div
+          className="flex-1 min-w-0 text-[14px] font-semibold text-[#0F172A] truncate"
+          title={activePage?.label ?? undefined}
+        >
+          {activePage?.label ?? '\u00A0'}
+        </div>
       </div>
-
-      <PageHeader label={activePage?.label ?? null} />
       <div className="mx-3 h-px bg-[#E2E8F0]" aria-hidden="true" />
 
       <div className="flex-1 min-h-0 overflow-y-auto pt-1">
