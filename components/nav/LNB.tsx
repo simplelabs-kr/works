@@ -822,7 +822,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         className="flex items-center gap-1.5 px-2 py-2 flex-shrink-0"
       >
         <div
-          className="flex-1 min-w-0 text-[14px] font-semibold leading-[26px] text-[#0F172A] truncate"
+          className="flex-1 min-w-0 pl-3 text-[14px] font-semibold leading-[26px] text-[#0F172A] truncate"
           title={activePage?.label ?? undefined}
         >
           {activePage?.label ?? '\u00A0'}
