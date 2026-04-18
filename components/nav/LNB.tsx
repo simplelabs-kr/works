@@ -690,8 +690,35 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
 
   // ── Drag state ────────────────────────────────────────────────────
+  // We keep both a React state (drives indicator rendering) AND a ref
+  // mirror (read during drop / bubbling to avoid stale-closure and
+  // double-fire bugs — React batches setState across bubbles, so the
+  // last setter wins; refs give us the authoritative latest value).
   const [drag, setDrag] = useState<DragData | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const dragRef = useRef<DragData | null>(null)
+  const dropTargetRef = useRef<DropTarget | null>(null)
+  // Fires once per drop to prevent double-execution when a drop event
+  // bubbles from a row to the section (both have onDrop handlers).
+  const droppedRef = useRef(false)
+
+  const setDragBoth = useCallback((d: DragData | null) => {
+    dragRef.current = d
+    setDrag(d)
+  }, [])
+  const setDropTargetBoth = useCallback((t: DropTarget | null) => {
+    // Skip if identical to avoid needless re-renders.
+    const prev = dropTargetRef.current
+    const same =
+      prev && t &&
+      prev.kind === t.kind &&
+      (('id' in prev && 'id' in t) ? prev.id === t.id : true) &&
+      (('position' in prev && 'position' in t) ? prev.position === t.position : true) &&
+      (('section' in prev && 'section' in t) ? prev.section === t.section : true)
+    if (prev === t || same) return
+    dropTargetRef.current = t
+    setDropTarget(t)
+  }, [])
 
   // ── Modal ─────────────────────────────────────────────────────────
   const openNewPresetModal = async (folderId: string | null) => {
@@ -912,111 +939,113 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
 
   // ── Drag event handlers ───────────────────────────────────────────
   const startPresetDrag = (preset: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    setDrag({ kind: 'preset', id: preset.id, section: preset.scope })
+    droppedRef.current = false
+    setDragBoth({ kind: 'preset', id: preset.id, section: preset.scope })
     try { e.dataTransfer.setData('text/plain', preset.id) } catch { /* ignore */ }
     e.dataTransfer.effectAllowed = 'move'
   }
 
   const startFolderDrag = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
-    setDrag({ kind: 'folder', id: folder.id, section: folder.scope })
+    droppedRef.current = false
+    setDragBoth({ kind: 'folder', id: folder.id, section: folder.scope })
     try { e.dataTransfer.setData('text/plain', folder.id) } catch { /* ignore */ }
     e.dataTransfer.effectAllowed = 'move'
   }
 
   // Preset rows receive preset drags only; folder-drags ignore them.
+  // CRITICAL: stopPropagation on the active branch so the parent section
+  // handler doesn't clobber our drop target via bubbling.
   const overPresetRow = (target: ViewPreset) => (e: React.DragEvent<HTMLDivElement>) => {
-    if (!drag) return
-    if (drag.kind !== 'preset') return
-    if (drag.id === target.id) return
-    if (drag.section !== target.scope) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
+    const d = dragRef.current
+    if (!d || d.kind !== 'preset' || d.id === target.id || d.section !== target.scope) return
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
-    // 40/20/40 — middle 20% is a quiet band to avoid jitter.
+    // 40/20/40 — middle 20% is a quiet band; let the section handler
+    // fallback claim it (so the user gets "append to end of section").
     const topZone = h * 0.4
     const bottomZone = h * 0.6
     if (y >= topZone && y <= bottomZone) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
     const position: 'above' | 'below' = y < topZone ? 'above' : 'below'
-    setDropTarget(prev =>
-      prev && prev.kind === 'preset' && prev.id === target.id && prev.position === position
-        ? prev
-        : { kind: 'preset', id: target.id, position }
-    )
+    setDropTargetBoth({ kind: 'preset', id: target.id, position })
   }
 
   // Folder rows accept both preset drags (above/into/below) and
   // folder drags (reorder with above/below only).
   const overFolderRow = (folder: ViewFolder) => (e: React.DragEvent<HTMLDivElement>) => {
-    if (!drag) return
-    if (drag.section !== folder.scope) return
+    const d = dragRef.current
+    if (!d) return
+    if (d.section !== folder.scope) return
     const rect = e.currentTarget.getBoundingClientRect()
     const y = e.clientY - rect.top
     const h = rect.height
 
-    if (drag.kind === 'folder') {
-      if (drag.id === folder.id) return
+    if (d.kind === 'folder') {
+      if (d.id === folder.id) return
       e.preventDefault()
+      e.stopPropagation()
       e.dataTransfer.dropEffect = 'move'
       const position: 'above' | 'below' = y < h / 2 ? 'above' : 'below'
-      setDropTarget(prev =>
-        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === position
-          ? prev
-          : { kind: 'folder-row', id: folder.id, position }
-      )
+      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position })
       return
     }
 
     // Preset over folder row — 40/20/40.
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
     const topZone = h * 0.4
     const bottomZone = h * 0.6
     if (y < topZone) {
-      setDropTarget(prev =>
-        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === 'above'
-          ? prev
-          : { kind: 'folder-row', id: folder.id, position: 'above' }
-      )
+      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position: 'above' })
     } else if (y > bottomZone) {
-      setDropTarget(prev =>
-        prev && prev.kind === 'folder-row' && prev.id === folder.id && prev.position === 'below'
-          ? prev
-          : { kind: 'folder-row', id: folder.id, position: 'below' }
-      )
+      setDropTargetBoth({ kind: 'folder-row', id: folder.id, position: 'below' })
     } else {
-      setDropTarget(prev =>
-        prev && prev.kind === 'folder-into' && prev.id === folder.id
-          ? prev
-          : { kind: 'folder-into', id: folder.id }
-      )
+      setDropTargetBoth({ kind: 'folder-into', id: folder.id })
     }
   }
 
-  // Section background — always a valid preset drop (append to end of
-  // the flat list). Enables "drag out of folder to section bottom".
+  // Section background — fallback when the cursor is NOT claimed by a
+  // row (row handlers stopPropagation when they accept). Preset drag
+  // appends to end of the flat list. Folder drags ignore the section
+  // background (they only reorder via folder-row targets).
   const overSectionBg = (section: PresetScope) => (e: React.DragEvent<HTMLDivElement>) => {
-    if (!drag || drag.kind !== 'preset') return
-    if (drag.section !== section) return
+    const d = dragRef.current
+    if (!d || d.kind !== 'preset' || d.section !== section) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-    setDropTarget(prev =>
-      prev && prev.kind === 'section' && prev.section === section
-        ? prev
-        : { kind: 'section', section }
-    )
+    setDropTargetBoth({ kind: 'section', section })
+  }
+
+  // Clear the indicator when the cursor leaves the section entirely.
+  const leaveSectionBg = (e: React.DragEvent<HTMLDivElement>) => {
+    // dragleave fires when crossing INTO a child too — only clear when
+    // genuinely leaving the section container.
+    const related = e.relatedTarget as Node | null
+    if (related && e.currentTarget.contains(related)) return
+    setDropTargetBoth(null)
   }
 
   // Drop executors — translate current drop target into an insertAt
-  // index and call dropPreset / dropFolder.
+  // index and call dropPreset / dropFolder. Reads refs (not state) so
+  // the value is always the latest even across bubble double-fires,
+  // and a droppedRef latch prevents double execution.
   const flatFor = (section: PresetScope) => section === 'collaborative' ? sharedFlat : privateFlat
 
   const executeDrop = useCallback((section: PresetScope) => {
-    const d = drag
-    const t = dropTarget
-    setDrag(null); setDropTarget(null)
-    if (!d || d.section !== section || !t) return
+    if (droppedRef.current) return
+    const d = dragRef.current
+    const t = dropTargetRef.current
+    if (!d || d.section !== section || !t) {
+      setDragBoth(null); setDropTargetBoth(null); return
+    }
+    droppedRef.current = true
+    // Clear UI indicator immediately; commitFlat will show the
+    // optimistic result.
+    setDragBoth(null); setDropTargetBoth(null)
     const flat = flatFor(section)
 
     if (d.kind === 'preset') {
@@ -1031,7 +1060,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         if (t.position === 'above') {
           insertAt = idx
         } else {
-          // Just below folder row = end of its member block (last member).
+          // Just below folder row = end of its member block.
           let j = idx + 1
           while (
             j < flat.length &&
@@ -1079,11 +1108,12 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
       }
       dropFolder(section, d.id, insertAt)
     }
-  }, [drag, dropTarget, sharedFlat, privateFlat, dropPreset, dropFolder])
+  }, [sharedFlat, privateFlat, dropPreset, dropFolder, setDragBoth, setDropTargetBoth])
 
   const endDrag = () => {
-    setDrag(null)
-    setDropTarget(null)
+    setDragBoth(null)
+    setDropTargetBoth(null)
+    droppedRef.current = false
   }
 
   // ── Context menus ─────────────────────────────────────────────────
@@ -1160,7 +1190,8 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         <div
           className={`relative px-2 pb-1 ${sectionHighlight ? 'bg-[#EFF6FF] rounded-[6px]' : ''}`}
           onDragOver={overSectionBg(section)}
-          onDrop={() => executeDrop(section)}
+          onDragLeave={leaveSectionBg}
+          onDrop={e => { e.preventDefault(); executeDrop(section) }}
         >
           {/* Bottom-of-section drop indicator line. */}
           {sectionHighlight && (
@@ -1212,7 +1243,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                   dropInto={folderDropInto}
                   onDragStart={mine ? startFolderDrag(folder) : undefined}
                   onDragOver={overFolderRow(folder)}
-                  onDrop={() => executeDrop(section)}
+                  onDrop={e => { e.preventDefault(); e.stopPropagation(); executeDrop(section) }}
                   onDragEnd={endDrag}
                   onContextMenu={e => openFolderMenu(folder, e)}
                 />
@@ -1248,7 +1279,19 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                 dropLinePosition={dropLine}
                 onDragStart={pMine ? startPresetDrag(preset) : undefined}
                 onDragOver={overPresetRow(preset)}
-                onDrop={() => executeDrop(section)}
+                onDrop={e => {
+                  // If the row itself accepted the drop (it called
+                  // preventDefault during dragover), we handle it here
+                  // and stop the section handler from firing again.
+                  // If the row was in its quiet middle band, only the
+                  // section handler accepted — and section's onDrop
+                  // will fire on bubble; we still call executeDrop
+                  // here which is a no-op because dropTarget was
+                  // already consumed (droppedRef guard).
+                  e.preventDefault()
+                  e.stopPropagation()
+                  executeDrop(section)
+                }}
                 onDragEnd={endDrag}
                 onContextMenu={e => openPresetMenu(preset, e)}
               />
