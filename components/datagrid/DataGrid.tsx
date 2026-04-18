@@ -720,7 +720,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       const d = displayRowsRef.current[row]
       if (!isGroupHeader(d)) return
       td.innerHTML = ''
-      td.style.background = '#F3F4F6'
+      td.style.background = 'var(--group-header-bg)'
       td.style.borderRight = '0'
       td.style.cursor = 'pointer'
       if (col !== 0) return
@@ -1972,7 +1972,10 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     hot.render()
   }, [hiddenColumns])
 
-  // Close toolbar dropdowns on outside click.
+  // Close toolbar dropdowns on outside click OR Esc. Keyboard users can
+  // open a menu with Enter/Space and need a keyboard-only escape path;
+  // until this effect listened for 'keydown' they were stuck tabbing
+  // out of the menu to deactivate it.
   useEffect(() => {
     if (!showColumnManager && !showRowHeightMenu && !showExportMenu && !showGroupMenu) return
     const handler = (e: MouseEvent) => {
@@ -1982,8 +1985,19 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
       if (showExportMenu && !exportMenuRef.current?.contains(t)) setShowExportMenu(false)
       if (showGroupMenu && !groupMenuRef.current?.contains(t)) setShowGroupMenu(false)
     }
+    const escHandler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (showColumnManager) setShowColumnManager(false)
+      if (showRowHeightMenu) setShowRowHeightMenu(false)
+      if (showExportMenu) setShowExportMenu(false)
+      if (showGroupMenu) setShowGroupMenu(false)
+    }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('keydown', escHandler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('keydown', escHandler)
+    }
   }, [showColumnManager, showRowHeightMenu, showExportMenu, showGroupMenu])
 
   // Columns eligible for group-by. Filtered by fieldType against the
@@ -2484,7 +2498,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => { setShowFilterModal(v => !v); setShowSortModal(false) }}
-            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            aria-haspopup="dialog"
+            aria-expanded={showFilterModal}
+            className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M1.5 2.5h11l-4 5v4l-3 1.5v-5.5l-4-5z" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             필터
@@ -2515,7 +2531,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             placeholder="검색..."
             value={searchInput}
             onChange={e => handleSearchInput(e.target.value)}
-            className="w-48 h-[28px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
+            aria-label="검색"
+            className="w-48 h-[32px] rounded-[4px] border border-[#E2E8F0] pl-8 pr-[10px] text-[12px] text-[#111827] placeholder-[#9CA3AF] focus:border-[#2D7FF9] focus:outline-none focus:shadow-[0_0_0_2px_rgba(45,127,249,0.15)]"
           />
         </div>
 
@@ -2523,7 +2540,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
         <div className="relative flex-shrink-0">
           <button
             onClick={() => { setShowSortModal(v => !v); setShowFilterModal(false) }}
-            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            aria-haspopup="dialog"
+            aria-expanded={showSortModal}
+            className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4.5 2v10M2.5 4.5l2-2.5 2 2.5M9.5 12V2M7.5 9.5l2 2.5 2-2.5" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             정렬
@@ -2562,7 +2581,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             type="button"
             onClick={() => { setShowRowHeightMenu(v => !v); setShowColumnManager(false); setShowExportMenu(false) }}
             title="행 높이"
-            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            aria-haspopup="menu"
+            aria-expanded={showRowHeightMenu}
+            className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 3h10M2 7h10M2 11h10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
             {ROW_HEIGHT_LABEL[rowHeight]}
@@ -2574,7 +2595,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
                   key={h}
                   type="button"
                   onClick={() => { setRowHeight(h); setShowRowHeightMenu(false) }}
-                  className={`flex w-full items-center justify-between px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${rowHeight === h ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                  className={`flex w-full items-center justify-between px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${rowHeight === h ? 'text-[#2D7FF9]' : 'text-[var(--text-default)]'}`}
                 >
                   <span>{ROW_HEIGHT_LABEL[h]}</span>
                   <span className="text-[11px] text-[#9CA3AF]">{ROW_HEIGHT_PX[h]}px</span>
@@ -2592,7 +2613,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
               type="button"
               onClick={() => { setShowGroupMenu(v => !v); setShowColumnManager(false); setShowRowHeightMenu(false); setShowExportMenu(false) }}
               title="그룹"
-              className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+              aria-haspopup="menu"
+              aria-expanded={showGroupMenu}
+              className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2.5h10M4.5 5.5h7.5M4.5 8.5h7.5M4.5 11.5h7.5M3 4v8" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round"/></svg>
               그룹
@@ -2607,7 +2630,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
                 <button
                   type="button"
                   onClick={() => { handlePickGroupColumn(null); setShowGroupMenu(false) }}
-                  className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${!groupByColumn ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                  className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${!groupByColumn ? 'text-[#2D7FF9]' : 'text-[var(--text-default)]'}`}
                 >
                   그룹 없음
                 </button>
@@ -2617,7 +2640,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
                     key={c.data}
                     type="button"
                     onClick={() => { handlePickGroupColumn(c.data); setShowGroupMenu(false) }}
-                    className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${groupByColumn === c.data ? 'text-[#2D7FF9]' : 'text-[#374151]'}`}
+                    className={`flex w-full items-center px-3 py-[6px] text-[12px] hover:bg-[#F8FAFC] ${groupByColumn === c.data ? 'text-[#2D7FF9]' : 'text-[var(--text-default)]'}`}
                   >
                     {c.title}
                   </button>
@@ -2633,7 +2656,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             type="button"
             onClick={() => { setShowColumnManager(v => !v); setShowRowHeightMenu(false); setShowExportMenu(false) }}
             title="컬럼 관리"
-            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            aria-haspopup="menu"
+            aria-expanded={showColumnManager}
+            className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M2 2h10v10H2z M5.5 2v10 M8.5 2v10" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             컬럼
@@ -2661,7 +2686,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
             type="button"
             onClick={() => { setShowExportMenu(v => !v); setShowRowHeightMenu(false); setShowColumnManager(false) }}
             title="내보내기"
-            className="h-[28px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center gap-1"
+            aria-haspopup="menu"
+            aria-expanded={showExportMenu}
+            className="h-[32px] rounded-[4px] border border-[#E2E8F0] px-[10px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v7m0 0l-2.5-2.5M7 9l2.5-2.5M2.5 11.5h9" stroke="#6B7280" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/></svg>
             내보내기
@@ -2671,14 +2698,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
               <button
                 type="button"
                 onClick={() => { handleExportCSV(false); setShowExportMenu(false) }}
-                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[#374151] hover:bg-[#F8FAFC]"
+                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC]"
               >
                 전체 내보내기 (CSV)
               </button>
               <button
                 type="button"
                 onClick={() => { handleExportCSV(true); setShowExportMenu(false) }}
-                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[#374151] hover:bg-[#F8FAFC]"
+                className="flex w-full items-center px-3 py-[6px] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC]"
               >
                 선택 행만 (CSV)
               </button>
@@ -2692,7 +2719,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           onClick={() => setShowShortcuts(true)}
           title="키보드 단축키"
           aria-label="키보드 단축키"
-          className="h-[28px] w-[28px] flex-shrink-0 rounded-[4px] border border-[#E2E8F0] text-[12px] text-[#374151] hover:bg-[#F8FAFC] transition-colors flex items-center justify-center"
+          className="h-[32px] w-[32px] flex-shrink-0 rounded-[4px] border border-[#E2E8F0] text-[12px] text-[var(--text-default)] hover:bg-[#F8FAFC] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors flex items-center justify-center"
         >
           ?
         </button>

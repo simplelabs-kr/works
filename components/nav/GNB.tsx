@@ -35,9 +35,9 @@ export default function GNB({ onOpenPalette }: Props) {
       <button
         type="button"
         onClick={onOpenPalette}
-        className="flex items-center gap-2 h-[28px] rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-[12px] text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#334155] transition-colors"
+        className="flex items-center gap-2 h-[28px] rounded-[6px] border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-[12px] text-[var(--text-default)] hover:bg-[#F1F5F9] hover:text-[#334155] transition-colors"
       >
-        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
           <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.2"/>
           <path d="M9.5 9.5L12.5 12.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
         </svg>
@@ -48,7 +48,7 @@ export default function GNB({ onOpenPalette }: Props) {
       <button
         type="button"
         onClick={handleLogout}
-        className="text-[12px] text-[#64748B] transition hover:text-[#0F172A]"
+        className="text-[12px] text-[var(--text-default)] transition hover:text-[#0F172A]"
       >
         로그아웃
       </button>

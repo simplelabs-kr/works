@@ -199,7 +199,8 @@ export default function CommandPalette({ open, onClose }: Props) {
               }
             }}
             placeholder="페이지, 뷰 검색…"
-            className="flex-1 h-[28px] text-[14px] text-[#111827] placeholder-[#94A3B8] bg-transparent outline-none"
+            aria-label="페이지, 뷰 검색"
+            className="flex-1 h-[32px] text-[14px] text-[#111827] placeholder-[#94A3B8] bg-transparent rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] px-1"
           />
           <kbd className="inline-flex items-center rounded-[3px] border border-[#E2E8F0] bg-[#F8FAFC] px-1.5 py-0 h-[16px] text-[10px] font-medium text-[#94A3B8]">Esc</kbd>
         </div>
@@ -227,7 +228,7 @@ export default function CommandPalette({ open, onClose }: Props) {
                 <div className="flex items-center gap-2 text-[13px] text-[#111827]">
                   <span>{renderHighlighted(entry.label, query)}</span>
                   {entry.disabled && (
-                    <span className="text-[10px] rounded-[3px] bg-[#E2E8F0] px-1.5 py-0.5 text-[#64748B]">준비중</span>
+                    <span className="text-[10px] rounded-[3px] bg-[#E2E8F0] px-1.5 py-0.5 text-[var(--text-default)]">준비중</span>
                   )}
                 </div>
                 <span className="text-[11px] text-[#94A3B8]">{entry.section}</span>

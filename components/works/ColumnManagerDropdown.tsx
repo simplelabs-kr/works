@@ -84,14 +84,14 @@ export default function ColumnManagerDropdown({
           <button
             type="button"
             onClick={onShowAll}
-            className="flex-1 h-[24px] rounded-[4px] border border-[#E2E8F0] text-[11px] text-[#374151] hover:bg-[#F8FAFC]"
+            className="flex-1 h-[24px] rounded-[4px] border border-[#E2E8F0] text-[11px] text-[var(--text-default)] hover:bg-[#F8FAFC]"
           >
             모두 표시
           </button>
           <button
             type="button"
             onClick={onHideAll}
-            className="flex-1 h-[24px] rounded-[4px] border border-[#E2E8F0] text-[11px] text-[#374151] hover:bg-[#F8FAFC]"
+            className="flex-1 h-[24px] rounded-[4px] border border-[#E2E8F0] text-[11px] text-[var(--text-default)] hover:bg-[#F8FAFC]"
           >
             모두 숨기기
           </button>

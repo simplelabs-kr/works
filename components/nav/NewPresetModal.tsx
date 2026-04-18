@@ -117,7 +117,7 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
         </div>
 
         <div className="px-4 pt-3">
-          <label className="block text-[11px] font-medium text-[#64748B] mb-1">뷰 이름</label>
+          <label className="block text-[11px] font-medium text-[var(--text-default)] mb-1">뷰 이름</label>
           <input
             ref={inputRef}
             type="text"
@@ -135,7 +135,7 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
         </div>
 
         <div className="px-4 pt-1">
-          <div className="block text-[11px] font-medium text-[#64748B] mb-1">공개 범위</div>
+          <div className="block text-[11px] font-medium text-[var(--text-default)] mb-1">공개 범위</div>
           <div className="flex gap-2">
             <label
               className={`flex-1 cursor-pointer rounded-[6px] border px-2 py-1.5 text-[12px] ${
@@ -189,7 +189,7 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
             )}
             {summary.map(row => (
               <div key={row.label} className="flex items-center justify-between text-[11px] py-0.5">
-                <span className="text-[#64748B]">{row.label}</span>
+                <span className="text-[var(--text-default)]">{row.label}</span>
                 <span className="text-[#334155]">{row.value}</span>
               </div>
             ))}
@@ -201,7 +201,7 @@ export default function NewPresetModal({ open, snapshot, saving, onCancel, onSub
             type="button"
             onClick={onCancel}
             disabled={saving}
-            className="h-[30px] px-3 rounded-[6px] border border-[#E2E8F0] bg-white text-[12px] text-[#64748B] hover:bg-[#F1F5F9] disabled:opacity-50"
+            className="h-[30px] px-3 rounded-[6px] border border-[#E2E8F0] bg-white text-[12px] text-[var(--text-default)] hover:bg-[#F1F5F9] disabled:opacity-50"
           >
             취소
           </button>

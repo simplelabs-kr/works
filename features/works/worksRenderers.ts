@@ -306,12 +306,22 @@ export function noColRenderer(_hot: any, td: HTMLTableCellElement, row: number) 
   // across different columns during virtualization, in which case another
   // renderer overwrites our DOM while __noSig still persists. We require
   // our marker class to still be the td's first child before trusting it.
-  const sig = `${row}|${rowId ?? ''}|${isChecked ? '1' : '0'}`
+  //
+  // Sig-structure covers row/rowId so a td swap triggers a full rebuild.
+  // The checkbox's `checked` state is intentionally NOT cached — we always
+  // reconcile it from the ref below so external mutations to
+  // checkedRowsRef (shift+click range-select, clearAll, etc.) reflect on
+  // screen even if the cached sig happens to match.
+  const sig = `${row}|${rowId ?? ''}`
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const anyTd = td as any
   const firstEl = td.firstElementChild as HTMLElement | null
   const domIsOurs = !!firstEl && firstEl.classList.contains('no-col-wrapper')
-  if (domIsOurs && anyTd.__noSig === sig) return
+  if (domIsOurs && anyTd.__noSig === sig) {
+    const cb = firstEl.querySelector('.row-select-checkbox') as HTMLInputElement | null
+    if (cb && cb.checked !== !!isChecked) cb.checked = !!isChecked
+    return
+  }
   anyTd.__noSig = sig
 
   td.innerHTML = ''

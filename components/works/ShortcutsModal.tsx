@@ -56,12 +56,12 @@ export default function ShortcutsModal({ onClose }: Props) {
         <ul className="flex flex-col gap-2">
           {SHORTCUTS.map((s, i) => (
             <li key={i} className="flex items-center justify-between text-[12px]">
-              <span className="text-[#374151]">{s.label}</span>
+              <span className="text-[var(--text-default)]">{s.label}</span>
               <span className="flex items-center gap-1">
                 {s.keys.map((k, j) => (
                   <kbd
                     key={j}
-                    className="min-w-[24px] rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-[6px] py-[2px] text-center font-mono text-[11px] text-[#374151]"
+                    className="min-w-[24px] rounded-[4px] border border-[#E2E8F0] bg-[#F8FAFC] px-[6px] py-[2px] text-center font-mono text-[11px] text-[var(--text-default)]"
                   >
                     {k === 'Mod' ? mod : k}
                   </kbd>

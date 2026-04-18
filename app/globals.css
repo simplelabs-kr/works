@@ -34,6 +34,24 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ── Design tokens ─────────────────────────────────────────────
+   Shared typography + chrome tokens. Introduced to unify the three
+   gray text values (#374151 / #475569 / #64748B) used across the
+   toolbar and nav — previously each component had picked its own
+   shade — and to give the grouped-row background + toolbar focus
+   ring a single source of truth.
+
+   Consume via Tailwind arbitrary values: `text-[var(--text-default)]`
+   etc. Using JIT arbitrary-value syntax means no extra tailwind
+   config is needed, and the var() indirection lets us retune the
+   palette in one place. */
+:root {
+  --text-default: #475569;         /* buttons, toolbar, nav labels — unified */
+  --text-muted: #94A3B8;           /* meta/hint text */
+  --focus-ring: rgba(45, 127, 249, 0.4);
+  --group-header-bg: #F3F4F6;
+}
+
 /* ── Handsontable overrides ───────────────────────────────────── */
 :root,
 .handsontable {

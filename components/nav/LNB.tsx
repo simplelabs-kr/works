@@ -100,7 +100,7 @@ function SectionHeader({
         type="button"
         onClick={onToggle}
         aria-label={open ? `${label} 접기` : `${label} 펼치기`}
-        className="flex items-center gap-1.5 text-[12px] font-semibold text-[#475569] hover:text-[#0F172A] px-1.5 py-1 rounded-[4px] hover:bg-[#E2E8F0]"
+        className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-default)] hover:text-[#0F172A] px-1.5 py-1 rounded-[4px] hover:bg-[#E2E8F0]"
       >
         <ChevronIcon open={open} />
         <span>{label}</span>
@@ -171,12 +171,19 @@ function ContextMenu({
   x: number; y: number; items: MenuItem[]; onClose: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  // Funnel `onClose` through a ref so the effect below can run with an
+  // empty dep array. Callers typically pass an inline `() => setMenu(null)`
+  // which is re-created on every LNB render — without the ref indirection
+  // that would detach and re-attach the window listeners on each parent
+  // render while the menu was open.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => { onCloseRef.current = onClose }, [onClose])
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!ref.current) return
-      if (!ref.current.contains(e.target as Node)) onClose()
+      if (!ref.current.contains(e.target as Node)) onCloseRef.current()
     }
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onCloseRef.current() }
     const t = setTimeout(() => {
       window.addEventListener('mousedown', handler)
       window.addEventListener('keydown', esc)
@@ -186,7 +193,7 @@ function ContextMenu({
       window.removeEventListener('mousedown', handler)
       window.removeEventListener('keydown', esc)
     }
-  }, [onClose])
+  }, [])
 
   return (
     <div
@@ -338,7 +345,7 @@ function PresetRow({
       {showShareTag && !renaming && (
         <span
           className={`flex-shrink-0 text-[9px] font-semibold uppercase tracking-wider rounded-[3px] px-1 py-px ${
-            ownedByMe ? 'text-[#0EA5E9] bg-[#E0F2FE]' : 'text-[#64748B] bg-[#E2E8F0]'
+            ownedByMe ? 'text-[#0EA5E9] bg-[#E0F2FE]' : 'text-[var(--text-default)] bg-[#E2E8F0]'
           }`}
           title={ownedByMe ? '팀 공유 뷰' : '다른 사람의 공유 뷰'}
         >
@@ -351,7 +358,7 @@ function PresetRow({
         <span
           aria-label="순서 변경"
           title="드래그하여 이동"
-          className="flex-shrink-0 flex items-center justify-center w-[14px] h-[16px] text-[#CBD5E1] opacity-0 group-hover:opacity-100 hover:text-[#64748B] cursor-grab active:cursor-grabbing transition-opacity"
+          className="flex-shrink-0 flex items-center justify-center w-[14px] h-[16px] text-[#CBD5E1] opacity-0 group-hover:opacity-100 hover:text-[var(--text-default)] cursor-grab active:cursor-grabbing transition-opacity"
         >
           <DragHandleIcon />
         </span>
@@ -388,7 +395,7 @@ function ToggleButton({ collapsed, onToggle }: { collapsed: boolean; onToggle: (
       onClick={onToggle}
       aria-label={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
       title={collapsed ? '사이드바 펼치기' : '사이드바 접기'}
-      className="flex items-center justify-center w-[26px] h-[26px] rounded-[4px] text-[#64748B] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-colors"
+      className="flex items-center justify-center w-[26px] h-[26px] rounded-[4px] text-[var(--text-default)] hover:bg-[#E2E8F0] hover:text-[#0F172A] transition-colors"
     >
       <ToggleIcon collapsed={collapsed} />
     </button>
@@ -735,7 +742,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
                 type="button"
                 onClick={() => void openNewPresetModal()}
                 title={section === 'collaborative' ? '새 공유 뷰' : '새 뷰'}
-                className="text-[12px] text-[#64748B] hover:text-[#0F172A] px-1.5 py-0.5 rounded-[4px] hover:bg-[#E2E8F0]"
+                className="text-[12px] text-[var(--text-default)] hover:text-[#0F172A] px-1.5 py-0.5 rounded-[4px] hover:bg-[#E2E8F0]"
               >
                 + 뷰
               </button>
