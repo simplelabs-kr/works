@@ -1192,7 +1192,15 @@ export default function WorksGrid() {
       e.stopPropagation()
       const customBar = customScrollbarRef.current
       if (!customBar) return
-      const maxScroll = customBar.scrollWidth - customBar.clientWidth
+      // Clamp to topEl's actual scrollable range (which equals the visible
+      // columns' table width — no vertical scrollbar on the header clone).
+      // Using customBar.scrollWidth here would overshoot whenever its inner
+      // div is still sized from stale colWidths (afterRender syncs it, but
+      // wheels can arrive between a hide/show and the next render).
+      const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+      const maxScroll = topEl
+        ? Math.max(0, topEl.scrollWidth - topEl.clientWidth)
+        : customBar.scrollWidth - customBar.clientWidth
       if (maxScroll <= 0) return
       const next = Math.max(0, Math.min(customBar.scrollLeft + e.deltaX, maxScroll))
       if (customBar.scrollLeft !== next) customBar.scrollLeft = next
@@ -1278,7 +1286,6 @@ export default function WorksGrid() {
               setFrozenCount(0)
             },
           },
-          'sep_hide': '---------',
           'hide_column': {
             name() { return '이 컬럼 숨기기' },
             disabled() {
@@ -1376,6 +1383,32 @@ export default function WorksGrid() {
         syncing = false
       }, { passive: true })
     }, 100)
+
+    // Keep the custom scrollbar's inner width aligned to HOT's ACTUAL
+    // scrollable width (ht_clone_top has no vertical scrollbar and renders
+    // only visible — non-hidden — columns, so its scrollWidth is the source
+    // of truth for horizontal scrollable range).
+    //
+    // Rationale: the JSX renders the inner with `width = sum(colWidths)`,
+    // but colWidths is a physical-indexed array of ALL columns — including
+    // those hidden via HiddenColumns plugin. When any column is hidden the
+    // inner width exceeds topEl.scrollWidth, making the custom scrollbar's
+    // max larger than topEl's max. Scrolling to the right edge then pushes
+    // master/customBar past topEl's reachable range, leaving the header and
+    // body misaligned at the right edge. Syncing after every HOT render
+    // keeps customBar.max === topEl.max through hide/show/resize/move.
+    hotRef.current.addHook('afterRender', () => {
+      const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+      const inner = customScrollbarInnerRef.current
+      if (!topEl || !inner) return
+      const target = topEl.scrollWidth
+      // Only write when changed — writing the same value still triggers
+      // style recalc on some browsers, adding scroll-time overhead.
+      if (parseFloat(inner.style.width) !== target) {
+        inner.style.width = `${target}px`
+      }
+    })
+
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterGetColHeader', (col: number, TH: HTMLTableCellElement) => {
@@ -2621,18 +2654,26 @@ export default function WorksGrid() {
           }}
           onScroll={() => {
             if (syncingCustomScrollRef.current || !customScrollbarRef.current) return
+            // topEl (header clone) is the source of truth for horizontal
+            // scrollable range — it has no vertical scrollbar, so its max
+            // scrollLeft matches the visible-columns table width. Clamp
+            // here so masterEl (wider max due to its vertical scrollbar)
+            // and topEl stay locked to the same value at the right edge.
+            const topEl = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
+            const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
+            const raw = customScrollbarRef.current.scrollLeft
+            const maxScroll = topEl ? Math.max(0, topEl.scrollWidth - topEl.clientWidth) : raw
+            const scrollLeft = Math.min(raw, maxScroll)
             syncingCustomScrollRef.current = true
-            const scrollLeft = customScrollbarRef.current.scrollLeft
-            // Sync to HOT
-            if (hotRef.current) {
-              const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
-              const topEl = hotRef.current.rootElement?.querySelector('.ht_clone_top .wtHolder') as HTMLElement | null
-              if (masterEl) masterEl.scrollLeft = scrollLeft
-              if (topEl) topEl.scrollLeft = scrollLeft
-            }
+            if (masterEl) masterEl.scrollLeft = scrollLeft
+            if (topEl) topEl.scrollLeft = scrollLeft
             if (summaryInnerRef.current) {
               summaryInnerRef.current.style.transform = `translateX(-${scrollLeft}px)`
             }
+            // If the user's drag overshot the true max (can happen briefly
+            // if afterRender hasn't yet shrunk the inner div), snap the
+            // customBar back so it can't drift past topEl's reach.
+            if (raw !== scrollLeft) customScrollbarRef.current.scrollLeft = scrollLeft
             syncingCustomScrollRef.current = false
           }}
         >

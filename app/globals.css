@@ -52,7 +52,10 @@ body {
   text-align: left !important;
   vertical-align: middle !important;
   user-select: none !important;
-  transition: background 0.12s ease !important;
+  /* No background transition here — HOT recycles TH nodes during horizontal
+     virtualization, and a transition would animate every recycled header's
+     background as its hover/non-hover state flips during scroll, producing
+     a visible shimmer. Hover reacts instantly instead. */
 }
 
 .handsontable thead th:hover {
@@ -88,7 +91,10 @@ body {
   vertical-align: middle !important;
   text-align: left !important;
   background-color: var(--works-cell);
-  transition: background-color 0.1s ease;
+  /* No background transition — HOT recycles TD nodes during horizontal
+     virtualization, and a fade would animate recycled cells' background as
+     they flip between row-hover/range/current states during scroll,
+     producing visible flicker across visible columns. */
   overflow: hidden;
 }
 
