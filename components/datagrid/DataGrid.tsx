@@ -15,7 +15,9 @@ import ImageModal from '@/components/works/ImageModal'
 import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
-import { loadSettings, saveSettings, type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
+import { type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
+import { loadEffectiveSettings, persistViewPatch } from '@/lib/works/viewPresets'
+import { usePresets } from '@/components/nav/PresetsContext'
 import type { FieldType, ImageItem, AttachmentItem, Row } from '@/features/works/worksTypes'
 import { getFieldTypeIcon } from '@/features/works/worksConfig'
 import {
@@ -363,6 +365,16 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   const hiddenColumnsRef = useRef<Set<string>>(new Set())
   const rowHeightRef = useRef<RowHeight>('short')
 
+  // Active preset id for this page. When non-null, view edits PATCH
+  // that preset's row instead of writing to the shared
+  // user_view_settings "default view" row — so every preset keeps its
+  // own filters/sort/view independently. Mirrored into a ref so the
+  // save effect / flush path can read it synchronously at save time
+  // without needing the context value in their dep list.
+  const { activeByPage } = usePresets()
+  const activePresetId = activeByPage[VIEW_PAGE_KEY] ?? null
+  const activePresetIdRef = useRef<string | null>(null)
+
   // Data load trigger (incremented by handleLoad)
   const [offset, setOffset] = useState(0)
   const [fetchTrigger, setFetchTrigger] = useState(0)
@@ -382,6 +394,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
   useEffect(() => { hiddenColumnsRef.current = hiddenColumns }, [hiddenColumns])
   useEffect(() => { rowHeightRef.current = rowHeight }, [rowHeight])
+  useEffect(() => { activePresetIdRef.current = activePresetId }, [activePresetId])
 
   // Stable scroll-load callback (read by HOT afterScrollVertically hook).
   // Assigned in an effect so it's refreshed after commit, not during render.
@@ -1482,8 +1495,18 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const settings = await loadSettings(VIEW_PAGE_KEY)
+      // loadEffectiveSettings picks the right source: the active preset's
+      // row (when one is marked active in localStorage) or the shared
+      // default row otherwise. It also seeds the in-session cache so a
+      // subsequent mount in this tab short-circuits the fetch.
+      const { settings, activePresetId: activeIdAtMount } =
+        await loadEffectiveSettings(VIEW_PAGE_KEY)
       if (cancelled) return
+
+      // Keep the ref in sync even before PresetsContext rehydrates from
+      // localStorage — otherwise a pre-hydration save would go to the
+      // default row instead of the active preset's row.
+      activePresetIdRef.current = activeIdAtMount
 
       applyFromSettings(settings)
 
@@ -1516,7 +1539,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null
-      saveSettings(VIEW_PAGE_KEY, {
+      // Routes to either PATCH /api/user-view-presets/<id> (active
+      // preset) or POST /api/user-view-settings (default row). Reads
+      // activePresetIdRef at flush time so a preset switch that happens
+      // during the 400ms debounce window goes to the right destination.
+      persistViewPatch(VIEW_PAGE_KEY, activePresetIdRef.current, {
         filters: snap.filters,
         sort: snap.sort,
         view: snap.view,
@@ -1562,9 +1589,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
           saveTimerRef.current = null
         }
         // Also read live — a flush fired from unmount/beforeunload must
-        // persist the true current state.
+        // persist the true current state. Routes to the active preset's
+        // row or the default row based on activePresetIdRef at call
+        // time, same as the debounced path.
         const snap = computeLiveSnapshot()
-        saveSettings(VIEW_PAGE_KEY, { filters: snap.filters, sort: snap.sort, view: snap.view })
+        persistViewPatch(VIEW_PAGE_KEY, activePresetIdRef.current, {
+          filters: snap.filters,
+          sort: snap.sort,
+          view: snap.view,
+        })
       },
       // applyPreset calls this before navigating so a pending debounced
       // save (e.g. a resize made just before clicking the preset)

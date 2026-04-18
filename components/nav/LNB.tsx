@@ -28,11 +28,11 @@ import {
   applyPreset,
   createPreset,
   deletePreset,
+  loadEffectiveSettings,
   snapshotLiveView,
   updatePreset,
   type ViewPreset,
 } from '@/lib/works/viewPresets'
-import { loadSettings } from '@/lib/works/viewSettings'
 import NewPresetModal from './NewPresetModal'
 
 // Map from path-based active page → the pageKey stored on presets.
@@ -186,7 +186,12 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     // fall back to the last server-saved settings.
     let snap = snapshotLiveView(activePresetKey)
     if (!snap) {
-      const saved = await loadSettings(activePresetKey)
+      // Fall back to the effective settings for this page — the active
+      // preset's row if one is marked active, else the default row.
+      // Using loadSettings here (which only reads the default row) would
+      // clone stale state when the user last applied a preset on a page
+      // that isn't currently rendered.
+      const { settings: saved } = await loadEffectiveSettings(activePresetKey)
       snap = saved
         ? { filters: saved.filters, sort: saved.sort, view: saved.view }
         : { filters: null, sort: null, view: null }
