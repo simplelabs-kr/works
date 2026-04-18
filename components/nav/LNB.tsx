@@ -821,13 +821,13 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         data-worksy-lnb-toggle
         className="flex items-center gap-1.5 px-2 py-2 flex-shrink-0"
       >
-        <ToggleButton collapsed={collapsed} onToggle={onToggle} />
         <div
-          className="flex-1 min-w-0 text-[14px] font-semibold text-[#0F172A] truncate"
+          className="flex-1 min-w-0 text-[14px] font-semibold leading-[26px] text-[#0F172A] truncate"
           title={activePage?.label ?? undefined}
         >
           {activePage?.label ?? '\u00A0'}
         </div>
+        <ToggleButton collapsed={collapsed} onToggle={onToggle} />
       </div>
       <div className="mx-3 h-px bg-[#E2E8F0]" aria-hidden="true" />
 
