@@ -1332,12 +1332,13 @@ export default function WorksGrid() {
     // Its only job is to reflect the master's scroll state into visual
     // adjuncts (custom bars, summary translate, frozen-columns shadow).
     //
-    // Perf: the event can fire much faster than the display refresh rate
-    // (every momentum-scroll input tick on macOS/iOS trackpads). We
-    // coalesce all mirroring work into a single rAF callback so we do at
-    // most one write-batch per frame, and all DOM reads in the listener
-    // itself — keeping reads and writes in separate "phases" to avoid
-    // layout thrash.
+    // Perf note: we tried batching the writes into requestAnimationFrame,
+    // but that introduced a ~1-frame lag between HOT's header (synced by
+    // HOT's own Overlays during the same scroll tick) and our summary
+    // transform / overlay bars, causing a visible jitter during
+    // momentum scroll. We write synchronously — same tick as HOT's own
+    // sync — and use equality guards to skip no-op writes so repeated
+    // ticks at identical positions don't thrash the compositor.
     setTimeout(() => {
       if (!hotRef.current) return
       const masterEl = hotRef.current.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
@@ -1346,16 +1347,10 @@ export default function WorksGrid() {
       let lastY = -1
       let lastShadowOn: boolean | null = null
       let lastOpacityOn = false
-      let rafId = 0
-      let pendingX = 0
-      let pendingY = 0
-      const flush = () => {
-        rafId = 0
-        const x = pendingX
-        const y = pendingY
-        const xChanged = x !== lastX
-        const yChanged = y !== lastY
-        if (xChanged) {
+      masterEl.addEventListener('scroll', () => {
+        const x = masterEl.scrollLeft
+        const y = masterEl.scrollTop
+        if (x !== lastX) {
           lastX = x
           // Frozen-column shadow — only toggle when state flips.
           const shadowOn = x > 0
@@ -1365,9 +1360,8 @@ export default function WorksGrid() {
             lastShadowOn = shadowOn
           }
           if (summaryInnerRef.current) {
-            // translate3d (not translateX) guarantees the element is
-            // promoted to its own compositor layer — the transform
-            // animates on the GPU instead of re-painting on every frame.
+            // translate3d (not translateX) promotes the element to its
+            // own compositor layer — transform animates on the GPU.
             summaryInnerRef.current.style.transform = `translate3d(${-x}px, 0, 0)`
           }
           // Mirror into custom horizontal bar (guarded against feedback).
@@ -1378,7 +1372,7 @@ export default function WorksGrid() {
             syncingCustomScrollRef.current = false
           }
         }
-        if (yChanged) {
+        if (y !== lastY) {
           lastY = y
           if (!syncingCustomVScrollRef.current && customVScrollbarRef.current
               && customVScrollbarRef.current.scrollTop !== y) {
@@ -1387,8 +1381,8 @@ export default function WorksGrid() {
             syncingCustomVScrollRef.current = false
           }
         }
-        // Fade bars in; schedule fade-out. Guard the opacity write so we
-        // don't invalidate the compositor on every frame while already lit.
+        // Fade bars in; schedule fade-out. Guard the opacity write so
+        // repeated scroll ticks while already lit don't re-invalidate.
         if (!lastOpacityOn) {
           if (customScrollbarRef.current) customScrollbarRef.current.style.opacity = '1'
           if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '1'
@@ -1400,15 +1394,6 @@ export default function WorksGrid() {
           if (customVScrollbarRef.current) customVScrollbarRef.current.style.opacity = '0'
           lastOpacityOn = false
         }, 1000)
-      }
-      masterEl.addEventListener('scroll', () => {
-        // Reads happen here (synchronous with the event). All writes are
-        // batched into the next animation frame, so repeated scroll ticks
-        // inside one frame coalesce into exactly one flush.
-        pendingX = masterEl.scrollLeft
-        pendingY = masterEl.scrollTop
-        if (rafId) return
-        rafId = requestAnimationFrame(flush)
       }, { passive: true })
     }, 100)
 
