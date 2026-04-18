@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react'
 import GNB from './GNB'
 import LNB from './LNB'
 import CommandPalette from './CommandPalette'
+import { PresetsProvider } from './PresetsContext'
 
 export default function WorksShell({ children }: { children: React.ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -28,15 +29,17 @@ export default function WorksShell({ children }: { children: React.ReactNode }) 
   }, [])
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-white">
-      <GNB onOpenPalette={() => setPaletteOpen(true)} />
-      <div className="flex flex-1 min-h-0">
-        <LNB />
-        <div className="flex-1 min-w-0 min-h-0">
-          {children}
+    <PresetsProvider>
+      <div className="flex flex-col h-screen overflow-hidden bg-white">
+        <GNB onOpenPalette={() => setPaletteOpen(true)} />
+        <div className="flex flex-1 min-h-0">
+          <LNB />
+          <div className="flex-1 min-w-0 min-h-0">
+            {children}
+          </div>
         </div>
+        <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       </div>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
-    </div>
+    </PresetsProvider>
   )
 }

@@ -41,3 +41,25 @@ export function resolveActivePage(pathname: string): PageDef | null {
   }
   return null
 }
+
+// Map a page_key (as stored in user_view_presets / user_view_settings)
+// to its navigable href. Used by applyPreset to route to the preset's
+// owning page, and by the Command Palette to label preset rows.
+export function resolvePageHrefForKey(pageKey: string): string | null {
+  if (pageKey === TRASH_PAGE.key || pageKey === 'works-trash') return TRASH_PAGE.href
+  for (const p of WORKS_PAGES) {
+    if (p.key === pageKey && p.href) return p.href
+  }
+  // worksPageConfig.pageKey is 'works' (legacy) → treat as production.
+  if (pageKey === 'works') return '/works/production'
+  return null
+}
+
+export function resolvePageLabelForKey(pageKey: string): string {
+  if (pageKey === TRASH_PAGE.key || pageKey === 'works-trash') return TRASH_PAGE.label
+  for (const p of WORKS_PAGES) {
+    if (p.key === pageKey) return p.label
+  }
+  if (pageKey === 'works') return '생산관리'
+  return pageKey
+}

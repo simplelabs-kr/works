@@ -1,8 +1,12 @@
 'use client'
 
 // Cmd+K "빠른 이동" palette. Modal overlay with a search input and a
-// keyboard-navigable list of all destinations (pages today; pages × views
-// once commit 7 lands views, which will prepend a 즐겨찾기 section).
+// keyboard-navigable list of destinations.
+//
+// Entries come in two flavors:
+//   - preset entries (starred 뷰 shortcuts) — section header is the owning
+//     page label so the user can tell which grid the view lives on.
+//   - page entries — static list from WORKS_PAGES + TRASH_PAGE.
 //
 // - Filtering: case-insensitive substring match on label.
 // - Active-row tracking: ↑/↓ moves the highlight, Enter navigates, Esc
@@ -13,9 +17,17 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { WORKS_PAGES, TRASH_PAGE, type PageDef } from '@/lib/nav/pages'
+import {
+  WORKS_PAGES,
+  TRASH_PAGE,
+  resolvePageLabelForKey,
+  type PageDef,
+} from '@/lib/nav/pages'
+import { usePresets } from './PresetsContext'
+import { applyPreset, type ViewPreset } from '@/lib/works/viewPresets'
 
-type Entry = {
+type PageEntry = {
+  kind: 'page'
   id: string
   label: string
   section: string
@@ -24,10 +36,38 @@ type Entry = {
   page: PageDef
 }
 
-function buildEntries(): Entry[] {
+type PresetEntry = {
+  kind: 'preset'
+  id: string
+  label: string
+  section: string
+  disabled: false
+  preset: ViewPreset
+}
+
+type Entry = PageEntry | PresetEntry
+
+function buildEntries(presets: ViewPreset[]): Entry[] {
   const items: Entry[] = []
+
+  // 즐겨찾기 — starred presets first. Section is the preset's owning page
+  // so a ★ "A급 주문만" under 생산관리 shows as section "생산관리".
+  for (const p of presets) {
+    if (!p.starred) continue
+    items.push({
+      kind: 'preset',
+      id: `preset:${p.id}`,
+      label: p.name,
+      section: `★ ${resolvePageLabelForKey(p.page_key)}`,
+      disabled: false,
+      preset: p,
+    })
+  }
+
+  // 페이지 / 휴지통
   for (const p of [...WORKS_PAGES, TRASH_PAGE]) {
     items.push({
+      kind: 'page',
       id: `page:${p.key}`,
       label: p.label,
       section: p.key === TRASH_PAGE.key ? '휴지통' : '페이지',
@@ -36,6 +76,7 @@ function buildEntries(): Entry[] {
       page: p,
     })
   }
+
   return items
 }
 
@@ -66,12 +107,13 @@ type Props = {
 
 export default function CommandPalette({ open, onClose }: Props) {
   const router = useRouter()
+  const { presets } = usePresets()
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
 
-  const allEntries = useMemo(() => buildEntries(), [])
+  const allEntries = useMemo(() => buildEntries(presets), [presets])
   const visible = useMemo(() => matchEntries(allEntries, query), [allEntries, query])
 
   // Reset query/selection when the palette opens, and focus the input.
@@ -99,7 +141,15 @@ export default function CommandPalette({ open, onClose }: Props) {
   if (!open) return null
 
   const handleSelect = (entry: Entry) => {
-    if (entry.disabled || !entry.href) return
+    if (entry.disabled) return
+    if (entry.kind === 'preset') {
+      onClose()
+      // applyPreset does a hard navigate/reload so the target grid picks
+      // up the freshly-written user_view_settings on mount.
+      void applyPreset(entry.preset)
+      return
+    }
+    if (!entry.href) return
     onClose()
     router.push(entry.href)
   }

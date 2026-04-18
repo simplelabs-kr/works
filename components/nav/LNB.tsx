@@ -2,23 +2,42 @@
 
 // Left Nav Bar — per-workspace navigation. Fixed 220px column on the
 // left edge of every /works route. Section order:
-//   1. 즐겨찾기 — starred (page, view) pairs. Populated by commit 7;
-//      skeleton here so the layout is stable.
-//   2. 현재 페이지 — shared/my views for the currently-active page plus
-//      a "새 뷰" button. Disabled skeleton; wiring lands with commit 7.
+//   1. 즐겨찾기 — starred presets (cross-page). Click applies the
+//      preset and navigates to its page. Star toggle removes it here.
+//   2. 현재 페이지 — presets scoped to the currently-active page,
+//      plus a "+ 새 뷰" button that saves the live settings under a
+//      user-supplied name.
 //   3. 페이지 목록 — static list from WORKS_PAGES. Coming-soon pages
-//      render in a muted style; clicking them is a no-op.
+//      render muted; clicking them is a no-op.
 //   4. 휴지통 — separate section, navigates to /works/trash.
-//
-// Active-page highlight is driven by pathname via resolveActivePage.
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useMemo, useState } from 'react'
 import {
   WORKS_PAGES,
   TRASH_PAGE,
   resolveActivePage,
 } from '@/lib/nav/pages'
+import { usePresets } from './PresetsContext'
+import {
+  applyPreset,
+  createPreset,
+  deletePreset,
+  updatePreset,
+  type ViewPreset,
+} from '@/lib/works/viewPresets'
+import { loadSettings } from '@/lib/works/viewSettings'
+
+// Map from path-based active page → the pageKey stored on presets.
+// 생산관리 presets use pageKey 'works' (legacy, matches worksPageConfig),
+// 휴지통 uses 'works-trash' (worksTrashPageConfig). Keep this in sync
+// with worksConfig.ts if those constants ever change.
+function presetKeyForActivePage(activeKey: string | null): string | null {
+  if (activeKey === 'production') return 'works'
+  if (activeKey === 'trash') return 'works-trash'
+  return null
+}
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -32,33 +51,165 @@ function Divider() {
   return <div className="mx-3 my-2 h-px bg-[#E2E8F0]" aria-hidden="true" />
 }
 
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill={filled ? '#F59E0B' : 'none'} stroke={filled ? '#F59E0B' : '#94A3B8'} strokeWidth="1.2" strokeLinejoin="round">
+      <polygon points="6,1.2 7.5,4.3 10.8,4.8 8.4,7.2 9,10.5 6,8.9 3,10.5 3.6,7.2 1.2,4.8 4.5,4.3"/>
+    </svg>
+  )
+}
+
+type PresetRowProps = {
+  preset: ViewPreset
+  onApply: () => void
+  onToggleStar: () => void
+  onDelete: () => void
+}
+
+function PresetRow({ preset, onApply, onToggleStar, onDelete }: PresetRowProps) {
+  return (
+    <div className="group flex items-center gap-1 rounded-[6px] px-2 py-1 hover:bg-[#E2E8F0]">
+      <button
+        type="button"
+        onClick={onToggleStar}
+        aria-label={preset.starred ? '즐겨찾기 해제' : '즐겨찾기'}
+        className="flex-shrink-0 p-0.5 rounded hover:bg-[#CBD5E1]"
+      >
+        <StarIcon filled={preset.starred} />
+      </button>
+      <button
+        type="button"
+        onClick={onApply}
+        className="flex-1 min-w-0 text-left text-[12px] text-[#334155] truncate"
+        title={preset.name}
+      >
+        {preset.name}
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label="뷰 삭제"
+        className="flex-shrink-0 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#CBD5E1] text-[#94A3B8] hover:text-[#EF4444]"
+      >
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+          <path d="M3 3l6 6M9 3l-6 6"/>
+        </svg>
+      </button>
+    </div>
+  )
+}
+
 export default function LNB() {
   const pathname = usePathname()
   const activePage = resolveActivePage(pathname ?? '')
   const activeKey = activePage?.key ?? null
+  const activePresetKey = presetKeyForActivePage(activeKey)
+
+  const { presets, refresh } = usePresets()
+
+  const starredPresets = useMemo(() => presets.filter(p => p.starred), [presets])
+  const currentPagePresets = useMemo(
+    () => activePresetKey ? presets.filter(p => p.page_key === activePresetKey && !p.starred) : [],
+    [presets, activePresetKey]
+  )
+
+  const [saving, setSaving] = useState(false)
+
+  const handleCreatePreset = async () => {
+    if (!activePresetKey) return
+    if (saving) return
+    const name = window.prompt('뷰 이름을 입력해주세요 (최대 80자)')?.trim()
+    if (!name) return
+    setSaving(true)
+    try {
+      const live = await loadSettings(activePresetKey)
+      const created = await createPreset({
+        page_key: activePresetKey,
+        name,
+        filters: live?.filters ?? null,
+        sort: live?.sort ?? null,
+        view: live?.view ?? null,
+      })
+      if (!created) {
+        window.alert('뷰 저장에 실패했습니다')
+        return
+      }
+      await refresh()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleApplyPreset = async (preset: ViewPreset) => {
+    await applyPreset(preset)
+  }
+
+  const handleToggleStar = async (preset: ViewPreset) => {
+    const next = await updatePreset(preset.id, { starred: !preset.starred })
+    if (next) await refresh()
+  }
+
+  const handleDelete = async (preset: ViewPreset) => {
+    if (!window.confirm(`'${preset.name}' 뷰를 삭제할까요?`)) return
+    const ok = await deletePreset(preset.id)
+    if (ok) await refresh()
+  }
 
   return (
     <aside className="flex-shrink-0 w-[220px] h-full border-r border-[#E2E8F0] bg-[#F8FAFC] flex flex-col overflow-y-auto">
-      {/* 즐겨찾기 (skeleton) */}
+      {/* 즐겨찾기 */}
       <SectionLabel>즐겨찾기</SectionLabel>
-      <div className="px-3 pb-1 text-[11px] text-[#94A3B8]">
-        별표를 눌러 뷰를 고정하세요
+      <div className="px-2 pb-1">
+        {starredPresets.length === 0 && (
+          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+            별표를 눌러 뷰를 고정하세요
+          </div>
+        )}
+        {starredPresets.map(p => (
+          <PresetRow
+            key={p.id}
+            preset={p}
+            onApply={() => handleApplyPreset(p)}
+            onToggleStar={() => handleToggleStar(p)}
+            onDelete={() => handleDelete(p)}
+          />
+        ))}
       </div>
 
       <Divider />
 
-      {/* 현재 페이지 (skeleton — views land in commit 7) */}
+      {/* 현재 페이지 */}
       <SectionLabel>현재 페이지</SectionLabel>
-      <div className="px-3 pb-1 text-[11px] text-[#94A3B8]">공유 뷰</div>
-      <div className="px-3 pb-1 text-[11px] text-[#94A3B8]">내 뷰</div>
+      <div className="px-2 pb-1">
+        {!activePresetKey && (
+          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+            뷰를 지원하지 않는 페이지입니다
+          </div>
+        )}
+        {activePresetKey && currentPagePresets.length === 0 && (
+          <div className="px-2 py-1 text-[11px] text-[#94A3B8]">
+            저장된 뷰가 없습니다
+          </div>
+        )}
+        {currentPagePresets.map(p => (
+          <PresetRow
+            key={p.id}
+            preset={p}
+            onApply={() => handleApplyPreset(p)}
+            onToggleStar={() => handleToggleStar(p)}
+            onDelete={() => handleDelete(p)}
+          />
+        ))}
+      </div>
       <div className="px-3 py-1.5">
         <button
           type="button"
-          disabled
-          title="구현 예정"
-          className="w-full rounded-[6px] border border-dashed border-[#CBD5E1] bg-white px-2 py-1 text-[12px] text-[#94A3B8] cursor-not-allowed"
+          onClick={handleCreatePreset}
+          disabled={!activePresetKey || saving}
+          title={activePresetKey ? '현재 설정을 새 뷰로 저장' : '뷰를 지원하지 않는 페이지'}
+          className="w-full rounded-[6px] border border-dashed border-[#CBD5E1] bg-white px-2 py-1 text-[12px] text-[#64748B] hover:border-[#94A3B8] hover:text-[#334155] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          + 새 뷰
+          {saving ? '저장 중…' : '+ 새 뷰'}
         </button>
       </div>
 
