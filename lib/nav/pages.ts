@@ -21,7 +21,7 @@ export type PageDef = {
 export const WORKS_PAGES: PageDef[] = [
   { key: 'production', label: '생산관리', href: '/works/production', status: 'active' },
   { key: 'packaging',  label: '포장/출고', href: null, status: 'coming-soon' },
-  { key: 'products',   label: '제품관리', href: null, status: 'coming-soon' },
+  { key: 'products',   label: '제품 관리', href: '/works/products', status: 'active' },
 ]
 
 export const TRASH_PAGE: PageDef = {
@@ -52,6 +52,8 @@ export function resolvePageHrefForKey(pageKey: string): string | null {
   }
   // worksPageConfig.pageKey is 'works' (legacy) → treat as production.
   if (pageKey === 'works') return '/works/production'
+  // productsPageConfig.pageKey is 'products' — already handled by the
+  // WORKS_PAGES loop above, no extra alias needed.
   return null
 }
 

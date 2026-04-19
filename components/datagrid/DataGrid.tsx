@@ -18,7 +18,7 @@ import ShortcutsModal from '@/components/works/ShortcutsModal'
 import { type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
 import { loadEffectiveSettings, persistViewPatch } from '@/lib/works/viewPresets'
 import { usePresets } from '@/components/nav/PresetsContext'
-import type { FieldType, ImageItem, AttachmentItem, Row } from '@/features/works/worksTypes'
+import type { FieldType, ImageItem, AttachmentItem } from '@/features/works/worksTypes'
 import { getFieldTypeIcon } from '@/features/works/worksConfig'
 import {
   getFilterSelectOptions,
@@ -27,7 +27,7 @@ import {
   resetRendererBridge,
   setSelectColumnOptions,
 } from '@/features/works/worksRenderers'
-import type { PageConfig } from './types'
+import type { BaseRow as Row, PageConfig } from './types'
 
 // Row height presets. Values are the actual row px height used for both the CSS
 // var (--grid-row-h) and HOT's rowHeights option. Keeping them in lockstep is
@@ -93,7 +93,8 @@ function isGroupHeader(d: DisplayRow | undefined): d is GroupHeader {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function DataGrid({ pageConfig }: { pageConfig: PageConfig }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, any> }) {
   // Destructure into local consts that shadow the old module-scope names
   // (COLUMNS / COL_HEADERS / EDITABLE_FIELD_MAP / VIEW_PAGE_KEY). Keeps the
   // body of the component unchanged while the column catalog, editable map,

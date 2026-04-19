@@ -336,7 +336,7 @@ function worksRecomputeDerivedOnHolidayChange(row: Row, holidays: Set<string>): 
 // The single object the works page passes into DataGrid. Adding a new page
 // (products, bundles, trash) means authoring another one of these — not
 // touching DataGrid itself.
-export const worksPageConfig: PageConfig = {
+export const worksPageConfig: PageConfig<Item, Row> = {
   pageKey: VIEW_PAGE_KEY,
   apiBase: '/api/order-items',
   realtimeChannel: 'order_items_changes',
@@ -364,7 +364,7 @@ export const worksPageConfig: PageConfig = {
 // and swaps the bottom action bar to 복구 / 영구삭제. pageKey is
 // namespaced separately so the trash view persists its own column
 // order / filter / sort independently of the primary grid.
-export const worksTrashPageConfig: PageConfig = {
+export const worksTrashPageConfig: PageConfig<Item, Row> = {
   ...worksPageConfig,
   pageKey: `${VIEW_PAGE_KEY}-trash`,
   trashedMode: true,

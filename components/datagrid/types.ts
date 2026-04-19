@@ -7,26 +7,44 @@
 // subscription shell); PageConfig carries everything table-specific —
 // API endpoints, column catalog, row-shape transforms, and any
 // derived-field recomputation hooks the page needs.
-//
-// NOTE: Row/Item are currently typed to the Works shape because there is
-// only one page today. When a second page (products, bundles) lands with
-// a different row shape, this file will be genericized to
-// `PageConfig<TItem, TRow>`. The prop surface won't change — callers will
-// just start supplying the new shapes — so it is a non-breaking follow-up.
 
-import type { FieldType, Item, Row } from '@/features/works/worksTypes'
+import type { AttachmentItem, FieldType, ImageItem } from '@/features/works/worksTypes'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DataGridColumn = any
+
+// Minimal shape every grid row must satisfy. DataGrid only touches `id`
+// and (for the attachment column) `reference_files` directly; everything
+// else is read through HOT's data API / renderers, so individual pages
+// are free to carry any additional columns.
+export type BaseRow = {
+  id: string
+  updated_at?: string | null
+  images?: ImageItem[]
+  reference_files?: AttachmentItem[]
+  [key: string]: unknown
+}
+
+// Minimal DB row shape. Every page's transform consumes at least this.
+export type BaseItem = {
+  id: string
+  updated_at?: string | null
+  [key: string]: unknown
+}
 
 export type DerivedFieldContext = {
   holidays: Set<string>
 }
 
-export type PageConfig = {
+export type PageConfig<TItem extends BaseItem = BaseItem, TRow extends BaseRow = BaseRow> = {
   // user_view_settings.page_key — scopes persisted column order / widths /
   // filters / sorts per user per page.
   pageKey: string
+
+  // Human-readable label, shown in the LNB header and anywhere that
+  // identifies the current page by name. Optional — callers without a
+  // dedicated header fall back to the pageKey / pathname-derived label.
+  pageName?: string
 
   // REST base used for row CRUD. DataGrid composes endpoints from this:
   //   POST   apiBase                  → list/search (with filters/sorts/search_term)
@@ -60,16 +78,16 @@ export type PageConfig = {
   // on every fetched page and every realtime INSERT. `ctx.holidays` is the
   // business-calendar holiday set (workday-dependent derived fields live
   // in the transform itself, not in DataGrid).
-  transformRow: (item: Item, ctx: DerivedFieldContext) => Row
+  transformRow: (item: TItem, ctx: DerivedFieldContext) => TRow
 
   // Realtime UPDATE merge: given a prior row and the `payload.new` columns
   // from Supabase, produce the new row. Page-specific because the set of
   // synced fields (and any recomputed derived columns) varies per table.
   mergeRealtimeUpdate: (
-    prev: Row,
+    prev: TRow,
     payloadNew: Record<string, unknown>,
     ctx: DerivedFieldContext
-  ) => Row
+  ) => TRow
 
   // Derived-field hook for local edits. Called after a user-initiated cell
   // change and on rollback; returns a partial row containing any derived
@@ -77,17 +95,17 @@ export type PageConfig = {
   // writes these back into HOT so read-only formula columns stay in sync.
   // Return `{}` when no derived column is affected by this edit.
   recomputeDerivedAfterEdit?: (
-    prev: Row,
+    prev: TRow,
     field: string,
     candidateValue: unknown,
     ctx: DerivedFieldContext
-  ) => Partial<Row>
+  ) => Partial<TRow>
 
   // Called when the business-calendar holiday set changes, for each loaded
   // row. Return the row with any workday-dependent derived fields
   // recomputed; returning the same reference signals "no change" and lets
   // DataGrid keep React state stable when the page has no such fields.
-  recomputeDerivedOnHolidayChange?: (row: Row, holidays: Set<string>) => Row
+  recomputeDerivedOnHolidayChange?: (row: TRow, holidays: Set<string>) => TRow
 
   // Group-by feature. `allowedTypes` lists which fieldTypes are eligible
   // to be used as grouping keys — the "그룹" dropdown filters the column
@@ -100,6 +118,20 @@ export type PageConfig = {
     allowedTypes: FieldType[]
     defaultColumn?: string
   }
+
+  // Add-row feature flag. When enabled, the page-level chrome may render
+  // an "add row" control that POSTs to `${apiBase}` (or a page-specified
+  // create endpoint) with a minimal payload. DataGrid itself does not
+  // render the button today — the flag is read by page wrappers so a
+  // single config switch is enough to turn the feature on/off per page.
+  addRow?: {
+    enabled: boolean
+  }
+
+  // Which view modes the page supports (e.g. 'grid', 'board', 'gallery').
+  // Pages that only ship with the grid view can omit this; the default
+  // is a grid-only surface. Consumed by view-switcher chrome when present.
+  viewTypes?: string[]
 
   // When true, DataGrid renders a trash-only variant:
   //   - fetch endpoint receives `trashed_only: true`
