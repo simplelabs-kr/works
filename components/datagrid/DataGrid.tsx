@@ -1809,7 +1809,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // the live view state synchronously, and a beforeunload flush so a
   // pending debounced save isn't lost when the user closes the tab.
   //
-  // The registry is keyed by VIEW_PAGE_KEY so /works/production and
+  // The registry is keyed by VIEW_PAGE_KEY so /works/order-items and
   // /works/trash can each own their own entry. Each grid instance keeps
   // its own entry live only for the duration of its mount.
   useEffect(() => {

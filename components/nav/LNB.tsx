@@ -9,10 +9,9 @@
 //
 // Per-page reuse: the page header and section-bound preset lists are
 // derived from `resolveActivePage(pathname)` + the pages.ts registry.
-// To hook a new page into the LNB (products, bundles, ...):
-//   1. Add a PageDef entry to WORKS_PAGES in lib/nav/pages.ts.
-//   2. Teach presetKeyForActivePage the new page's preset key.
-// No LNB code change needed beyond those two registry touches.
+// To hook a new page into the LNB (products, bundles, ...): add a
+// PageDef entry to WORKS_PAGES in lib/nav/pages.ts with its `presetKey`.
+// The LNB reads `activePage.presetKey` directly — no code change here.
 //
 // ── Ordering model ─────────────────────────────────────────────────
 // Flat list per section (scope × page_key). sort_order is a simple
@@ -40,13 +39,6 @@ import {
   type ViewPreset,
 } from '@/lib/works/viewPresets'
 import NewPresetModal from './NewPresetModal'
-
-// ── Page key mapping ────────────────────────────────────────────────
-function presetKeyForActivePage(activeKey: string | null): string | null {
-  if (activeKey === 'production') return 'works'
-  if (activeKey === 'trash') return 'works-trash'
-  return null
-}
 
 // ── Section collapse persistence ────────────────────────────────────
 // Keys: 'favorites' | 'collaborative' | 'private'. Stored as an array
@@ -421,7 +413,7 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
   const router = useRouter()
   const activePage = resolveActivePage(pathname ?? '')
   const activeKey = activePage?.key ?? null
-  const activePresetKey = presetKeyForActivePage(activeKey)
+  const activePresetKey = activePage?.presetKey ?? null
 
   const { presets, refresh, activeByPage, setActivePreset, currentUserKey } = usePresets()
   const activePresetId = activePresetKey ? (activeByPage[activePresetKey] ?? null) : null
@@ -449,9 +441,14 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
     return a.created_at.localeCompare(b.created_at)
   }, [])
 
+  // Favorites are scoped to the current page so switching pages does
+  // not leak another page's starred views. A page without a presetKey
+  // (e.g. coming-soon) shows an empty favorites section.
   const starredPresets = useMemo(
-    () => overriddenPresets.filter(p => p.starred).slice().sort(sortByOrder),
-    [overriddenPresets, sortByOrder],
+    () => activePresetKey
+      ? overriddenPresets.filter(p => p.starred && p.page_key === activePresetKey).slice().sort(sortByOrder)
+      : [],
+    [overriddenPresets, activePresetKey, sortByOrder],
   )
   const pagePresets = useMemo(
     () => activePresetKey ? overriddenPresets.filter(p => p.page_key === activePresetKey) : [],

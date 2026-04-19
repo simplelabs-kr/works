@@ -1,7 +1,7 @@
 import dynamic from 'next/dynamic'
 
 // 휴지통 — soft-deleted order_items viewed through the same DataGrid
-// plumbing as /works/production, with trashedMode flipped on.
+// plumbing as /works/order-items, with trashedMode flipped on.
 const WorksTrashGrid = dynamic(() => import('@/components/works/WorksTrashGrid'), {
   ssr: false,
   loading: () => (
