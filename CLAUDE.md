@@ -87,6 +87,12 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 `{page}` 로 일괄 치환한 뒤 CHECKLIST.md 단계대로 진행한다. 실제 예시는
 `features/products/` 참고.
 
+## derived: true 원칙
+프론트에 표시되는 모든 컬럼은 flat_{table}에 물리 컬럼으로 존재해야 한다.
+derived: true는 이 원칙을 아직 지키지 못한 컬럼을 나타내는 임시 플래그.
+해당 컬럼이 구현되면 즉시 derived: true 제거.
+장기적으로 derived: true가 0개인 상태가 목표.
+
 ## 3. API & Frontend Rules
 
 - **API Route**: 복잡한 `JOIN` 은 금지. 데이터 조회는 `flat_{table}` 단일 테이블에서만 수행한다.
