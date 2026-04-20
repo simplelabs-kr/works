@@ -30,7 +30,9 @@ function logError(
   const payload = err && typeof err === 'object'
     ? JSON.stringify(err, null, 2)
     : String(err)
-  if (ctx) console.error(`${prefix} ${label}:`, payload, ctx)
+  // ctx 도 JSON.stringify 로 풀어서 출력 — 기본 console 은 중첩
+  // 객체를 [Object] 로 잘라버리므로 원인 진단이 어렵다.
+  if (ctx) console.error(`${prefix} ${label}:`, payload, JSON.stringify(ctx, null, 2))
   else console.error(`${prefix} ${label}:`, payload)
 }
 
