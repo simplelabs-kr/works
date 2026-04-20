@@ -57,7 +57,7 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 1. `features/{page}/{page}Config.ts` 생성
    - `COLUMNS`: `col.data` 는 flat 테이블 컬럼명과 정확히 일치
    - `col.title` 과 `col.data` 가 다를 경우 FilterModal 에서 `title` 기준으로 필터됨
-   - 집계 컬럼 (`mold_개수` 등) 은 `filterable: false` 설정
+   - 그리드에 표시되는 모든 컬럼은 필터링 가능해야 함 (예외 없음)
    - `initialLoadPolicy`: 데이터 규모 크면 `'require-filter'`
    - `editableFields`: lookup/집계 컬럼 제외
 2. `features/{page}/{page}Types.ts`
@@ -74,9 +74,8 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 - **FilterModal 은 `col.title` 을 key 로 저장함.**
   `col.data` 와 일치하도록 `title` 을 정의하거나, 향후 FilterModal 을
   `col.data` 기반으로 전환 예정.
-- **집계 컬럼 (`mold_개수` 등) 은 WHERE 절에서 직접 참조 불가** (원본 테이블 기준).
-  flat table 에서는 일반 컬럼으로 저장되어 있어 물리적으로 필터 가능하지만,
-  UX 상 `filterable: false` 로 필터 UI 에서 숨긴다.
+- **집계 컬럼 (`mold_개수` 등)**: 원본 테이블 기준 WHERE 절에서는 직접 참조 불가지만,
+  flat table 에 일반 컬럼으로 저장되어 있으므로 필터링 가능 — 모든 표시 컬럼은 필터 가능해야 한다.
 - **numeric / boolean 컬럼에 `contains` 연산자 사용 불가.**
   `flat_condition_to_sql` 에서 `::text` 캐스팅으로 처리됨.
 - **No. / 체크박스 컬럼은 DataGrid 가 자동 주입** — Config 에 추가 불필요.

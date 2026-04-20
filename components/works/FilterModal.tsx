@@ -10,9 +10,6 @@ export interface FilterColDef {
   title: string
   fieldType?: string
   outputType?: 'text' | 'number' | 'date'
-  // false 면 필터 선택 UI 에서 숨긴다. 집계/JOIN 유래 컬럼처럼
-  // 그리드 표시는 허용하되 사용자가 필터로 걸면 안되는 컬럼에 사용.
-  filterable?: boolean
 }
 
 export interface FilterCondition {
@@ -275,8 +272,7 @@ export default function FilterModal({ columns, filterState, selectOptions = {}, 
 
   const filteredCols = columns.filter(c =>
     typeof c.title === 'string' && c.title !== '' &&
-    (c.fieldType !== 'formula' || c.outputType != null) &&
-    c.filterable !== false
+    (c.fieldType !== 'formula' || c.outputType != null)
   )
 
   const makeCondition = (): FilterCondition => {
