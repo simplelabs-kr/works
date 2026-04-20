@@ -2362,10 +2362,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     if (!view) return
 
     // 1) Widths — iterate HOT's current physical column schema
-    //    (effectiveColumnsRef) so setManualSize receives the right index.
-    //    With the declarative order in place, visual == physical, so passing
-    //    physical to setManualSize (which treats its arg as visual and
-    //    converts internally) is safe.
+    //    (effectiveColumnsRef) and convert physical → visual before
+    //    handing the index to setManualSize, which expects a visual
+    //    index. After a manualColumnMove drag followed by a rows
+    //    reload (filter/sort/scroll triggers this effect), visual !=
+    //    physical, so passing physical would size the wrong column.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mcr = hot.getPlugin('manualColumnResize') as any
     if (mcr) {
@@ -2376,7 +2377,10 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           ? view.columnWidths[c.data]
           : undefined
         if (typeof savedW === 'number' && savedW > 0) {
-          mcr.setManualSize(pi, savedW)
+          const vi = hot.toVisualColumn(pi)
+          if (typeof vi === 'number' && vi >= 0) {
+            mcr.setManualSize(vi, savedW)
+          }
         }
       })
     }
