@@ -30,6 +30,7 @@ import {
   setSelectColumnOptions,
 } from '@/features/works/worksRenderers'
 import type { BaseRow as Row, PageConfig } from './types'
+import { reportValidation, validatePageConfig } from './validatePageConfig'
 
 // Row height presets. Values are the actual row px height used for both the CSS
 // var (--grid-row-h) and HOT's rowHeights option. Keeping them in lockstep is
@@ -518,6 +519,16 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   const isAppend = useRef(false)
   const dataLoaded = useRef(false) // true after first successful load
   const didValidateShape = useRef(false) // col.data vs RPC response key diff — fires once
+  const didValidateConfig = useRef(false) // PageConfig 구조 검증 — 마운트 1회
+
+  // PageConfig 정합성을 마운트 시 1회 검증. 필수 필드 누락 / 중복 col.data /
+  // readOnly ↔ editableFields 드리프트 등을 콘솔로 조기 보고한다.
+  // 개발 중 오타/누락을 "데이터 조회 실패" 나 "PATCH 403" 전에 탐지.
+  useEffect(() => {
+    if (didValidateConfig.current) return
+    didValidateConfig.current = true
+    reportValidation(pageConfig.pageKey ?? '(unknown)', validatePageConfig(pageConfig))
+  }, [pageConfig])
 
   // Sync refs after render commits. Writing refs in the render body violates React's
   // "no side-effects during render" guidance (StrictMode double-invocation, concurrent
