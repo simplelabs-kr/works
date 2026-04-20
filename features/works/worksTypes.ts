@@ -67,6 +67,19 @@ export type Item = {
   brand_name: string | null
   metal_name: string | null
   metal_purity: number | null
+  // flat_order_details computed/denormalized columns
+  시세_g당: number | null
+  소재비: number | null
+  순금_중량: number | null
+  기준_중량: number | null
+  허용_중량_범위: string | null
+  중량_검토: string | null
+  번들_명칭: string | null
+  검수_유의: string | null
+  가다번호_목록: string | null
+  가다_위치_목록: string | null
+  출고예정일: string | null
+  제품명_코드: string | null
   images: ImageItem[]
   reference_files: AttachmentItem[]
 }
@@ -77,14 +90,15 @@ export type Row = {
   고유_번호: string
   제품명: string
   제품명_코드: string
-  metals: { name: string; purity: string | null }
+  metal_name: string
+  metal_purity: string | null
   발주일: string
   생산시작일: string
   제작_소요일: number | null
   데드라인: string
   출고예정일: string
-  시세_g당: string
-  소재비: string
+  시세_g당: number | null
+  소재비: number | null
   발주_수량: number | null
   수량: number | null
   호수: string | null
@@ -92,6 +106,7 @@ export type Row = {
   디자이너_노트: string
   중량: number | null
   검수: boolean
+  기준_중량: number | null
   허용_중량_범위: string
   중량_검토: string
   기타_옵션: string
@@ -107,11 +122,11 @@ export type Row = {
   검수_유의: string
   도금_색상: string
   사출_방식: string
-  가다번호: string | null
-  가다_위치: string | null
+  가다번호_목록: string | null
+  가다_위치_목록: string | null
   주물_후_수량: number | null
   포장: boolean
-  순금_중량: string
+  순금_중량: number | null
   rp_출력_시작: boolean
   왁스_파트_전달: boolean
   images: ImageItem[]

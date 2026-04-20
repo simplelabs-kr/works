@@ -24,8 +24,8 @@ const OPS_DEFAULT: Op[] = ['none', 'count', 'empty', 'filled']
 
 // Lookup/formula columns whose values are numeric
 const NUMERIC_LOOKUP_KEYS = new Set([
-  'metals.purity', '시세_g당', '소재비', '기본_공임', '공임_조정액', '확정_공임',
-  '발주_수량', '순금_중량',
+  'metal_purity', '시세_g당', '소재비', '기본_공임', '공임_조정액', '확정_공임',
+  '발주_수량', '순금_중량', '기준_중량',
 ])
 
 const OP_LABELS: Record<Op, string> = {

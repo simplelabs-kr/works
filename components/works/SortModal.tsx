@@ -8,6 +8,8 @@ import ColPicker from './ColPicker'
 export interface SortColDef {
   data: string
   title: string
+  // 파생 컬럼 — 정렬 드롭다운에서도 제외. RPC 는 flat 테이블 컬럼만 정렬 가능.
+  derived?: boolean
 }
 
 // `column` 은 `col.data` (flat 테이블 물리 컬럼명) 를 저장한다.
@@ -77,7 +79,7 @@ export default function SortModal({
     return () => document.removeEventListener('keydown', handler)
   }, [onApply, onClose])
 
-  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '')
+  const filteredCols = columns.filter(c => typeof c.title === 'string' && c.title !== '' && !c.derived)
 
   const addCondition = () => {
     const firstCol = filteredCols[0]

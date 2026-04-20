@@ -10,6 +10,9 @@ export interface FilterColDef {
   title: string
   fieldType?: string
   outputType?: 'text' | 'number' | 'date'
+  // UI-only 파생 컬럼(표시는 하지만 DB 물리 컬럼이 없는 것). true 면
+  // 필터 드롭다운에서 제외 — RPC 가 해당 키를 해석할 수 없기 때문.
+  derived?: boolean
 }
 
 // `column` 은 `col.data` (flat 테이블 물리 컬럼명) 를 저장한다.
@@ -306,6 +309,7 @@ export default function FilterModal({ columns, filterState, selectOptions = {}, 
 
   const filteredCols = columns.filter(c =>
     typeof c.title === 'string' && c.title !== '' &&
+    !c.derived &&
     (c.fieldType !== 'formula' || c.outputType != null)
   )
 
