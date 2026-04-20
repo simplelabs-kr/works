@@ -61,7 +61,7 @@ export const PRODUCTS_EDITABLE_FIELDS: Record<string, string> = {
 // 그대로.
 export const PRODUCTS_COLUMNS = [
   // ── 식별 ────────────────────────────────────────────────────────────
-  { data: '제품코드', title: '제품코드', readOnly: false, width: 120, fieldType: 'text' as FieldType },
+  { data: '제품코드', title: '제품코드', readOnly: false, width: 120, fieldType: 'text' as FieldType, maxLength: 100 },
   { data: '제품명',   title: '제품명',   readOnly: false, width: 220, fieldType: 'text' as FieldType },
 
   // ── 브랜드 연결 ────────────────────────────────────────────────────
@@ -102,10 +102,10 @@ export const PRODUCTS_COLUMNS = [
   // ── 기타 ───────────────────────────────────────────────────────────
   { data: '검수_유의', title: '검수 유의', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '작업지시서', title: '작업지시서', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
-  { data: '파일_경로', title: '파일 경로', readOnly: false, width: 180, fieldType: 'text' as FieldType },
-  { data: '개발_슬랙_링크', title: '개발 슬랙 링크', readOnly: false, width: 180, fieldType: 'text' as FieldType },
-  { data: '개발_슬랙_id',   title: '개발 슬랙 ID',   readOnly: false, width: 140, fieldType: 'text' as FieldType },
-  { data: '슬랙_thread_id', title: '슬랙 Thread ID', readOnly: false, width: 140, fieldType: 'text' as FieldType },
+  { data: '파일_경로', title: '파일 경로', readOnly: false, width: 180, fieldType: 'text' as FieldType, maxLength: 500 },
+  { data: '개발_슬랙_링크', title: '개발 슬랙 링크', readOnly: false, width: 180, fieldType: 'text' as FieldType, maxLength: 500 },
+  { data: '개발_슬랙_id',   title: '개발 슬랙 ID',   readOnly: false, width: 140, fieldType: 'text' as FieldType, maxLength: 100 },
+  { data: '슬랙_thread_id', title: '슬랙 Thread ID', readOnly: false, width: 140, fieldType: 'text' as FieldType, maxLength: 100 },
 
   // JOIN 파생 — 읽기 전용. flat_products 에 물리 컬럼으로 저장되어 필터 가능.
   { data: '가다번호_목록', title: '가다번호',     readOnly: true, width: 120, fieldType: 'text'   as FieldType },

@@ -15,6 +15,7 @@ export const maxDuration = 10
 const FIELD_SPECS: FieldSpecs = {
   '제품명': { type: 'text', maxLength: 200 },
   '제품코드': { type: 'text', maxLength: 100 },
+  'brand_id': { type: 'text', maxLength: 64 },
   '카테고리': { type: 'text', maxLength: 50 },
   '발주_가능': { type: 'boolean' },
   '제공_중단': { type: 'boolean' },
@@ -44,7 +45,6 @@ const FIELD_SPECS: FieldSpecs = {
   '원가_기타': { type: 'number' },
   '원가_체인비': { type: 'number' },
   '원가_심플랩스': { type: 'number' },
-  'brand_id': { type: 'text', maxLength: 64 },
 }
 
 export const PATCH = createPatchRoute({

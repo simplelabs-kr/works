@@ -86,17 +86,16 @@ export const POST = createListRoute({
 })
 ```
 
-**`[id]/route.ts`** — FIELD_SPECS 수동 작성
+**`[id]/route.ts`** — FIELD_SPECS 는 스크립트로 생성
 ```ts
 import { createPatchRoute, createSoftDeleteRoute, type FieldSpecs }
   from '@/lib/api/createTableRoute'
 export const maxDuration = 10
+// FIELD_SPECS 블록은 scripts/generate-field-specs.mjs 가 {page}Config.ts 의
+// *_EDITABLE_FIELDS / *_COLUMNS 로부터 생성한다 — 수작업 편집 금지.
 const FIELD_SPECS: FieldSpecs = {
-  // EDITABLE_FIELDS 의 모든 키를 여기에도 등록. 타입 일치 필수.
-  // text: { type: 'text', maxLength: N }
-  // number: { type: 'number' }
-  // boolean: { type: 'boolean' }
-  // date: { type: 'date' }
+  // 빈 placeholder 로 두고 아래 명령으로 채운다:
+  //   node scripts/generate-field-specs.mjs {page} --write
 }
 export const PATCH = createPatchRoute({
   table:      '{table}',
@@ -109,8 +108,17 @@ export const DELETE = createSoftDeleteRoute({
 })
 ```
 
-> ⚠️ EDITABLE_FIELDS ↔ FIELD_SPECS 3중 동기화 이슈. scripts/generate-field-specs.ts
-> (→ 제안 C) 가 준비되면 자동화. 그 전엔 **수동으로 일치** 확인.
+**FIELD_SPECS 생성 (EDITABLE_FIELDS ↔ FIELD_SPECS 3중 동기화 자동화):**
+```
+node scripts/generate-field-specs.mjs {page}          # stdout 으로 미리보기
+node scripts/generate-field-specs.mjs {page} --write  # route.ts 에 직접 반영
+node scripts/generate-field-specs.mjs {page} --check  # CI 에서 드리프트 검사
+```
+- 매핑: `text`/`select`/`longtext` → text + 기본 maxLength(200/50/2000), `number`, `checkbox`, `date` 는 그대로.
+- 컬럼 카탈로그에 `maxLength: N` 을 붙이면 해당 값이 반영된다.
+- `readOnly:false` 인데 EDITABLE_FIELDS 미등록 → 경고.
+- EDITABLE_FIELDS 에 있는데 COLUMNS 엔트리가 없는 키(API-only FK 등) 는
+  기존 route.ts 의 라인을 보존한다.
 
 **`bulk-delete/route.ts`** (8줄) / **`restore/route.ts`** / **`permanent-delete/route.ts`** 각각:
 ```ts
