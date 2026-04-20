@@ -31,12 +31,19 @@ type FilterValueShape = {
 // DataGrid filters 배열에서 특정 컬럼의 단순 equality / contains 조건을
 // 찾아 scalar 값으로 반환. 복잡한 AND/OR 구조, 범위 비교 등은 무시 —
 // RPC가 표현할 수 없는 필터는 그냥 버린다.
+//
+// columnAliases: 컬럼을 식별하는 이름 목록. FilterModal은 col.title 을
+// condition.column 에 저장하기 때문에 title 과 data 가 다른 컬럼
+// (예: data='개발_현황', title='개발 현황')에서는 양쪽 모두 허용해야
+// 필터가 실제로 매칭된다. 이 불일치는 초기 버전에서 필터가 조용히
+// 드롭되던 근본 원인이었다.
 function pickDiscreteFilter(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   filters: any,
-  targetColumn: string,
+  ...columnAliases: string[]
 ): unknown {
   if (!filters) return null
+  const aliasSet = new Set(columnAliases)
   const queue: unknown[] = Array.isArray(filters) ? [...filters] : [filters]
   while (queue.length) {
     const node = queue.shift()
@@ -48,8 +55,11 @@ function pickDiscreteFilter(
     if (Array.isArray(obj.children)) queue.push(...obj.children)
     const leaf = obj as FilterValueShape
     const col = leaf.column ?? leaf.columnName ?? leaf.field
-    if (typeof col !== 'string' || col !== targetColumn) continue
+    if (typeof col !== 'string' || !aliasSet.has(col)) continue
     const op = typeof leaf.operator === 'string' ? leaf.operator.toLowerCase() : ''
+    // checkbox 전용 연산자는 값이 없으므로 여기서 boolean으로 번역.
+    if (op === 'is_checked') return true
+    if (op === 'is_unchecked') return false
     if (op && !['=', '==', 'eq', 'equals', 'is', 'contains', 'includes'].includes(op)) continue
     return leaf.value ?? null
   }
@@ -83,12 +93,14 @@ export async function POST(request: NextRequest) {
 
   // body.* 로 직접 전달된 discrete 필터 > body.filters 배열에서 추출한 값.
   // DataGrid가 나중에 discrete 경로로 전환되어도 동작하도록 양쪽 모두 수용.
+  // FilterModal이 condition.column 에 col.title 을 저장하기 때문에
+  // title 과 data 가 다른 컬럼은 두 이름을 함께 전달해야 한다.
   const rawFilters = body.filters
-  const p_brand_id   = asStringOrNull(body.brand_id   ?? pickDiscreteFilter(rawFilters, 'brand_id'))
+  const p_brand_id   = asStringOrNull(body.brand_id   ?? pickDiscreteFilter(rawFilters, 'brand_id', '브랜드', '브랜드명'))
   const p_category   = asStringOrNull(body.category   ?? pickDiscreteFilter(rawFilters, '카테고리'))
-  const p_개발_현황  = asStringOrNull(body.개발_현황 ?? pickDiscreteFilter(rawFilters, '개발_현황'))
-  const p_발주_가능  = asBoolOrNull(body.발주_가능 ?? pickDiscreteFilter(rawFilters, '발주_가능'))
-  const p_제공_중단  = asBoolOrNull(body.제공_중단 ?? pickDiscreteFilter(rawFilters, '제공_중단'))
+  const p_개발_현황  = asStringOrNull(body.개발_현황 ?? pickDiscreteFilter(rawFilters, '개발_현황', '개발 현황'))
+  const p_발주_가능  = asBoolOrNull(body.발주_가능 ?? pickDiscreteFilter(rawFilters, '발주_가능', '발주 가능'))
+  const p_제공_중단  = asBoolOrNull(body.제공_중단 ?? pickDiscreteFilter(rawFilters, '제공_중단', '제공 중단'))
 
   const searchParams = {
     p_search,

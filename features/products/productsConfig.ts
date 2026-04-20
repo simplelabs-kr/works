@@ -263,4 +263,8 @@ export const productsPageConfig: PageConfig<ProductItem, ProductRow> = {
   },
   addRow: { enabled: true },
   viewTypes: ['grid'],
+  // products는 날짜 스코프가 없어 기본 로딩 시 전체(1만+) 레코드가
+  // 한 번에 들어오는 UX가 바람직하지 않다. 필터/검색이 설정되기 전에는
+  // 비어 있도록 하고, 사용자가 조건을 지정하면 그때 조회한다.
+  initialLoadPolicy: 'require-filter',
 }

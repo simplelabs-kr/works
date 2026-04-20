@@ -647,6 +647,25 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     return () => { cancelled = true }
   }, [offset, fetchTrigger]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Group-by auto-load: when a grouping column is active, the user sees
+  // an aggregated view (group headers + row buckets), so the 100-row
+  // page window is the wrong granularity — grouping only some of the
+  // data is worse than not grouping at all. Keep paging until either
+  // the server runs out or a safety cap is reached. The cap bounds
+  // memory and the synchronous `displayRows` memo below.
+  const GROUP_AUTOLOAD_CAP = 5000
+  useEffect(() => {
+    if (!groupByColumn) return
+    if (loading || loadingMore) return
+    if (!hasMoreRef.current) return
+    if (rows.length === 0) return
+    if (rows.length >= GROUP_AUTOLOAD_CAP) return
+    if (isScrollLoadingRef.current) return
+    isScrollLoadingRef.current = true
+    isAppend.current = true
+    setOffset(o => o + 100)
+  }, [groupByColumn, rows.length, loading, loadingMore])
+
   // Resize HOT height to fill its container
   useEffect(() => {
     if (!hotContainerRef.current) return
@@ -1334,7 +1353,27 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       if (trashedMode) return // trash view has every cell readOnly
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
       const column = colDef.data as string
-      const options = getSelectColumnOptions()[column] ?? []
+      let options = getSelectColumnOptions()[column] ?? []
+      if (options.length === 0) {
+        // Fallback: derive distinct non-empty values from the currently
+        // loaded rows so the dropdown is usable for pages whose
+        // `field_options` catalog hasn't been seeded yet. Colors are
+        // empty (plain text) until the catalog lands. This keeps new
+        // pages functional with pageConfig-only wiring.
+        const seen = new Set<string>()
+        const derived: { value: string; bg: string }[] = []
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const r of rows as any[]) {
+          const v = r?.[column]
+          if (v == null || v === '') continue
+          const s = String(v)
+          if (seen.has(s)) continue
+          seen.add(s)
+          derived.push({ value: s, bg: '' })
+        }
+        derived.sort((a, b) => a.value.localeCompare(b.value))
+        options = derived
+      }
       const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
       if (!td) return
       const rect = td.getBoundingClientRect()
@@ -1756,6 +1795,20 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       activePresetIdRef.current = activeIdAtMount
 
       applyFromSettings(settings)
+
+      // Respect per-page initial-load policy. With 'require-filter' we
+      // skip the first fetch unless the restored settings already carry
+      // a filter — avoids dumping the entire base table into the grid
+      // on first visit for pages that have no inherent scoping.
+      const policy = pageConfig.initialLoadPolicy ?? 'auto'
+      const restoredFilters = settings?.filters as RootFilterState | null | undefined
+      const hasFilter = (restoredFilters?.conditions?.length ?? 0) > 0
+      if (policy === 'require-filter' && !hasFilter) {
+        // Stay empty. Later filter apply / search will trigger handleLoad
+        // through the existing paths (filter modal, searchTerm effect).
+        setTimeout(() => { restoredRef.current = true }, 0)
+        return
+      }
 
       // Trigger the data fetch. The post-loadData effect will apply view
       // to HOT plugins once rows arrive.

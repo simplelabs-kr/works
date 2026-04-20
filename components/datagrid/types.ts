@@ -133,6 +133,15 @@ export type PageConfig<TItem extends BaseItem = BaseItem, TRow extends BaseRow =
   // is a grid-only surface. Consumed by view-switcher chrome when present.
   viewTypes?: string[]
 
+  // Initial-load policy. 'auto' (default) kicks off a data fetch on
+  // mount using whatever saved filter/search the user had (or none —
+  // the server returns the first page of the whole table).
+  // 'require-filter' instead waits until the user applies a filter or
+  // runs a search before fetching. Useful for base tables that have
+  // no inherent date scoping (e.g. products): opening the page with
+  // no saved filter should not dump the entire table into the grid.
+  initialLoadPolicy?: 'auto' | 'require-filter'
+
   // When true, DataGrid renders a trash-only variant:
   //   - fetch endpoint receives `trashed_only: true`
   //   - every cell is readOnly (no editor, no checkbox toggle)
