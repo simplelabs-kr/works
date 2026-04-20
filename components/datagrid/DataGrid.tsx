@@ -1088,8 +1088,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       // re-render — HOT calls this hook during horizontal virtualization, so
       // redundant inline style writes thrash layout and cause visible flicker
       // during left/right scroll.
+      //
+      // HOT passes a VISUAL column index here. effectiveColumnsRef is
+      // indexed by physical order, so convert before looking up the
+      // column definition — otherwise after manualColumnMove we'd paint
+      // the wrong header's field-type icon.
+      const pi = hotRef.current?.toPhysicalColumn(col) ?? col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (effectiveColumnsRef.current as any[])[col]
+      const colDef = (effectiveColumnsRef.current as any[])[pi]
       if (!colDef || !colDef.fieldType) return
       if (TH.querySelector('.field-type-icon')) return
       const div = TH.querySelector('.colHeader') as HTMLElement | null
@@ -1274,8 +1280,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // afterBeginEditing: longtext → textarea 확장, date → 캘린더 자동 오픈, 사출_방식 → 드롭다운 전체 표시
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterBeginEditing', (row: number, col: number) => {
+      // HOT passes VISUAL indices here. Convert to physical before
+      // indexing effectiveColumnsRef (physical-ordered) — otherwise
+      // longtext/date special-case handling fires for the wrong column
+      // after manualColumnMove.
+      const pi = hotRef.current?.toPhysicalColumn(col) ?? col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (effectiveColumnsRef.current as any[])[col]
+      const colDef = (effectiveColumnsRef.current as any[])[pi]
       if (!colDef) return
 
       if (colDef.fieldType === 'longtext') {
