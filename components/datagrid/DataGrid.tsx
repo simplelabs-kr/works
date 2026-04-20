@@ -23,6 +23,7 @@ import { getFieldTypeIcon } from '@/features/works/worksConfig'
 import {
   getFilterSelectOptions,
   getSelectColumnOptions,
+  noColRenderer,
   rendererBridge,
   resetRendererBridge,
   setSelectColumnOptions,
@@ -102,8 +103,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // and realtime wiring are also pulled from pageConfig so a new page can
   // reuse this grid with nothing but a new PageConfig object.
   const {
-    columns: COLUMNS,
-    colHeaders: COL_HEADERS,
     editableFields: EDITABLE_FIELD_MAP,
     pageKey: VIEW_PAGE_KEY,
     apiBase,
@@ -116,6 +115,29 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     recomputeDerivedOnHolidayChange,
     trashedMode,
   } = pageConfig
+
+  // No. column is owned by DataGrid — every page gets a pinned row-number /
+  // selection-checkbox column at vi=0, auto-prepended here so PageConfig
+  // authors only supply their domain columns. Memoized against the raw
+  // catalog so identity only changes when the page actually swaps its
+  // column list, keeping downstream useMemo/useEffect deps stable.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const COLUMNS = useMemo<any[]>(() => {
+    const NO_COLUMN = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: (_row: any) => '',
+      title: '',
+      width: 50,
+      readOnly: true,
+      renderer: noColRenderer,
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return [NO_COLUMN, ...(pageConfig.columns as any[])]
+  }, [pageConfig.columns])
+  const COL_HEADERS = useMemo<string[]>(
+    () => ['', ...pageConfig.colHeaders],
+    [pageConfig.colHeaders],
+  )
 
   // Prop → column index cache. Derived from pageConfig.columns; recomputes
   // only when the catalog itself changes. Hot path — HOT's propToCol() does

@@ -9,7 +9,6 @@ import {
   attachmentRenderer,
   checkboxRenderer,
   imageRenderer,
-  noColRenderer,
   purchaseStatusRenderer,
   사출방식Renderer,
   작업위치Renderer,
@@ -35,15 +34,9 @@ export const EDITABLE_FIELD_MAP: Record<string, string> = {
   'reference_files': 'reference_files',
 }
 
+// No. / 체크박스 컬럼은 DataGrid 공통 컴포넌트가 vi=0 자리에 자동으로
+// 주입한다. 여기에는 도메인 컬럼만 정의한다.
 export const COLUMNS = [
-  {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: (_row: any) => '',
-    title: '',
-    width: 50,
-    readOnly: true,
-    renderer: noColRenderer,
-  },
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 220, fieldType: 'text'     as FieldType },
@@ -359,15 +352,6 @@ export const worksPageConfig: PageConfig<Item, Row> = {
   },
 }
 
-// Trash variant — same columns, same fetch endpoint, but switched into
-// `trashedMode` so DataGrid reads deleted rows, disables every cell,
-// and swaps the bottom action bar to 복구 / 영구삭제. pageKey is
-// namespaced separately so the trash view persists its own column
-// order / filter / sort independently of the primary grid.
-export const worksTrashPageConfig: PageConfig<Item, Row> = {
-  ...worksPageConfig,
-  pageKey: `${VIEW_PAGE_KEY}-trash`,
-  trashedMode: true,
-  // No editable fields — trashedMode forces every cell readOnly regardless.
-  editableFields: {},
-}
+// NOTE: 통합 휴지통으로 전환되어 이 페이지 전용 trash config는 삭제됨.
+// /works/trash 는 이제 app/api/trash 경유의 단순 리스트 UI 를 사용한다.
+// trashedMode 자체는 DataGrid 에 남아 있어 필요 시 페이지가 다시 사용할 수 있다.

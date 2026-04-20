@@ -23,7 +23,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  TRASH_PAGE,
   resolveActivePage,
   resolvePageHrefForKey,
 } from '@/lib/nav/pages'
@@ -138,16 +137,6 @@ function ChevronIcon({ open }: { open: boolean }) {
       style={{ transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 120ms' }}
     >
       <path d="M3.5 2L6.5 5L3.5 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function TrashIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2.5 3.5h9"/>
-      <path d="M5.5 3.5V2.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V3.5"/>
-      <path d="M3.5 3.5l.6 7.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-7.5"/>
     </svg>
   )
 }
@@ -873,24 +862,6 @@ export default function LNB({ collapsed, animated, onToggle }: Props) {
         <Divider />
 
         {renderPresetSection('private', 'private', '내 뷰', privatePresets)}
-      </div>
-
-      {/* 휴지통 — pinned bottom */}
-      <div className="flex-shrink-0">
-        <Divider />
-        <nav className="flex flex-col px-2 pb-3">
-          <Link
-            href={TRASH_PAGE.href ?? '#'}
-            className={`flex items-center gap-2 rounded-[6px] px-2 py-2 text-[13px] transition-colors ${
-              activeKey === TRASH_PAGE.key
-                ? 'bg-[#2D7FF9] text-white font-medium'
-                : 'text-[#334155] hover:bg-[#E2E8F0]'
-            }`}
-          >
-            <TrashIcon />
-            <span>{TRASH_PAGE.label}</span>
-          </Link>
-        </nav>
       </div>
 
       <NewPresetModal
