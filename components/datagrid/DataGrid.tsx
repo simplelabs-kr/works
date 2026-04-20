@@ -517,6 +517,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   const [fetchTrigger, setFetchTrigger] = useState(0)
   const isAppend = useRef(false)
   const dataLoaded = useRef(false) // true after first successful load
+  const didValidateShape = useRef(false) // col.data vs RPC response key diff — fires once
 
   // Sync refs after render commits. Writing refs in the render body violates React's
   // "no side-effects during render" guidance (StrictMode double-invocation, concurrent
@@ -652,6 +653,26 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         if (cancelled) return
         if (error) { setApiError(error); return }
         const items = data ?? []
+        // 첫 성공 응답 1회에 한해 col.data ↔ RPC 응답 키를 대조한다.
+        // col.data 가 응답 item 에 없으면 → Config 오타, DB 컬럼 리네임 미반영,
+        // 또는 RPC 가 해당 필드를 누락한 케이스. 필터/정렬은 col.data 를
+        // RPC 쪽 WHERE 절에 그대로 전달하므로 불일치하면 조회 실패로 이어진다.
+        if (!didValidateShape.current && items.length > 0) {
+          didValidateShape.current = true
+          const respKeys = new Set(Object.keys(items[0] as Record<string, unknown>))
+          const missing: { data: string; title: unknown }[] = []
+          for (const col of pageConfig.columns as { data?: unknown; title?: unknown }[]) {
+            const d = col?.data
+            if (typeof d !== 'string' || d === '') continue
+            if (!respKeys.has(d)) missing.push({ data: d, title: col?.title })
+          }
+          if (missing.length > 0) {
+            console.warn(
+              `[DataGrid:${pageConfig.pageKey}] RPC 응답에 없는 col.data ${missing.length}개 — Config 오타 또는 flat 테이블 컬럼 누락 의심:`,
+              missing,
+            )
+          }
+        }
         const mapped = items.map((item: Parameters<typeof transformRow>[0]) =>
           transformRow(item, { holidays: holidaySetRef.current })
         )
