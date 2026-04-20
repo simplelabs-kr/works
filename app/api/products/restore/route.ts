@@ -3,6 +3,6 @@ import { createRestoreRoute } from '@/lib/api/createTableRoute'
 export const maxDuration = 10
 
 export const POST = createRestoreRoute({
-  table:     'order_items',
-  logPrefix: '[order-items/restore]',
+  table:     'products',
+  logPrefix: '[products/restore]',
 })
