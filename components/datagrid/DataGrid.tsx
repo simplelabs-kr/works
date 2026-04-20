@@ -8,7 +8,7 @@ import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
 import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
-import { countAllConditions } from '@/components/works/FilterModal'
+import { countAllConditions, isFilterGroup } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 import ImageModal from '@/components/works/ImageModal'
@@ -629,8 +629,34 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     else setLoading(true)
     setApiError(null)
 
-    const apiFilters = filterStateRef.current
-    const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
+    // FilterModal / SortModal 은 UI 편의상 `col.title` 을 condition.column
+    // 으로 저장한다. 그러나 RPC 측은 flat_{table} 의 실제 컬럼명(`col.data`)
+    // 을 기대하므로, API 경계에서 title → data 로 치환해 보낸다. 미등록
+    // title (예: 이전 버전 preset) 은 원본 문자열을 그대로 흘려보낸다.
+    const titleToData: Record<string, string> = {}
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const c of pageConfig.columns as any[]) {
+      if (c && typeof c.title === 'string' && typeof c.data === 'string') {
+        titleToData[c.title] = c.data
+      }
+    }
+    const remapCol = (col: string): string => titleToData[col] ?? col
+    const apiFilters: RootFilterState = {
+      logic: filterStateRef.current.logic,
+      conditions: filterStateRef.current.conditions.map(item => {
+        if (isFilterGroup(item)) {
+          return {
+            ...item,
+            conditions: item.conditions.map(c => ({ ...c, column: remapCol(c.column) })),
+          }
+        }
+        return { ...item, column: remapCol(item.column) }
+      }),
+    }
+    const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({
+      column: remapCol(column),
+      direction,
+    }))
 
     fetch(apiBase, {
       method: 'POST',
