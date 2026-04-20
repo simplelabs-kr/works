@@ -82,8 +82,10 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 
 ### 템플릿
 
-`features/_template/` 디렉토리 참고.
-products 구조를 복사해서 이름만 변경하면 된다.
+`features/_template/` 디렉토리에 스캐폴드 + CHECKLIST.md 가 있다.
+새 페이지는 이 디렉토리를 `features/{page}/` 로 복사하고 `_template` →
+`{page}` 로 일괄 치환한 뒤 CHECKLIST.md 단계대로 진행한다. 실제 예시는
+`features/products/` 참고.
 
 ## 3. API & Frontend Rules
 
