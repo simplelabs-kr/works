@@ -8,9 +8,10 @@ import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
 import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
-import { countAllConditions, isFilterGroup } from '@/components/works/FilterModal'
+import { countAllConditions, normalizeFilterStateToData } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
+import { normalizeSortConditionsToData } from '@/components/works/SortModal'
 import ImageModal from '@/components/works/ImageModal'
 import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
@@ -629,34 +630,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     else setLoading(true)
     setApiError(null)
 
-    // FilterModal / SortModal 은 UI 편의상 `col.title` 을 condition.column
-    // 으로 저장한다. 그러나 RPC 측은 flat_{table} 의 실제 컬럼명(`col.data`)
-    // 을 기대하므로, API 경계에서 title → data 로 치환해 보낸다. 미등록
-    // title (예: 이전 버전 preset) 은 원본 문자열을 그대로 흘려보낸다.
-    const titleToData: Record<string, string> = {}
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const c of pageConfig.columns as any[]) {
-      if (c && typeof c.title === 'string' && typeof c.data === 'string') {
-        titleToData[c.title] = c.data
-      }
-    }
-    const remapCol = (col: string): string => titleToData[col] ?? col
-    const apiFilters: RootFilterState = {
-      logic: filterStateRef.current.logic,
-      conditions: filterStateRef.current.conditions.map(item => {
-        if (isFilterGroup(item)) {
-          return {
-            ...item,
-            conditions: item.conditions.map(c => ({ ...c, column: remapCol(c.column) })),
-          }
-        }
-        return { ...item, column: remapCol(item.column) }
-      }),
-    }
-    const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({
-      column: remapCol(column),
-      direction,
-    }))
+    // FilterModal / SortModal 모두 `condition.column` 에 col.data (flat
+    // 테이블 물리 컬럼명) 를 저장한다. RPC 도 같은 키를 기대하므로 그대로
+    // 전송. 저장된 state 의 data-key 정규화는 로드 시점에서 처리된다.
+    const apiFilters = filterStateRef.current
+    const apiSorts = sortConditionsRef.current.map(({ column, direction }) => ({ column, direction }))
 
     fetch(apiBase, {
       method: 'POST',
@@ -1703,13 +1681,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
     // filters + sort → state, UNCONDITIONALLY. A preset with no filters
     // must clear the current filter state, not inherit the previous one.
+    //
+    // Legacy presets may store condition.column by col.title (pre-D fix).
+    // Normalize to col.data before letting FilterModal/SortModal consume
+    // them — both components now key on col.data.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const normalizeCols = (pageConfig.columns as any[]).filter(
+      (c): c is { data: string; title: string } =>
+        c && typeof c.data === 'string' && c.data !== '' && typeof c.title === 'string'
+    )
     if (settings?.filters && typeof settings.filters === 'object') {
-      setFilterState(settings.filters as RootFilterState)
+      setFilterState(normalizeFilterStateToData(settings.filters as RootFilterState, normalizeCols))
     } else {
       setFilterState({ logic: 'AND', conditions: [] })
     }
     if (Array.isArray(settings?.sort)) {
-      setSortConditions(settings.sort as SortCondition[])
+      setSortConditions(normalizeSortConditionsToData(settings.sort as SortCondition[], normalizeCols))
     } else {
       setSortConditions([])
     }

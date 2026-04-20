@@ -2,10 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+// ColPicker 의 value 는 `col.data` (flat 테이블 물리 컬럼명) 다.
+// 사용자에게는 `col.title` 이 보이고, onChange 는 col.data 를 돌려준다.
+// 필터/정렬 state 가 title 대신 data 로 key 잡히게 해 title 변경이나
+// title≠data 케이스에서도 안전하다.
 interface ColPickerProps {
-  columns: { title: string }[]
+  columns: { data: string; title: string }[]
   value: string
-  onChange: (key: string) => void
+  onChange: (dataKey: string) => void
   width?: number | string
 }
 
@@ -28,9 +32,9 @@ export default function ColPicker({ columns, value, onChange, width = 160 }: Col
     return () => document.removeEventListener('mousedown', handler, true)
   }, [open])
 
-  const selected = columns.find(c => c.title === value)
+  const selected = columns.find(c => c.data === value)
 
-  // Relevance sort: startsWith first, then includes
+  // Relevance sort: title startsWith first, then includes
   const filtered = (() => {
     if (!search) return columns
     const q = search.toLowerCase()
@@ -44,15 +48,14 @@ export default function ColPicker({ columns, value, onChange, width = 160 }: Col
     return [...starts, ...rest]
   })()
 
-  // Scroll highlighted item into view
   useEffect(() => {
     if (!listRef.current) return
     const el = listRef.current.children[hlIdx] as HTMLElement | undefined
     el?.scrollIntoView({ block: 'nearest' })
   }, [hlIdx])
 
-  const selectItem = (title: string) => {
-    onChange(title)
+  const selectItem = (dataKey: string) => {
+    onChange(dataKey)
     setOpen(false)
     setSearch('')
   }
@@ -66,7 +69,7 @@ export default function ColPicker({ columns, value, onChange, width = 160 }: Col
       setHlIdx(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter') {
       e.preventDefault()
-      if (filtered[hlIdx]) selectItem(filtered[hlIdx].title)
+      if (filtered[hlIdx]) selectItem(filtered[hlIdx].data)
     } else if (e.key === 'Escape') {
       e.preventDefault()
       setOpen(false)
@@ -118,13 +121,13 @@ export default function ColPicker({ columns, value, onChange, width = 160 }: Col
               <div style={{ padding: '8px 12px', fontSize: 13, color: '#9CA3AF' }}>결과 없음</div>
             ) : filtered.map((c, i) => (
               <div
-                key={c.title}
-                onMouseDown={() => selectItem(c.title)}
+                key={c.data}
+                onMouseDown={() => selectItem(c.data)}
                 onMouseEnter={() => setHlIdx(i)}
                 style={{
                   padding: '7px 12px', fontSize: 13,
-                  color: c.title === value ? '#2D7FF9' : '#111827',
-                  background: i === hlIdx ? '#F0F4FF' : c.title === value ? '#EFF6FF' : 'white',
+                  color: c.data === value ? '#2D7FF9' : '#111827',
+                  background: i === hlIdx ? '#F0F4FF' : c.data === value ? '#EFF6FF' : 'white',
                   cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 }}
               >

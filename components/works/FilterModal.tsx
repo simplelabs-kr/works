@@ -12,6 +12,10 @@ export interface FilterColDef {
   outputType?: 'text' | 'number' | 'date'
 }
 
+// `column` 은 `col.data` (flat 테이블 물리 컬럼명) 를 저장한다.
+// API 측 RPC 도 같은 키를 기대하므로 별도 변환 없이 그대로 전송 가능.
+// FilterModal 이 레거시 title 기반 preset 을 만나면 렌더 직전에 data 로
+// 정규화되므로 state 는 항상 data-keyed 라고 가정해도 된다.
 export interface FilterCondition {
   id: string
   column: string
@@ -42,6 +46,36 @@ export function countAllConditions(state: RootFilterState): number {
     else n += 1
   }
   return n
+}
+
+// 레거시 title 기반 preset → data 기반으로 정규화.
+// `condition.column` 이 이미 col.data 와 일치하면 그대로 두고, 아니면
+// title 일치를 시도해 매핑한다. 둘 다 실패하면 원본 문자열을 유지
+// (UI 는 fallback 으로 첫 컬럼을 선택해 보여줌).
+export function normalizeFilterStateToData(
+  state: RootFilterState,
+  columns: { data: string; title: string }[],
+): RootFilterState {
+  const dataSet = new Set<string>()
+  const titleToData: Record<string, string> = {}
+  for (const c of columns) {
+    if (typeof c?.data !== 'string' || !c.data) continue
+    dataSet.add(c.data)
+    if (typeof c.title === 'string' && c.title) titleToData[c.title] = c.data
+  }
+  const remap = (col: string): string => {
+    if (dataSet.has(col)) return col
+    return titleToData[col] ?? col
+  }
+  return {
+    logic: state.logic,
+    conditions: state.conditions.map(item => {
+      if (isFilterGroup(item)) {
+        return { ...item, conditions: item.conditions.map(c => ({ ...c, column: remap(c.column) })) }
+      }
+      return { ...item, column: remap(item.column) }
+    }),
+  }
 }
 
 // ── Operator definitions ───────────────────────────────────────────────────────
@@ -209,7 +243,7 @@ function ConditionRow({ cond, filteredCols, selectOptions, onUpdate, onRemove }:
   onUpdate: (patch: Partial<FilterCondition>) => void
   onRemove: () => void
 }) {
-  const col = filteredCols.find(c => c.title === cond.column) ?? filteredCols[0]
+  const col = filteredCols.find(c => c.data === cond.column) ?? filteredCols[0]
   const ft = col ? resolveFieldType(col) : 'text'
   const ops = getOpsForFieldType(ft)
   const showValue = needsValueInput(cond.operator)
@@ -279,7 +313,7 @@ export default function FilterModal({ columns, filterState, selectOptions = {}, 
     const firstCol = filteredCols[0]
     const ft = firstCol ? resolveFieldType(firstCol) : 'text'
     const ops = getOpsForFieldType(ft)
-    return { id: uid(), column: firstCol?.title ?? '', operator: ops[0]?.value ?? 'contains', value: null }
+    return { id: uid(), column: firstCol?.data ?? '', operator: ops[0]?.value ?? 'contains', value: null }
   }
 
   const updateItem = (id: string, patch: Partial<FilterCondition>) => {
@@ -289,7 +323,7 @@ export default function FilterModal({ columns, filterState, selectOptions = {}, 
         if (!isFilterGroup(item) && item.id === id) {
           const next = { ...item, ...patch }
           if (patch.column && patch.column !== item.column) {
-            const col = filteredCols.find(c => c.title === patch.column)
+            const col = filteredCols.find(c => c.data === patch.column)
             if (col) { const ft = resolveFieldType(col); const ops = getOpsForFieldType(ft); next.operator = ops[0]?.value ?? 'contains'; next.value = null }
           }
           if (patch.operator) {
@@ -315,7 +349,7 @@ export default function FilterModal({ columns, filterState, selectOptions = {}, 
               if (c.id !== condId) return c
               const next = { ...c, ...patch }
               if (patch.column && patch.column !== c.column) {
-                const col = filteredCols.find(fc => fc.title === patch.column)
+                const col = filteredCols.find(fc => fc.data === patch.column)
                 if (col) { const ft = resolveFieldType(col); const ops = getOpsForFieldType(ft); next.operator = ops[0]?.value ?? 'contains'; next.value = null }
               }
               if (patch.operator) {

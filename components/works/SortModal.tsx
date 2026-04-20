@@ -10,10 +10,31 @@ export interface SortColDef {
   title: string
 }
 
+// `column` 은 `col.data` (flat 테이블 물리 컬럼명) 를 저장한다.
+// FilterModal 과 동일한 규약. 레거시 title 기반 preset 은
+// normalizeSortConditionsToData() 로 data 키로 정규화된다.
 export interface SortCondition {
   id: string
   column: string
   direction: 'asc' | 'desc'
+}
+
+export function normalizeSortConditionsToData(
+  conditions: SortCondition[],
+  columns: { data: string; title: string }[],
+): SortCondition[] {
+  const dataSet = new Set<string>()
+  const titleToData: Record<string, string> = {}
+  for (const c of columns) {
+    if (typeof c?.data !== 'string' || !c.data) continue
+    dataSet.add(c.data)
+    if (typeof c.title === 'string' && c.title) titleToData[c.title] = c.data
+  }
+  return conditions.map(c => {
+    if (dataSet.has(c.column)) return c
+    const mapped = titleToData[c.column]
+    return mapped ? { ...c, column: mapped } : c
+  })
 }
 
 // ── Component ──────────────────────────────────────────────────────────────────
@@ -61,7 +82,7 @@ export default function SortModal({
   const addCondition = () => {
     const firstCol = filteredCols[0]
     if (!firstCol) return
-    onChange([...conditions, { id: uid(), column: firstCol.title, direction: 'desc' }])
+    onChange([...conditions, { id: uid(), column: firstCol.data, direction: 'desc' }])
   }
 
   const selectStyle: React.CSSProperties = {
