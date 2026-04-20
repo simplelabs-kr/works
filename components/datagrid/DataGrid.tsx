@@ -1390,9 +1390,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         return
       }
 
-      // 기존 select 컬럼 로직
+      // 기존 select 컬럼 로직. `coords.col` 은 VISUAL index —
+      // effectiveColumnsRef 는 physical 순서로 저장되어 있으므로
+      // manualColumnMove 이후엔 반드시 toPhysicalColumn 으로 변환해야
+      // 올바른 컬럼 정의를 읽는다.
+      const piBefore = hotRef.current?.toPhysicalColumn(coords.col) ?? coords.col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cd = (effectiveColumnsRef.current as any[])[coords.col]
+      const cd = (effectiveColumnsRef.current as any[])[piBefore]
       if (cd?.fieldType !== 'select' || cd?.readOnly) {
         selectAlreadySelected = false
         return
@@ -1405,8 +1409,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     })
     hotRef.current.addHook('afterOnCellMouseDown', (_e: MouseEvent, coords: { row: number; col: number }) => {
       if (coords.row < 0) return
+      // coords.col 은 VISUAL index. physical index 로 변환 후 컬럼 정의
+      // 조회 (beforeOnCellMouseDown 과 동일 규약).
+      const pi = hotRef.current?.toPhysicalColumn(coords.col) ?? coords.col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const colDef = (effectiveColumnsRef.current as any[])[coords.col]
+      const colDef = (effectiveColumnsRef.current as any[])[pi]
       if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
       if (trashedMode) return // trash view has every cell readOnly
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
