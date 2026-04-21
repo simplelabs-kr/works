@@ -128,11 +128,9 @@ export const REPAIRS_COLUMNS = [
   { data: '생성일시', title: '생성일시', readOnly: false, width: 150, fieldType: 'date' as FieldType,
     type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig },
 
-  // ── FK 키 (읽기 전용) ──────────────────────────────────────────────
-  { data: 'brand_id',       title: 'brand_id',       readOnly: true, width: 240, fieldType: 'text' as FieldType },
-  { data: 'product_id',     title: 'product_id',     readOnly: true, width: 240, fieldType: 'text' as FieldType },
-  { data: 'order_item_id',  title: 'order_item_id',  readOnly: true, width: 240, fieldType: 'text' as FieldType },
-  { data: 'bundle_id',      title: 'bundle_id',      readOnly: true, width: 240, fieldType: 'text' as FieldType },
+  // FK UUID 컬럼(brand_id / product_id / order_item_id / bundle_id) 은
+  // 그리드 표시에서는 제외한다 (order-items worksConfig 와 동일 패턴).
+  // 타입/API 응답에는 유지돼 있어 추후 링크 구현 시 참조 가능.
 
   // ── 타임스탬프 (읽기 전용) ─────────────────────────────────────────
   { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
