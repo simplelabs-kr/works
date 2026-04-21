@@ -1554,18 +1554,38 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const instance = hotRef.current
       if (instance) {
         instance.destroy()
-        // HOT's destroy() nulls `instance.view` along with every other
-        // non-function property, but an IntersectionObserver registered
-        // by observeVisibilityChangeOnce (when the root's offsetParent
-        // was null at init) can still fire AFTER destroy — its callback
-        // reaches into `instance.view.*` and throws
-        // "null is not an object (evaluating 'instance.view')". Swap in
-        // a safe no-op shape so the late callback is a no-op.
+        // HOT's destroy() nulls `instance.view` (and every other non-
+        // function property) and swaps methods for "postMortem" stubs
+        // that throw. But when HOT was initialized with the rootElement
+        // not yet on-screen (offsetParent === null), core.mjs registers
+        // an IntersectionObserver (observeVisibilityChangeOnce) whose
+        // callback fires later and reaches into `instance.view._wt.
+        // wtOverlays.updateLastSpreaderSize()`, `instance.render()`,
+        // and `instance.view.adjustElementsSize()`. In React Strict
+        // Mode / dynamic-import timing that fires AFTER destroy and
+        // crashes the grid.
+        //
+        // Fix: replace `instance.view` with a recursive Proxy that
+        // silently absorbs any chained access or call, and replace
+        // `instance.render` with a no-op (overrides postMortem). The
+        // proxy shape future-proofs against HOT adding more methods
+        // to the same callback in future versions.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(instance as any).view = {
-          _wt: { draw: () => {}, wtOverlays: { updateMainScrollableElements: () => {} } },
-          adjustElementsSize: () => {},
-        }
+        const safeStub: any = new Proxy(function () {}, {
+          get(_t, prop) {
+            // Some HOT paths probe for .isDestroyed to short-circuit;
+            // anything else returns the same proxy so chained property
+            // access / method calls keep working as no-ops.
+            if (prop === 'isDestroyed') return true
+            return safeStub
+          },
+          apply() { /* no-op — callable at any depth */ },
+          construct() { return safeStub },
+        })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(instance as any).view = safeStub
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(instance as any).render = () => {}
       }
       hotRef.current = null
     }
