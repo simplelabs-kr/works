@@ -42,6 +42,7 @@ export const WORKS_PAGES: PageDef[] = [
   { key: 'order-items', label: '생산관리', href: '/works/order-items', status: 'active', presetKey: 'works' },
   { key: 'packaging',   label: '포장/출고', href: null, status: 'coming-soon', presetKey: null },
   { key: 'products',    label: '제품 관리', href: '/works/products', status: 'active', presetKey: 'products' },
+  { key: 'repairs',     label: '수선',      href: '/works/repairs',  status: 'active', presetKey: 'repairs' },
 ]
 
 export const TRASH_PAGE: PageDef = {
