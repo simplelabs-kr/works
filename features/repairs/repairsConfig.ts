@@ -23,13 +23,10 @@ export const REPAIRS_VIEW_PAGE_KEY = 'repairs'
 // 일치. JOIN 유래 파생 / FK 키는 포함하지 않아 자동으로 read-only.
 export const REPAIRS_EDITABLE_FIELDS: Record<string, string> = {
   '수선_내용': '수선_내용',
-  '수선_항목': '수선_항목',
   '소재': '소재',
   '수량': '수량',
   '전_중량': '전_중량',
-  '수선_비용': '수선_비용',
   '수선_비용_조정': '수선_비용_조정',
-  '최종_수선_비용': '최종_수선_비용',
   '비용_조정_사유': '비용_조정_사유',
   '수선시작일': '수선시작일',
   '데드라인': '데드라인',
@@ -93,15 +90,17 @@ export const REPAIRS_COLUMNS = [
 
   // ── 수선 내용 ──────────────────────────────────────────────────────
   { data: '수선_내용',  title: '수선 내용',  readOnly: false, width: 220, fieldType: 'longtext' as FieldType, type: 'text' },
-  { data: '수선_항목',  title: '수선 항목',  readOnly: false, width: 140, fieldType: 'select'   as FieldType },
+  { data: '수선_항목',  title: '수선 항목',  readOnly: true,  width: 140, fieldType: 'text'     as FieldType },
   { data: '소재',       title: '소재',       readOnly: false, width: 100, fieldType: 'select'   as FieldType },
   { data: '수량',       title: '수량',       readOnly: false, width: 80,  fieldType: 'number'   as FieldType, type: 'numeric', numericFormat: { pattern: '0.[00]' } },
   { data: '전_중량',    title: '전 중량',    readOnly: false, width: 90,  fieldType: 'number'   as FieldType, type: 'numeric' },
 
   // ── 비용 ───────────────────────────────────────────────────────────
-  { data: '수선_비용',       title: '수선 비용',       readOnly: false, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
+  // 수선_비용: repair_costs 룩업에서 자동 산출되는 값 — 읽기 전용
+  { data: '수선_비용',       title: '수선 비용',       readOnly: true,  width: 110, fieldType: 'number' as FieldType },
   { data: '수선_비용_조정',  title: '수선 비용 조정',  readOnly: false, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
-  { data: '최종_수선_비용',  title: '최종 수선 비용',  readOnly: false, width: 120, fieldType: 'number' as FieldType, type: 'numeric' },
+  // 최종_수선_비용: DB formula (수선_비용 + 수선_비용_조정) — 읽기 전용
+  { data: '최종_수선_비용',  title: '최종 수선 비용',  readOnly: true,  width: 120, fieldType: 'number' as FieldType },
   { data: '비용_조정_사유',  title: '비용 조정 사유',  readOnly: false, width: 180, fieldType: 'longtext' as FieldType, type: 'text' },
 
   // ── 원래 각인 (참고용) ─────────────────────────────────────────────
@@ -227,14 +226,14 @@ function repairsMergeRealtimeUpdate(
   return {
     ...prev,
     수선_내용: n.수선_내용 !== undefined ? str(n.수선_내용) : prev.수선_내용,
-    수선_항목: n.수선_항목 !== undefined ? str(n.수선_항목) : prev.수선_항목,
     소재: n.소재 !== undefined ? str(n.소재) : prev.소재,
     수량: n.수량 !== undefined ? numOrNull(n.수량) : prev.수량,
     전_중량: n.전_중량 !== undefined ? numOrNull(n.전_중량) : prev.전_중량,
 
-    수선_비용: n.수선_비용 !== undefined ? numOrNull(n.수선_비용) : prev.수선_비용,
+    // 수선_비용 / 최종_수선_비용 은 DB 에서 자동 산출되는 lookup/formula 파생.
+    // 편집 이후 값 변화는 refetch 경로로 반영(in-place merge 생략).
+    // 수선_항목 도 업스트림(수리 분류)에서 결정되는 읽기 전용 — merge 제외.
     수선_비용_조정: n.수선_비용_조정 !== undefined ? numOrNull(n.수선_비용_조정) : prev.수선_비용_조정,
-    최종_수선_비용: n.최종_수선_비용 !== undefined ? numOrNull(n.최종_수선_비용) : prev.최종_수선_비용,
     비용_조정_사유: n.비용_조정_사유 !== undefined ? str(n.비용_조정_사유) : prev.비용_조정_사유,
 
     수선시작일: n.수선시작일 !== undefined ? dateOrEmpty(n.수선시작일) : prev.수선시작일,

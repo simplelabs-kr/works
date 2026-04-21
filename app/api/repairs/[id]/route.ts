@@ -12,19 +12,19 @@ export const maxDuration = 10
 //   - FK 키 (brand_id/product_id/order_item_id/bundle_id) — PATCH 대상 아님
 //   - 원래 각인 문구/폰트 — 참고용 readOnly
 //   - 고유번호 — 식별자 readOnly
+//   - 수선_항목 — 업스트림 분류 lookup, readOnly
+//   - 수선_비용 — repair_costs lookup 결과, DB 자동 산출
+//   - 최종_수선_비용 — DB formula (수선_비용 + 수선_비용_조정), 직접 편집 금지
 // PATCH 는 flat_repairs 가 아닌 repairs 원본 테이블을 직접 업데이트한다
 // (flat_repairs 는 트리거가 동기화).
-// select 필드(수선_항목/소재/작업_위치)는 런타임 옵션 카탈로그가 field_options
-// 에서 로드되므로 enum 고정 대신 text 로 허용폭을 둔다.
+// select 필드(소재/작업_위치)는 런타임 옵션 카탈로그가 field_options 에서
+// 로드되므로 enum 고정 대신 text 로 허용폭을 둔다.
 const FIELD_SPECS: FieldSpecs = {
   '수선_내용':    { type: 'text',    maxLength: 2000 },
-  '수선_항목':    { type: 'text',    maxLength: 50 },
   '소재':         { type: 'text',    maxLength: 50 },
   '수량':         { type: 'number' },
   '전_중량':      { type: 'number' },
-  '수선_비용':    { type: 'number' },
   '수선_비용_조정': { type: 'number' },
-  '최종_수선_비용': { type: 'number' },
   '비용_조정_사유': { type: 'text', maxLength: 2000 },
   '수선시작일':   { type: 'date' },
   '데드라인':     { type: 'date' },
