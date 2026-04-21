@@ -858,8 +858,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(window as any).IntersectionObserver = TrackingIO
-    try {
-      hotRef.current = new Handsontable(containerRef.current, {
+    hotRef.current = new Handsontable(containerRef.current, {
       data: [],
       columns: COLUMNS,
       colWidths: COLUMNS.map(c => c.width),
@@ -1094,10 +1093,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         }
       }
     })
-    } finally {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(window as any).IntersectionObserver = OriginalIO
-    }
+    // Restore the native IntersectionObserver immediately after HOT init —
+    // HOT registers its observer synchronously inside the constructor, so
+    // by this point `trackedObservers` already contains every observer we
+    // need to disconnect on destroy.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).IntersectionObserver = OriginalIO
 
     // Clear the `data-select-col` marker on every cell before its renderer
     // runs. HOT recycles TDs across columns during virtualization, so a td
