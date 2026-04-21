@@ -831,7 +831,35 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // Initialize Handsontable once
   useEffect(() => {
     if (!containerRef.current || hotRef.current) return
-    hotRef.current = new Handsontable(containerRef.current, {
+
+    // Track any IntersectionObserver HOT registers against our root element
+    // during construction, so we can disconnect them on destroy. HOT's
+    // `observeVisibilityChangeOnce` (core.mjs) fires when the rootElement
+    // becomes visible after init-with-offsetParent-null. Its callback
+    // references HOT's internal closure variable `instance`, which
+    // `destroy()` sets to `null` (core.mjs:4211). That closure is
+    // unreachable from outside, so stubbing `instance.view` cannot help —
+    // the only reliable fix is to disconnect the observer so the callback
+    // never runs.
+    //
+    // We snapshot `window.IntersectionObserver`, replace it with a
+    // subclass that forwards everything but records observers whose
+    // `observe()` target is our rootElement, restore the original
+    // constructor immediately after HOT init, and call `disconnect()`
+    // on each tracked observer during the cleanup below.
+    const trackedObservers: IntersectionObserver[] = []
+    const rootEl = containerRef.current
+    const OriginalIO = window.IntersectionObserver
+    class TrackingIO extends OriginalIO {
+      observe(target: Element) {
+        if (target === rootEl) trackedObservers.push(this)
+        super.observe(target)
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).IntersectionObserver = TrackingIO
+    try {
+      hotRef.current = new Handsontable(containerRef.current, {
       data: [],
       columns: COLUMNS,
       colWidths: COLUMNS.map(c => c.width),
@@ -1066,6 +1094,10 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         }
       }
     })
+    } finally {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(window as any).IntersectionObserver = OriginalIO
+    }
 
     // Clear the `data-select-col` marker on every cell before its renderer
     // runs. HOT recycles TDs across columns during virtualization, so a td
@@ -1551,6 +1583,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     })
     return () => {
+      // Disconnect any IntersectionObservers HOT registered against our
+      // rootElement during construction. HOT's `observeVisibilityChangeOnce`
+      // callback captures an internal closure variable `instance` that
+      // `destroy()` sets to `null` — the callback is unreachable via any
+      // public API. Disconnecting the observer prevents the callback from
+      // ever firing, sidestepping the null-deref entirely.
+      trackedObservers.forEach(o => o.disconnect())
       const instance = hotRef.current
       if (instance) {
         instance.destroy()
