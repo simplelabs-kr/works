@@ -16,6 +16,9 @@ import ImageModal from '@/components/works/ImageModal'
 import ColumnManagerDropdown from '@/components/works/ColumnManagerDropdown'
 import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
+import FieldOptionsModal from '@/components/works/FieldOptionsModal'
+import LinkSearchPopover, { type LinkCandidate } from '@/components/works/LinkSearchPopover'
+import type { LinkConfig } from '@/features/works/linkRenderer'
 import { type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
 import { loadEffectiveSettings, persistViewPatch } from '@/lib/works/viewPresets'
 import { usePresets } from '@/components/nav/PresetsContext'
@@ -184,6 +187,25 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
   const selectMenuRef = useRef<HTMLDivElement>(null)
   const [selectMenu, setSelectMenu] = useState<{ top: number; left: number; row: number; width: number; column: string; options: { value: string; bg: string }[] } | null>(null)
+
+  // 컬럼 헤더의 톱니바퀴 아이콘 클릭 시 열리는 옵션 관리 모달 상태.
+  // `field` = col.data (DB 물리 컬럼명). `label` = 헤더 레이블.
+  const [fieldOptionsEditor, setFieldOptionsEditor] = useState<
+    { field: string; label: string } | null
+  >(null)
+
+  // Link 컬럼 검색 팝오버. 셀 클릭 시 linkConfig 를 참조해 열린다.
+  const [linkMenu, setLinkMenu] = useState<
+    | {
+        top: number
+        left: number
+        width: number
+        row: number
+        column: string
+        config: LinkConfig
+      }
+    | null
+  >(null)
 
   const summaryInnerRef = useRef<HTMLDivElement>(null)
   const customScrollbarRef = useRef<HTMLDivElement>(null)
@@ -594,6 +616,73 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // Route through setDataAtCell so afterChange handles PATCH, local state, and undo-stack tracking.
     hot.setDataAtCell(rowIdx, col, value)
     setSelectMenu(null)
+  }
+
+  // 링크 팝오버에서 행을 선택했을 때 호출. display 컬럼(readOnly, JOIN 유래)
+  // 을 낙관적으로 값 교체하고 FK 컬럼을 PATCH 한다. display 컬럼은
+  // EDITABLE_FIELDS 에 없으므로 afterChange 의 PATCH 경로를 자연스럽게
+  // 건너뛴다. 실패 시 이전 값으로 롤백.
+  const handleLinkPick = async (
+    rowIdx: number,
+    column: string,
+    config: LinkConfig,
+    picked: LinkCandidate,
+  ) => {
+    const hot = hotRef.current
+    if (!hot) return
+    const displayData = displayRowsRef.current[rowIdx]
+    if (!displayData || isGroupHeader(displayData)) return
+    const rowData = displayData as Row
+    if (!rowData?.id) return
+
+    const displayCol = propToColRef.current[column] ?? -1
+    const prevDisplay = displayCol >= 0 ? hot.getDataAtCell(rowIdx, displayCol) : null
+    const prevFk = rowData[config.fkColumn]
+
+    // 낙관적 업데이트: HOT 셀 + React rows 상태 둘 다 반영. displayField
+    // 는 EDITABLE_FIELDS 에 없어 afterChange 의 자동 setRows 경로를 타지
+    // 않으므로 여기서 직접 업데이트한다.
+    if (displayCol >= 0) {
+      hot.setDataAtCell(rowIdx, displayCol, picked.displayValue, 'linkUpdate')
+    }
+    setRows((prev) =>
+      prev.map((r) =>
+        r.id === rowData.id
+          ? { ...r, [column]: picked.displayValue, [config.fkColumn]: picked.id }
+          : r,
+      ),
+    )
+    setLinkMenu(null)
+
+    try {
+      const res = await fetch(`${apiBase}/${rowData.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [config.fkColumn]: picked.id }),
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+      }
+      // 성공 시 flat_{table} 트리거가 나머지 denormalized 컬럼(브랜드명 등)
+      // 을 실시간으로 전파하므로 추가 refetch 불필요.
+    } catch (e) {
+      // 롤백 — HOT 과 React 상태 모두 원상복구.
+      if (displayCol >= 0) {
+        hot.setDataAtCell(rowIdx, displayCol, prevDisplay, 'linkRollback')
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowData.id
+            ? { ...r, [column]: prevDisplay, [config.fkColumn]: prevFk }
+            : r,
+        ),
+      )
+      showToast({
+        type: 'error',
+        message: e instanceof Error ? e.message : '링크 업데이트 실패',
+      }, 2500)
+    }
   }
 
   useEffect(() => {
@@ -1157,6 +1246,29 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       div.style.position = 'relative'
       div.appendChild(icon)
       div.appendChild(textSpan)
+
+      // 편집 가능한 select 컬럼에는 우측 톱니바퀴(⚙) 버튼을 추가 — 클릭 시
+      // 옵션 관리 모달을 연다. readOnly / 파생 컬럼은 대상 아님.
+      if (colDef.fieldType === 'select' && !colDef.readOnly && typeof colDef.data === 'string' && colDef.data) {
+        const gear = document.createElement('button')
+        gear.type = 'button'
+        gear.className = 'field-options-gear'
+        gear.setAttribute('aria-label', '옵션 관리')
+        gear.title = '옵션 관리'
+        gear.textContent = '\u2699' // ⚙
+        gear.style.cssText =
+          'margin-left:auto;flex-shrink:0;border:none;background:transparent;cursor:pointer;' +
+          'color:#94A3B8;font-size:14px;line-height:1;padding:0 2px 0 4px;'
+        gear.onmouseenter = () => { gear.style.color = '#111827' }
+        gear.onmouseleave = () => { gear.style.color = '#94A3B8' }
+        gear.onmousedown = (e) => { e.preventDefault(); e.stopPropagation() }
+        gear.onclick = (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setFieldOptionsEditor({ field: colDef.data as string, label: String(colDef.title ?? colDef.data) })
+        }
+        div.appendChild(gear)
+      }
     })
     // Checkbox paste fix: convert string "true"/"false" to boolean
     hotRef.current.addHook('beforeChange', (changes: (Handsontable.CellChange | null)[]) => {
@@ -1458,6 +1570,23 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const pi = hotRef.current?.toPhysicalColumn(coords.col) ?? coords.col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (effectiveColumnsRef.current as any[])[pi]
+      // Link 컬럼: 첫 클릭으로 바로 검색 팝오버를 연다 (select 컬럼처럼
+      // 두 번 클릭 요구하지 않는다 — 링크 변경은 드문 작업이라 즉시 열리는
+      // 편이 자연스럽다). trash view 에서는 편집 막힘.
+      if (colDef?.fieldType === 'link' && colDef.linkConfig && !trashedMode) {
+        const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
+        if (!td) return
+        const rect = td.getBoundingClientRect()
+        setLinkMenu({
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: Math.max(rect.width, 240),
+          row: coords.row,
+          column: colDef.data as string,
+          config: colDef.linkConfig as LinkConfig,
+        })
+        return
+      }
       if (colDef?.fieldType !== 'select' || colDef?.readOnly) return
       if (trashedMode) return // trash view has every cell readOnly
       if (!selectAlreadySelected) return // 첫 클릭: 셀 선택만
@@ -3073,6 +3202,47 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       {/* Keyboard shortcuts modal */}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+      {/* Link 컬럼 검색 팝오버 */}
+      {linkMenu && (
+        <LinkSearchPopover
+          top={linkMenu.top}
+          left={linkMenu.left}
+          width={linkMenu.width}
+          endpoint={`/api/${linkMenu.config.linkTable}`}
+          displayField={linkMenu.config.displayField}
+          secondaryField={linkMenu.config.secondaryField}
+          placeholder={
+            linkMenu.config.searchFields && linkMenu.config.searchFields.length > 0
+              ? `${linkMenu.config.searchFields.join(' / ')} 검색…`
+              : '검색어 입력…'
+          }
+          onSelect={(picked) =>
+            handleLinkPick(linkMenu.row, linkMenu.column, linkMenu.config, picked)
+          }
+          onClose={() => setLinkMenu(null)}
+        />
+      )}
+
+      {/* Select 컬럼 옵션 관리 모달 */}
+      {fieldOptionsEditor && (
+        <FieldOptionsModal
+          tableName={selectOptionsTable}
+          fieldName={fieldOptionsEditor.field}
+          columnLabel={fieldOptionsEditor.label}
+          initial={getSelectColumnOptions()[fieldOptionsEditor.field] ?? []}
+          onSaved={(next) => {
+            // 저장된 카탈로그로 module-level map 을 갱신한 뒤 HOT 를 다시 렌더해
+            // 기존 셀 badge 색상이 즉시 반영되게 한다.
+            setSelectColumnOptions({
+              ...getSelectColumnOptions(),
+              [fieldOptionsEditor.field]: next,
+            })
+            hotRef.current?.render()
+          }}
+          onClose={() => setFieldOptionsEditor(null)}
+        />
+      )}
 
       {/* Toast */}
       {toast && (

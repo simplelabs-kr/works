@@ -17,6 +17,11 @@ export const maxDuration = 10
 const FIELD_SPECS = deriveFieldSpecs({
   columns: REPAIRS_COLUMNS as readonly SpecColumnLike[],
   editableFields: REPAIRS_EDITABLE_FIELDS,
+  // 링크 컬럼의 FK (product_id) 는 COLUMNS 에 보이는 카탈로그 항목이 아니므로
+  // orphan 취급 — 여기서 UUID 형식(텍스트)으로 spec 을 주입한다.
+  overrides: {
+    product_id: { type: 'text', maxLength: 64 },
+  },
   page: 'repairs',
 })
 
