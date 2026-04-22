@@ -5,8 +5,9 @@
 // `RentalRow` = HOT 바인딩 display shape.
 //
 // formula / lookup 컬럼 (이름, 현황, 수량, 공급가액, 공임, 소재비,
-// 기준_소재비, 중량, 순금_중량, 생산시작일, 디자이너_노트) 은 DB 스키마에서
-// 제거됨 — migrate_rentals.py 도 동일하게 반영.
+// 기준_소재비, 중량, 순금_중량, 생산시작일, 디자이너_노트, 반품_번들명)
+// 은 DB 스키마에서 제거됨 — migrate_rentals.py 도 동일하게 반영.
+// 고유번호: DB 트리거가 신규 INSERT 시 자동 생성 → 읽기 전용 표시.
 
 export type RentalItem = {
   id: string
@@ -14,7 +15,7 @@ export type RentalItem = {
   created_at?: string | null
   deleted_at?: string | null
 
-  // identity
+  // identity (DB 트리거 자동 생성)
   고유번호: string | null
 
   // JOIN-derived (read-only)
@@ -24,7 +25,6 @@ export type RentalItem = {
 
   // owned
   반납: boolean | null
-  반품_번들명: string | null
   생성일시: string | null
 
   // FK (read-only in grid catalog; 타입엔 유지)
@@ -45,7 +45,6 @@ export type RentalRow = {
   제품명: string
 
   반납: boolean
-  반품_번들명: string
   생성일시: string
 
   brand_id: string | null

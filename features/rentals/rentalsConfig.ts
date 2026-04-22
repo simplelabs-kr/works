@@ -5,8 +5,9 @@
 // 요구하지만 source 테이블이 publication 에 없는 한 이벤트는 오지 않는다.
 //
 // 스키마에서 제거된 컬럼: 이름 / 현황 / 수량 / 공급가액 / 공임 / 소재비 /
-// 기준_소재비 / 중량 / 순금_중량 / 생산시작일 / 디자이너_노트. formula/
-// lookup 이라 Airtable 원본이 아니며 RPC JOIN 으로 계산/조회된다.
+// 기준_소재비 / 중량 / 순금_중량 / 생산시작일 / 디자이너_노트 / 반품_번들명.
+// formula/lookup 이라 Airtable 원본이 아니며 RPC JOIN 으로 계산/조회된다.
+// 고유번호: DB 트리거가 INSERT 시 자동 생성 → readOnly.
 
 import type { FieldType } from '@/features/works/worksTypes'
 import type { PageConfig } from '@/components/datagrid/types'
@@ -18,7 +19,6 @@ export const RENTALS_VIEW_PAGE_KEY = 'rentals'
 // Row 필드명 → rentals 테이블 컬럼명. PATCH 대상.
 export const RENTALS_EDITABLE_FIELDS: Record<string, string> = {
   '반납': '반납',
-  '반품_번들명': '반품_번들명',
 }
 
 // 컬럼 카탈로그.
@@ -34,7 +34,6 @@ export const RENTALS_COLUMNS = [
 
   // ── 편집 가능 ──────────────────────────────────────────────
   { data: '반납',         title: '반납',         readOnly: false, width: 70,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: '반품_번들명',  title: '반품 번들명',  readOnly: false, width: 160, fieldType: 'text' as FieldType },
 
   // ── 메타 ───────────────────────────────────────────────────
   { data: '생성일시',     title: '생성일시',     readOnly: true, width: 150, fieldType: 'date' as FieldType,
@@ -78,7 +77,6 @@ function transformRentalRow(item: RentalItem): RentalRow {
     제품명: str(item.제품명),
 
     반납: boolFlag(item.반납),
-    반품_번들명: str(item.반품_번들명),
     생성일시: dateOrEmpty(item.생성일시),
 
     brand_id: item.brand_id ?? null,
@@ -99,7 +97,6 @@ function rentalsMergeRealtimeUpdate(
   return {
     ...prev,
     반납: n.반납 !== undefined ? boolFlag(n.반납) : prev.반납,
-    반품_번들명: n.반품_번들명 !== undefined ? str(n.반품_번들명) : prev.반품_번들명,
     updated_at: n.updated_at !== undefined ? (n.updated_at as string | null) : prev.updated_at,
   }
 }
