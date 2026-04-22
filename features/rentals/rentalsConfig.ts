@@ -27,9 +27,8 @@ export const RENTALS_EDITABLE_FIELDS: Record<string, string> = {
 }
 
 // 링크 컬럼 설정 — order-items 검색 후 order_item_id 를 PATCH.
-// display (`order_item_고유번호`) 는 search_rentals RPC 가 order_items 를
-// 이미 JOIN 하고 있으므로 `order_items.고유_번호` 를 alias 로 노출해야 한다.
-// TODO: claude.ai — search_rentals RPC 에서 order_item_고유번호 alias 추가.
+// display (`order_item_고유번호`) 는 search_rentals RPC 가
+// `order_items.고유_번호 AS order_item_고유번호` 로 노출.
 const order_item_고유번호LinkConfig: LinkConfig = {
   linkTable: 'order-items',
   fkColumn: 'order_item_id',
@@ -39,8 +38,8 @@ const order_item_고유번호LinkConfig: LinkConfig = {
 }
 
 // 링크 컬럼 설정 — bundles 검색 후 bundle_id 를 PATCH.
-// TODO: claude.ai — search_rentals RPC 가 bundles 를 JOIN 해서
-// `번들_고유번호` alias 를 반환하도록 수정 필요 (현재 RPC 미제공 → null).
+// display (`번들_고유번호`) 는 search_rentals RPC 가
+// `bundles.번들_고유번호 AS 번들_고유번호` 로 노출.
 const 번들_고유번호LinkConfig: LinkConfig = {
   linkTable: 'bundles',
   fkColumn: 'bundle_id',

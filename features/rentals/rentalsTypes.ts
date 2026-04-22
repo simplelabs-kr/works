@@ -18,16 +18,13 @@ export type RentalItem = {
   // identity (DB 트리거 자동 생성)
   고유번호: string | null
 
-  // JOIN-derived (read-only)
+  // JOIN-derived (read-only) — search_rentals RPC 가 alias 로 반환.
+  //   order_items.고유_번호    AS order_item_고유번호
+  //   bundles.번들_고유번호     AS 번들_고유번호
   브랜드명: string | null
   브랜드코드: string | null
   제품명: string | null
-  // TODO: claude.ai — search_rentals RPC 에 order_items.고유_번호 를
-  // `order_item_고유번호` alias 로 추가 필요. 현재는 RPC 에서 제공되지
-  // 않아 항상 null 로 들어온다.
   order_item_고유번호: string | null
-  // TODO: claude.ai — search_rentals RPC 에 bundles.고유_번호 (또는
-  // 번들의 고유번호 컬럼) 를 `번들_고유번호` alias 로 추가 필요.
   번들_고유번호: string | null
 
   // owned
