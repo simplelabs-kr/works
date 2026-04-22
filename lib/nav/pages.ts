@@ -45,6 +45,7 @@ export const WORKS_PAGES: PageDef[] = [
   { key: 'repairs',     label: '수선',      href: '/works/repairs',  status: 'active', presetKey: 'repairs' },
   { key: 'rentals',     label: '대여',      href: '/works/rentals',  status: 'active', presetKey: 'rentals' },
   { key: 'refunds',     label: '환불',      href: '/works/refunds',  status: 'active', presetKey: 'refunds' },
+  { key: 'bundles',     label: '번들',      href: '/works/bundles',  status: 'active', presetKey: 'bundles' },
 ]
 
 export const TRASH_PAGE: PageDef = {
