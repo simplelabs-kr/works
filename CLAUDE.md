@@ -87,11 +87,28 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 `{page}` 로 일괄 치환한 뒤 CHECKLIST.md 단계대로 진행한다. 실제 예시는
 `features/products/` 참고.
 
-## derived: true 원칙
-프론트에 표시되는 모든 컬럼은 flat_{table}에 물리 컬럼으로 존재해야 한다.
-derived: true는 이 원칙을 아직 지키지 못한 컬럼을 나타내는 임시 플래그.
-해당 컬럼이 구현되면 즉시 derived: true 제거.
-장기적으로 derived: true가 0개인 상태가 목표.
+## derived: true — first-class 패턴
+
+`flat_{table}` 에 물리 컬럼이 없는 표시 컬럼은 `derived: true` 로 표시한다.
+이는 임시 플래그가 아니라 "이 컬럼은 DB 필터/정렬 경로 밖에 있다" 라는
+명시적 계약이다.
+
+**사용 조건 (모두 충족 필요):**
+- `readOnly: true` — 편집 불가 (편집하려면 flat 컬럼이 필요)
+- `renderer` 지정 — 값은 다른 컬럼/외부 소스에서 렌더 시점에 조합
+- `EDITABLE_FIELDS` 에 미등록 — PATCH 대상 아님
+
+**런타임 효과 (자동):**
+- FilterModal / SortModal 드롭다운에서 제외 (DB 레벨 필터/정렬 불가)
+- DataGrid realtime merge 에서 건드리지 않음 — 페이지가 별도 경로로 주입
+
+**대표 예시 (worksConfig):**
+- `원부자재` — 별도 원부자재 발주 상태 계산기에서 주입
+- `발주_현황` — 발주서 상태 렌더러에서 조합
+
+물리 컬럼으로 승격할 수 있으면(비용 대비 이득이 있으면) 승격하되,
+렌더러에서만 의미 있는 계산(복잡한 aggregation, external API 연동 등)
+은 `derived: true` 를 유지한다.
 
 ## 3. API & Frontend Rules
 
