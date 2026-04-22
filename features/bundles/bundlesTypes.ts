@@ -17,7 +17,6 @@ export type BundleItem = {
 
   // identity
   번들_고유번호: string | null
-  명세서_고유번호: string | null
 
   // JOIN-derived (read-only) — search_bundles RPC 가 alias 로 반환.
   //   brands.브랜드명   AS 브랜드명
@@ -62,7 +61,6 @@ export type BundleRow = {
   created_at: string | null
 
   번들_고유번호: string
-  명세서_고유번호: string
 
   브랜드명: string
   브랜드코드: string

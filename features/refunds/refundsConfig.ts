@@ -26,24 +26,26 @@ export const REFUNDS_EDITABLE_FIELDS: Record<string, string> = {
 }
 
 // 링크 컬럼 설정 — order-items 검색 후 order_item_id 를 PATCH.
-// display (`order_item_고유번호`) 는 search_refunds RPC 가
-// `order_items.고유_번호 AS order_item_고유번호` 로 노출.
-const order_item_고유번호LinkConfig: LinkConfig = {
+// display (`order_item_표시명`) 는 search_refunds RPC 가
+// `flat_order_details.제품명_코드 AS order_item_표시명` 으로 노출
+// (제품명[고유_번호 tail] — order-items 페이지의 '제품명[코드]' 와 동일).
+// 팝오버는 /api/order-items 로 검색하며 displayField 는 해당 페이지의
+// `제품명_코드` 컬럼 (flat_order_details 에 DB-computed) 을 그대로 사용.
+const order_item_표시명LinkConfig: LinkConfig = {
   linkTable: 'order-items',
   fkColumn: 'order_item_id',
-  searchFields: ['고유_번호', '제품명'],
-  displayField: '고유_번호',
-  secondaryField: '제품명',
+  searchFields: ['제품명', '제품코드', '고유_번호'],
+  displayField: '제품명_코드',
+  secondaryField: '고유_번호',
 }
 
 // 링크 컬럼 설정 — bundles 검색 후 bundle_id 를 PATCH.
 // display (`번들_고유번호`) 는 search_refunds RPC 가
 // `bundles.번들_고유번호 AS 번들_고유번호` 로 노출.
-// 팝오버는 bundles 페이지 완성 후 정상 동작.
 const 번들_고유번호LinkConfig: LinkConfig = {
   linkTable: 'bundles',
   fkColumn: 'bundle_id',
-  searchFields: ['번들_고유번호', '명세서_고유번호'],
+  searchFields: ['번들_고유번호'],
   displayField: '번들_고유번호',
   secondaryField: '브랜드명',
 }
@@ -61,8 +63,8 @@ export const REFUNDS_COLUMNS = [
 
   // ── 링크 컬럼 (클릭 시 검색 팝오버 → FK PATCH) ──────────────
   // `readOnly: true` 는 inline 텍스트 편집 방지 — 실제 편집은 popover 에서.
-  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 160, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: order_item_고유번호LinkConfig },
-  { data: '번들_고유번호',       title: '번들 고유번호',       readOnly: true, width: 160, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: 번들_고유번호LinkConfig },
+  { data: 'order_item_표시명', title: '주문 제품[코드]', readOnly: true, width: 260, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: order_item_표시명LinkConfig },
+  { data: '번들_고유번호',     title: '번들 고유번호',   readOnly: true, width: 160, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: 번들_고유번호LinkConfig },
 
   // ── 메타 ───────────────────────────────────────────────────
   { data: '생성일시',   title: '생성일시',   readOnly: true, width: 150, fieldType: 'date' as FieldType,
@@ -101,7 +103,7 @@ function transformRefundRow(item: RefundItem): RefundRow {
     브랜드명: str(item.브랜드명),
     브랜드코드: str(item.브랜드코드),
     고객명: str(item.고객명),
-    order_item_고유번호: str(item.order_item_고유번호),
+    order_item_표시명: str(item.order_item_표시명),
     번들_고유번호: str(item.번들_고유번호),
 
     생성일시: dateOrEmpty(item.생성일시),

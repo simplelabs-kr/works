@@ -21,7 +21,6 @@ export const BUNDLES_VIEW_PAGE_KEY = 'bundles'
 // Row 필드명 → bundles 테이블 컬럼명. PATCH 대상.
 export const BUNDLES_EDITABLE_FIELDS: Record<string, string> = {
   '번들_고유번호': '번들_고유번호',
-  '명세서_고유번호': '명세서_고유번호',
   '송장번호': '송장번호',
   '비고': '비고',
   '명세서_url': '명세서_url',
@@ -43,7 +42,6 @@ export const BUNDLES_EDITABLE_FIELDS: Record<string, string> = {
 export const BUNDLES_COLUMNS = [
   // ── 식별 ───────────────────────────────────────────────────
   { data: '번들_고유번호',   title: '번들 고유번호',   readOnly: false, width: 140, fieldType: 'text' as FieldType },
-  { data: '명세서_고유번호', title: '명세서 고유번호', readOnly: false, width: 140, fieldType: 'text' as FieldType },
 
   // ── 브랜드 (JOIN 유래, readOnly) ───────────────────────────
   { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'text' as FieldType },
@@ -115,7 +113,6 @@ function transformBundleRow(item: BundleItem): BundleRow {
     created_at: item.created_at ?? null,
 
     번들_고유번호: str(item.번들_고유번호),
-    명세서_고유번호: str(item.명세서_고유번호),
 
     브랜드명: str(item.브랜드명),
     브랜드코드: str(item.브랜드코드),
@@ -158,7 +155,6 @@ function bundlesMergeRealtimeUpdate(
   return {
     ...prev,
     번들_고유번호: n.번들_고유번호 !== undefined ? str(n.번들_고유번호) : prev.번들_고유번호,
-    명세서_고유번호: n.명세서_고유번호 !== undefined ? str(n.명세서_고유번호) : prev.명세서_고유번호,
     송장번호: n.송장번호 !== undefined ? str(n.송장번호) : prev.송장번호,
     비고: n.비고 !== undefined ? str(n.비고) : prev.비고,
     명세서_url: n.명세서_url !== undefined ? str(n.명세서_url) : prev.명세서_url,

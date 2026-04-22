@@ -19,15 +19,16 @@ export type RefundItem = {
   반품_구분: string | null
 
   // JOIN-derived (read-only) — search_refunds RPC 가 alias 로 반환.
-  //   brands.브랜드명        AS 브랜드명
-  //   brands.브랜드코드      AS 브랜드코드
-  //   orders.고객명          AS 고객명
-  //   order_items.고유_번호  AS order_item_고유번호
-  //   bundles.번들_고유번호  AS 번들_고유번호
+  //   brands.브랜드명                AS 브랜드명
+  //   brands.브랜드코드              AS 브랜드코드
+  //   orders.고객명                  AS 고객명
+  //   flat_order_details.제품명_코드 AS order_item_표시명
+  //     (제품명[고유_번호 tail] 포맷 — order-items 페이지의 '제품명[코드]' 와 동일)
+  //   bundles.번들_고유번호          AS 번들_고유번호
   브랜드명: string | null
   브랜드코드: string | null
   고객명: string | null
-  order_item_고유번호: string | null
+  order_item_표시명: string | null
   번들_고유번호: string | null
 
   // dates
@@ -49,7 +50,7 @@ export type RefundRow = {
   브랜드명: string
   브랜드코드: string
   고객명: string
-  order_item_고유번호: string
+  order_item_표시명: string
   번들_고유번호: string
 
   생성일시: string
