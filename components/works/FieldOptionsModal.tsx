@@ -21,33 +21,31 @@ interface Props {
 }
 
 // Airtable-style palette — 12 families × 5 shades = 60 colors.
-// 각 계열은 dark → light 순으로 5단계.
-const COLOR_PALETTE: string[] = [
-  // 빨강 계열
-  '#9e2a2b', '#c0392b', '#e74c3c', '#f1948a', '#fadbd8',
-  // 주황 계열
-  '#935116', '#d35400', '#e67e22', '#f0b27a', '#fdebd0',
-  // 노랑 계열
-  '#7d6608', '#b7950b', '#f1c40f', '#f7dc6f', '#fef9e7',
-  // 초록 계열
-  '#1e8449', '#27ae60', '#58d68d', '#a9dfbf', '#d5f5e3',
-  // 청록 계열
-  '#117a65', '#1abc9c', '#48c9b0', '#a2d9ce', '#d1f2eb',
-  // 파랑 계열
-  '#1a5276', '#2980b9', '#5dade2', '#aed6f1', '#d6eaf8',
-  // 남색/인디고 계열
-  '#1b2a4a', '#2e4057', '#5b7fa6', '#a9c4e4', '#dceefb',
-  // 보라 계열
-  '#6c3483', '#8e44ad', '#bb8fce', '#d7bde2', '#f4ecf7',
-  // 분홍 계열
-  '#922b21', '#c0392b', '#e91e8c', '#f48fb1', '#fce4ec',
-  // 회색 계열
-  '#212121', '#616161', '#9e9e9e', '#e0e0e0', '#f5f5f5',
-  // 갈색 계열
-  '#4e342e', '#795548', '#a1887f', '#d7ccc8', '#efebe9',
-  // 청회색 계열
-  '#263238', '#546e7a', '#90a4ae', '#cfd8dc', '#eceff1',
+// 각 내부 배열 = 한 계열, 어두운 → 밝은 5 단계.
+const COLOR_FAMILIES: string[][] = [
+  ['#7b1d1d', '#c0392b', '#e74c3c', '#f1948a', '#fadbd8'], // 빨강
+  ['#943a00', '#d35400', '#e67e22', '#f0b27a', '#fdebd0'], // 주황
+  ['#7d6608', '#b7950b', '#f1c40f', '#f9e547', '#fef9e7'], // 노랑
+  ['#1d6a2a', '#27ae60', '#58d68d', '#a9dfbf', '#d5f5e3'], // 초록
+  ['#0e6655', '#1abc9c', '#48c9b0', '#a2d9ce', '#d1f2eb'], // 청록
+  ['#1a5276', '#2980b9', '#5dade2', '#aed6f1', '#d6eaf8'], // 파랑
+  ['#1a237e', '#3949ab', '#7986cb', '#c5cae9', '#e8eaf6'], // 남색
+  ['#6c3483', '#8e44ad', '#bb8fce', '#d7bde2', '#f4ecf7'], // 보라
+  ['#880e4f', '#c2185b', '#f06292', '#f48fb1', '#fce4ec'], // 분홍
+  ['#4e342e', '#795548', '#a1887f', '#d7ccc8', '#efebe9'], // 갈색
+  ['#212121', '#616161', '#9e9e9e', '#e0e0e0', '#f5f5f5'], // 회색
+  ['#263238', '#546e7a', '#90a4ae', '#cfd8dc', '#eceff1'], // 청회색
 ]
+
+// CSS grid 는 12 cols, row-major 배치 → 계열이 열(column)이 되도록 column-major 로 flatten.
+// i 번째 결과 = families[i % 12][Math.floor(i / 12)]
+// row 0 (12 칸) = 모든 계열의 shade 0 (가장 어두움)
+// row 4 (12 칸) = 모든 계열의 shade 4 (가장 밝음)
+const COLOR_PALETTE: string[] = Array.from({ length: 60 }, (_, i) => {
+  const shade = Math.floor(i / 12)
+  const family = i % 12
+  return COLOR_FAMILIES[family][shade]
+})
 
 function nextPaletteColor(existing: OptionItem[]): string {
   // 이미 사용한 색은 마지막으로 밀어 순환하듯 다음 색을 추천.
