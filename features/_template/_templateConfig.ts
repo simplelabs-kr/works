@@ -8,8 +8,9 @@
 // ⚠️ 암묵적 계약 — 어기면 런타임에 조용히 깨진다. CHECKLIST.md 참고.
 //   - `col.data` 는 flat_{table} 의 물리 컬럼명과 정확히 일치
 //   - `col.title` 은 사용자에게 보이는 레이블 — 중복 금지
-//   - `readOnly: false` 컬럼은 EDITABLE_FIELDS 와 [id]/route.ts 의
-//     FIELD_SPECS 양쪽에 반드시 등록 (3중 동기화)
+//   - `readOnly: false` 컬럼은 EDITABLE_FIELDS 에 등록. route.ts 의
+//     FIELD_SPECS 는 이 둘로부터 deriveFieldSpecs() 로 자동 파생 —
+//     손으로 유지할 필요 없음.
 //   - JOIN/집계 파생 컬럼은 `readOnly: true`, EDITABLE_FIELDS 에 미등록
 //   - 대규모 데이터 페이지는 `initialLoadPolicy: 'require-filter'`
 

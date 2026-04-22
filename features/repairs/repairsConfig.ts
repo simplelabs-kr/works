@@ -7,8 +7,9 @@
 //
 // ⚠️ 암묵적 계약 (CHECKLIST.md):
 //   - `col.data` 는 flat_repairs 물리 컬럼명과 정확히 일치
-//   - `readOnly: false` 컬럼은 REPAIRS_EDITABLE_FIELDS + [id]/route.ts
-//     FIELD_SPECS 양쪽에 반드시 등록
+//   - `readOnly: false` 컬럼은 REPAIRS_EDITABLE_FIELDS 에 등록. route.ts
+//     의 FIELD_SPECS 는 deriveFieldSpecs() 로 COLUMNS + EDITABLE_FIELDS
+//     로부터 자동 파생 — 손으로 유지 금지.
 //   - JOIN 유래 name 컬럼(브랜드명/브랜드코드/제품명/고객명) 및 FK 키
 //     (brand_id/product_id/order_item_id/bundle_id) 는 readOnly
 

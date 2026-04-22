@@ -1,31 +1,25 @@
 import {
   createPatchRoute,
   createSoftDeleteRoute,
-  type FieldSpecs,
 } from '@/lib/api/createTableRoute'
+import { deriveFieldSpecs, type SpecColumnLike } from '@/lib/api/deriveFieldSpecs'
+import { COLUMNS, EDITABLE_FIELD_MAP } from '@/features/works/worksConfig'
 
 export const maxDuration = 10
 
-// 필드별 타입/제약 명세. EDITABLE_FIELDS 의 변경은 반드시 이 맵과 동기화.
-const FIELD_SPECS: FieldSpecs = {
-  '사출_방식': { type: 'enum', values: ['RP', '왁스', ''] },
-  '중량': { type: 'number' },
-  '데드라인': { type: 'date' },
-  '작업_위치': { type: 'enum', values: [
-    '현장', '검수', '조립', '마무리 광', '조각', '도금', '각인', '광실',
-    '세척/검수후재작업', '에폭시(연마)', '에폭시(일반)', '컷팅', '외부',
-    '대기', '취소', '조립 대기 중', '유화', '초벌', '',
-  ] },
-  '검수': { type: 'boolean' },
-  '포장': { type: 'boolean' },
-  '출고': { type: 'boolean' },
-  '왁스_파트_전달': { type: 'boolean' },
-  'rp_출력_시작': { type: 'boolean' },
-  '주물_후_수량': { type: 'number' },
-  '죽은_수량': { type: 'number' },
-  '디자이너_노트': { type: 'text', maxLength: 2000 },
-  'reference_files': { type: 'attachment_list' },
-}
+// FIELD_SPECS 는 worksConfig 의 COLUMNS + EDITABLE_FIELD_MAP 로부터
+// 런타임 파생. `출고` 는 행 액션 전용(그리드 컬럼 없음)이라 override 로 추가.
+// 사출_방식 / 작업_위치 는 이전에 enum 검증이었으나 field_options 카탈로그
+// (runtime 동적 값) 와 드리프트 가능성이 있어 select → text(50) 로 완화
+// — repairs 가 동일 필드에서 이미 사용하는 패턴과 맞춘 것.
+const FIELD_SPECS = deriveFieldSpecs({
+  columns: COLUMNS as readonly SpecColumnLike[],
+  editableFields: EDITABLE_FIELD_MAP,
+  overrides: {
+    '출고': { type: 'boolean' },
+  },
+  page: 'order-items',
+})
 
 export const PATCH = createPatchRoute({
   table:      'order_items',

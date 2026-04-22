@@ -116,17 +116,23 @@ export const POST = createListRoute({
 })
 ```
 
-**`[id]/route.ts`** — FIELD_SPECS 는 스크립트로 생성
+**`[id]/route.ts`** — FIELD_SPECS 는 COLUMNS + EDITABLE_FIELDS 로부터 런타임 파생
 ```ts
-import { createPatchRoute, createSoftDeleteRoute, type FieldSpecs }
-  from '@/lib/api/createTableRoute'
+import { createPatchRoute, createSoftDeleteRoute } from '@/lib/api/createTableRoute'
+import { deriveFieldSpecs, type SpecColumnLike } from '@/lib/api/deriveFieldSpecs'
+import { {PAGE}_COLUMNS, {PAGE}_EDITABLE_FIELDS } from '@/features/{page}/{page}Config'
+
 export const maxDuration = 10
-// FIELD_SPECS 블록은 scripts/generate-field-specs.mjs 가 {page}Config.ts 의
-// *_EDITABLE_FIELDS / *_COLUMNS 로부터 생성한다 — 수작업 편집 금지.
-const FIELD_SPECS: FieldSpecs = {
-  // 빈 placeholder 로 두고 아래 명령으로 채운다:
-  //   node scripts/generate-field-specs.mjs {page} --write
-}
+
+// FIELD_SPECS 는 {page}Config 의 COLUMNS + EDITABLE_FIELDS 로부터 파생.
+// 수작업 유지 금지. COLUMNS 에 없는 orphan 편집 키는 overrides 로 명시.
+const FIELD_SPECS = deriveFieldSpecs({
+  columns: {PAGE}_COLUMNS as readonly SpecColumnLike[],
+  editableFields: {PAGE}_EDITABLE_FIELDS,
+  // overrides: { 'orphan_key': { type: 'text', maxLength: 64 } },
+  page: '{page}',
+})
+
 export const PATCH = createPatchRoute({
   table:      '{table}',
   fieldSpecs: FIELD_SPECS,
@@ -138,17 +144,13 @@ export const DELETE = createSoftDeleteRoute({
 })
 ```
 
-**FIELD_SPECS 생성 (EDITABLE_FIELDS ↔ FIELD_SPECS 3중 동기화 자동화):**
-```
-node scripts/generate-field-specs.mjs {page}          # stdout 으로 미리보기
-node scripts/generate-field-specs.mjs {page} --write  # route.ts 에 직접 반영
-node scripts/generate-field-specs.mjs {page} --check  # CI 에서 드리프트 검사
-```
-- 매핑: `text`/`select`/`longtext` → text + 기본 maxLength(200/50/2000), `number`, `checkbox`, `date` 는 그대로.
-- 컬럼 카탈로그에 `maxLength: N` 을 붙이면 해당 값이 반영된다.
-- `readOnly:false` 인데 EDITABLE_FIELDS 미등록 → 경고.
-- EDITABLE_FIELDS 에 있는데 COLUMNS 엔트리가 없는 키(API-only FK 등) 는
-  기존 route.ts 의 라인을 보존한다.
+**FIELD_SPECS 파생 규칙:**
+- `text`/`select`/`longtext` → text + 기본 maxLength (200/50/2000).
+- `number` / `checkbox` / `date` / `attachment` 는 타입 그대로.
+- COLUMNS 항목에 `maxLength: N` 을 붙이면 그 값이 쓰인다 (SSoT).
+- select 컬럼에 `enumValues: [...]` 가 있으면 enum 검증.
+- EDITABLE_FIELDS 에 있는데 COLUMNS 엔트리도 없고 overrides 에도 없으면
+  모듈 로드 시 즉시 throw — 드리프트를 런타임 조기 감지.
 
 **`bulk-delete/route.ts`** (8줄) / **`restore/route.ts`** / **`permanent-delete/route.ts`** 각각:
 ```ts
@@ -219,8 +221,9 @@ npm run dev             # 페이지 열어서 확인
    → DataGrid 가 title→data 치환 중. 근본 치료 진행 중 (제안 D).
 2. **filterable: false 남용** — 집계/파생 컬럼도 flat 테이블엔 물리 컬럼이라 필터 가능해야 한다.
    **모든 표시 컬럼은 필터 가능.**
-3. **FIELD_SPECS 누락으로 PATCH 403** — EDITABLE_FIELDS 에는 있는데
-   FIELD_SPECS 엔 없으면 "편집 불가 필드" 에러. 수동 동기화 필수 (제안 C 전까지).
+3. **FIELD_SPECS 드리프트** — 더 이상 수작업으로 유지하지 않는다.
+   deriveFieldSpecs() 가 COLUMNS + EDITABLE_FIELDS 로부터 파생하며,
+   드리프트 있으면 모듈 로드 시 throw. orphan 키는 overrides 로 선언.
 4. **filters_json 을 bare array 로 전송** — 객체 `{logic, conditions}` 여야 함.
    createListRoute 헬퍼가 둘 다 허용하지만 RPC 측은 객체 기준으로 설계.
 5. **numeric/boolean 에 contains 연산자** — DB 측 `::text` 캐스팅 없으면 에러.
