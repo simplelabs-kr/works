@@ -43,6 +43,8 @@ export const WORKS_PAGES: PageDef[] = [
   { key: 'packaging',   label: '포장/출고', href: null, status: 'coming-soon', presetKey: null },
   { key: 'products',    label: '제품 관리', href: '/works/products', status: 'active', presetKey: 'products' },
   { key: 'repairs',     label: '수선',      href: '/works/repairs',  status: 'active', presetKey: 'repairs' },
+  { key: 'rentals',     label: '대여',      href: '/works/rentals',  status: 'active', presetKey: 'rentals' },
+  { key: 'refunds',     label: '환불',      href: '/works/refunds',  status: 'active', presetKey: 'refunds' },
 ]
 
 export const TRASH_PAGE: PageDef = {
