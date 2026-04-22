@@ -1,9 +1,12 @@
 // Domain types for the Rentals grid.
 //
 // `RentalItem` = `search_rentals` RPC 가 돌려주는 raw shape — rentals 테이블
-// 소유 컬럼 + JOIN-derived name 컬럼 (브랜드명 / 브랜드코드 / 제품명) + FK 키.
-// `RentalRow` = HOT 바인딩 display shape. null 은 transformRow 에서 '' / null /
-// false 로 정규화.
+// 소유 컬럼 + JOIN-derived name (브랜드명 / 브랜드코드 / 제품명) + FK 키.
+// `RentalRow` = HOT 바인딩 display shape.
+//
+// formula / lookup 컬럼 (이름, 현황, 수량, 공급가액, 공임, 소재비,
+// 기준_소재비, 중량, 순금_중량, 생산시작일, 디자이너_노트) 은 DB 스키마에서
+// 제거됨 — migrate_rentals.py 도 동일하게 반영.
 
 export type RentalItem = {
   id: string
@@ -11,8 +14,7 @@ export type RentalItem = {
   created_at?: string | null
   deleted_at?: string | null
 
-  // identity / descriptive
-  이름: string | null
+  // identity
   고유번호: string | null
 
   // JOIN-derived (read-only)
@@ -20,23 +22,9 @@ export type RentalItem = {
   브랜드코드: string | null
   제품명: string | null
 
-  // status
-  현황: string | null
+  // owned
   반납: boolean | null
-
-  // quantities / pricing
-  수량: number | null
-  공급가액: number | null
-  공임: number | null
-  소재비: number | null
-  기준_소재비: number | null
-  중량: number | null
-  순금_중량: number | null
-
-  // dates / notes
-  생산시작일: string | null
   반품_번들명: string | null
-  디자이너_노트: string | null
   생성일시: string | null
 
   // FK (read-only in grid catalog; 타입엔 유지)
@@ -50,27 +38,14 @@ export type RentalRow = {
   updated_at: string | null
   created_at: string | null
 
-  이름: string
   고유번호: string
 
   브랜드명: string
   브랜드코드: string
   제품명: string
 
-  현황: string
   반납: boolean
-
-  수량: number | null
-  공급가액: number | null
-  공임: number | null
-  소재비: number | null
-  기준_소재비: number | null
-  중량: number | null
-  순금_중량: number | null
-
-  생산시작일: string
   반품_번들명: string
-  디자이너_노트: string
   생성일시: string
 
   brand_id: string | null
