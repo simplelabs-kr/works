@@ -15,6 +15,7 @@ export type FieldType =
   | 'formula'
   | 'image'
   | 'attachment'
+  | 'link'
 
 export type ImageItem = { url: string; name: string }
 export type AttachmentItem = { url: string; name: string }

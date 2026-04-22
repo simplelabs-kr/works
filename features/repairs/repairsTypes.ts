@@ -20,6 +20,7 @@ export type RepairItem = {
   브랜드코드: string | null
   제품명: string | null
   고객명: string | null
+  order_item_고유번호: string | null
 
   // repair details
   수선_내용: string | null
@@ -74,6 +75,7 @@ export type RepairRow = {
   브랜드코드: string
   제품명: string
   고객명: string
+  order_item_고유번호: string
 
   수선_내용: string
   수선_항목: string
