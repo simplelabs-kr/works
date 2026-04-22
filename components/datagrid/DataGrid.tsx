@@ -655,10 +655,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     setLinkMenu(null)
 
     try {
+      // createPatchRoute 는 단일 필드 편집 계약 — body 는 { field, value } shape.
+      // (과거 `{ [fkColumn]: id }` 로 보냈다가 field === undefined 로 403
+      //  "편집 불가 필드" 받던 버그 — 셀 readOnly 가 원인이 아니라 body 포맷
+      //  불일치였다.)
       const res = await fetch(`${apiBase}/${rowData.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [config.fkColumn]: picked.id }),
+        body: JSON.stringify({ field: config.fkColumn, value: picked.id }),
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
