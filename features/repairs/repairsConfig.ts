@@ -46,6 +46,7 @@ export const REPAIRS_EDITABLE_FIELDS: Record<string, string> = {
   // Link 컬럼의 FK 를 PATCH 대상에 등록. COLUMNS 에 없는 orphan 이라
   // route.ts 에서 overrides 로 spec 을 공급한다.
   'product_id': 'product_id',
+  'order_item_id': 'order_item_id',
 }
 
 // 링크 컬럼 설정 — 제품명 셀을 클릭하면 products 에서 검색 후 product_id 를 PATCH.
@@ -55,6 +56,16 @@ const 제품명LinkConfig: LinkConfig = {
   searchFields: ['제품명', '제품코드'],
   displayField: '제품명',
   secondaryField: '브랜드코드',
+}
+
+// order_item 고유번호 링크 — order-items 에서 검색 후 order_item_id 를 PATCH.
+// display 는 flat_repairs.order_item_고유번호 (JOIN denormalized 컬럼).
+const order_item_고유번호LinkConfig: LinkConfig = {
+  linkTable: 'order-items',
+  fkColumn: 'order_item_id',
+  searchFields: ['고유_번호', '제품명'],
+  displayField: '고유_번호',
+  secondaryField: '제품명',
 }
 
 // Handsontable datePickerConfig — works 페이지와 동일하게 한글 레이블
@@ -104,6 +115,9 @@ export const REPAIRS_COLUMNS = [
   // `readOnly: true` 는 inline 텍스트 편집 방지용. 실제 PATCH 는 product_id.
   { data: '제품명',     title: '제품명',     readOnly: true,  width: 220, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: 제품명LinkConfig },
   { data: '고객명',     title: '고객명',     readOnly: true,  width: 120, fieldType: 'text' as FieldType },
+  // order_item 고유번호: 링크 컬럼 — 클릭 시 order-items 검색. PATCH 대상은 order_item_id.
+  // flat_repairs.order_item_고유번호 (JOIN denormalized) 를 display 로 사용.
+  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 160, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: order_item_고유번호LinkConfig },
 
   // ── 수선 내용 ──────────────────────────────────────────────────────
   { data: '수선_내용',  title: '수선 내용',  readOnly: false, width: 220, fieldType: 'longtext' as FieldType, type: 'text' },
@@ -189,6 +203,7 @@ function transformRepairRow(item: RepairItem): RepairRow {
     브랜드코드: str(item.브랜드코드),
     제품명: str(item.제품명),
     고객명: str(item.고객명),
+    order_item_고유번호: str(item.order_item_고유번호),
 
     수선_내용: str(item.수선_내용),
     수선_항목: str(item.수선_항목),
@@ -246,6 +261,7 @@ function repairsMergeRealtimeUpdate(
     브랜드코드: n.브랜드코드 !== undefined ? str(n.브랜드코드) : prev.브랜드코드,
     제품명: n.제품명 !== undefined ? str(n.제품명) : prev.제품명,
     고객명: n.고객명 !== undefined ? str(n.고객명) : prev.고객명,
+    order_item_고유번호: n.order_item_고유번호 !== undefined ? str(n.order_item_고유번호) : prev.order_item_고유번호,
 
     수선_내용: n.수선_내용 !== undefined ? str(n.수선_내용) : prev.수선_내용,
     소재: n.소재 !== undefined ? str(n.소재) : prev.소재,

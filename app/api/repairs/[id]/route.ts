@@ -21,6 +21,7 @@ const FIELD_SPECS = deriveFieldSpecs({
   // orphan 취급 — 여기서 UUID 형식(텍스트)으로 spec 을 주입한다.
   overrides: {
     product_id: { type: 'text', maxLength: 64 },
+    order_item_id: { type: 'text', maxLength: 64 },
   },
   page: 'repairs',
 })
