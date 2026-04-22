@@ -54,8 +54,12 @@ export type PageConfig<TItem extends BaseItem = BaseItem, TRow extends BaseRow =
   apiBase: string
 
   // Supabase realtime: DataGrid subscribes on `realtimeChannel` for UPDATE
-  // events against `realtimeTable`. Merging the payload into the local row
-  // is delegated to `mergeRealtimeUpdate` (page-specific field set).
+  // events against `realtimeTable`. Use the `flat_{table}` table (not the
+  // base table) so JOIN-derived columns propagate without a refetch.
+  // Merging the payload into the local row is delegated to
+  // `mergeRealtimeUpdate` (page-specific field set).
+  // DB prerequisite: the target table must be in `supabase_realtime`
+  // publication with REPLICA IDENTITY FULL.
   realtimeChannel: string
   realtimeTable: string
 

@@ -105,7 +105,7 @@ export const templatePageConfig: PageConfig<TemplateItem, TemplateRow> = {
   pageName: '템플릿 페이지',          // TODO
   apiBase: '/api/template',            // TODO — `/api/{page}`
   realtimeChannel: 'template_changes', // TODO — 고유 채널명
-  realtimeTable: 'template',           // TODO — 원본 테이블명 (flat_ 아님)
+  realtimeTable: 'flat_template',      // TODO — flat_{table} 로 지정 (JOIN 파생 컬럼 realtime 전파)
   selectOptionsTable: 'template',      // TODO — field_options.table_name
   columns: TEMPLATE_COLUMNS,
   colHeaders: TEMPLATE_COL_HEADERS,

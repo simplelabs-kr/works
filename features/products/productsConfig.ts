@@ -190,10 +190,10 @@ function transformProductRow(item: ProductItem): ProductRow {
 
 // ── Realtime UPDATE 머지 ─────────────────────────────────────────────
 
-// products 테이블 UPDATE 이벤트 수신 시, payload.new 에 들어오는 products
-// 소유 컬럼만 현재 row에 덮어쓴다. JOIN 유래 파생 컬럼은 현재 row 값을
-// 유지 — 이 값이 틀릴 수 있으나 DB 재조회 비용을 피한다. 일관성이
-// 중요한 파생 컬럼이 생기면 실시간 머지 대신 refetch 경로로 전환.
+// flat_products 테이블 UPDATE 이벤트 수신 시 모든 표시 컬럼을 동기화한다.
+// flat_products 는 products + brands + 집계(mold/sample/claim 개수) 를
+// 비정규화한 것이라 JOIN 유래 컬럼(브랜드명, mold_개수 등) 도 payload
+// 에 포함된다 — 이전에는 refetch 필요했던 것들이 실시간 반영된다.
 function productsMergeRealtimeUpdate(
   prev: ProductRow,
   payloadNew: Record<string, unknown>,
@@ -201,6 +201,15 @@ function productsMergeRealtimeUpdate(
   const n = payloadNew
   return {
     ...prev,
+    // JOIN/집계 유래 (flat_products 에 denormalized)
+    브랜드명: n.브랜드명 !== undefined ? str(n.브랜드명) : prev.브랜드명,
+    parent_여부: n.parent_여부 !== undefined ? boolFlag(n.parent_여부) : prev.parent_여부,
+    가다번호_목록: n.가다번호_목록 !== undefined ? str(n.가다번호_목록) : prev.가다번호_목록,
+    가다위치_목록: n.가다위치_목록 !== undefined ? str(n.가다위치_목록) : prev.가다위치_목록,
+    mold_개수: n.mold_개수 !== undefined ? numOrNull(n.mold_개수) : prev.mold_개수,
+    sample_개수: n.sample_개수 !== undefined ? numOrNull(n.sample_개수) : prev.sample_개수,
+    claim_개수: n.claim_개수 !== undefined ? numOrNull(n.claim_개수) : prev.claim_개수,
+
     제품코드: n.제품코드 !== undefined ? str(n.제품코드) : prev.제품코드,
     제품명: n.제품명 !== undefined ? str(n.제품명) : prev.제품명,
     brand_id: n.brand_id !== undefined ? (n.brand_id as string | null) : prev.brand_id,
@@ -249,7 +258,7 @@ export const productsPageConfig: PageConfig<ProductItem, ProductRow> = {
   pageName: '제품 관리',
   apiBase: '/api/products',
   realtimeChannel: 'products_changes',
-  realtimeTable: 'products',
+  realtimeTable: 'flat_products',
   selectOptionsTable: 'products',
   columns: PRODUCTS_COLUMNS,
   colHeaders: PRODUCTS_COL_HEADERS,

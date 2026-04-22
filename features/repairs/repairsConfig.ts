@@ -211,11 +211,12 @@ function transformRepairRow(item: RepairItem): RepairRow {
 
 // ── Realtime UPDATE 머지 ─────────────────────────────────────────────
 //
-// repairs 테이블 UPDATE 수신 시 편집 가능 컬럼만 덮어쓴다. JOIN 유래
-// name 컬럼(브랜드명/제품명/고객명 등)은 repairs 자체 이벤트에는
-// 포함되지 않으므로 이전 값을 유지 — 해당 JOIN 대상 테이블 변경 시
-// upsert_flat_repairs() 트리거가 flat 행을 동기화하므로 다음 refetch
-// 까지 괜찮다.
+// flat_repairs 테이블 UPDATE 수신 시 모든 표시 컬럼을 동기화한다.
+// flat_repairs 는 트리거로 동기화되므로 JOIN 유래 컬럼(브랜드명/제품명/
+// 고객명 등) 도 페이로드에 포함된다 — 원본 테이블 구독 시절에는 값을
+// 유지했지만, 이제는 실시간 반영한다.
+// 수선_비용 / 최종_수선_비용 / 수선_항목 은 read-only 파생이지만
+// flat_repairs 에는 저장되므로 같이 덮어쓴다.
 function repairsMergeRealtimeUpdate(
   prev: RepairRow,
   payloadNew: Record<string, unknown>,
@@ -223,14 +224,22 @@ function repairsMergeRealtimeUpdate(
   const n = payloadNew
   return {
     ...prev,
+    // JOIN 유래 읽기전용 컬럼 (flat_repairs 에 denormalized 저장)
+    브랜드명: n.브랜드명 !== undefined ? str(n.브랜드명) : prev.브랜드명,
+    브랜드코드: n.브랜드코드 !== undefined ? str(n.브랜드코드) : prev.브랜드코드,
+    제품명: n.제품명 !== undefined ? str(n.제품명) : prev.제품명,
+    고객명: n.고객명 !== undefined ? str(n.고객명) : prev.고객명,
+
     수선_내용: n.수선_내용 !== undefined ? str(n.수선_내용) : prev.수선_내용,
     소재: n.소재 !== undefined ? str(n.소재) : prev.소재,
     수량: n.수량 !== undefined ? numOrNull(n.수량) : prev.수량,
     전_중량: n.전_중량 !== undefined ? numOrNull(n.전_중량) : prev.전_중량,
 
-    // 수선_비용 / 최종_수선_비용 은 DB 에서 자동 산출되는 lookup/formula 파생.
-    // 편집 이후 값 변화는 refetch 경로로 반영(in-place merge 생략).
-    // 수선_항목 도 업스트림(수리 분류)에서 결정되는 읽기 전용 — merge 제외.
+    // DB 자동 산출 (lookup/formula) — flat_repairs 에 값 자체는 저장되므로
+    // realtime 로 실시간 반영 가능 (이전에는 refetch 필요했음).
+    수선_비용: n.수선_비용 !== undefined ? numOrNull(n.수선_비용) : prev.수선_비용,
+    최종_수선_비용: n.최종_수선_비용 !== undefined ? numOrNull(n.최종_수선_비용) : prev.최종_수선_비용,
+    수선_항목: n.수선_항목 !== undefined ? str(n.수선_항목) : prev.수선_항목,
     수선_비용_조정: n.수선_비용_조정 !== undefined ? numOrNull(n.수선_비용_조정) : prev.수선_비용_조정,
     비용_조정_사유: n.비용_조정_사유 !== undefined ? str(n.비용_조정_사유) : prev.비용_조정_사유,
 
@@ -260,7 +269,7 @@ export const repairsPageConfig: PageConfig<RepairItem, RepairRow> = {
   pageName: '수선 관리',
   apiBase: '/api/repairs',
   realtimeChannel: 'repairs_changes',
-  realtimeTable: 'repairs',
+  realtimeTable: 'flat_repairs',
   selectOptionsTable: 'repairs',
   columns: REPAIRS_COLUMNS,
   colHeaders: REPAIRS_COL_HEADERS,

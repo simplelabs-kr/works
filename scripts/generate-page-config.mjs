@@ -339,7 +339,7 @@ export const ${pageName}PageConfig: PageConfig<${Page}Item, ${Page}Row> = {
   pageName: '${pageName}',
   apiBase: '/api/${pageName}',
   realtimeChannel: '${pageName}_changes',
-  realtimeTable: '${pageName}',
+  realtimeTable: 'flat_${pageName}',
   selectOptionsTable: '${pageName}',
   columns: ${PAGE}_COLUMNS,
   colHeaders: ${PAGE}_COL_HEADERS,

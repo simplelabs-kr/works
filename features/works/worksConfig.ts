@@ -266,36 +266,24 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
 
 // ── Realtime UPDATE merge ────────────────────────────────────────────────────
 
-// Given the previous row and `payload.new` from a Supabase realtime UPDATE,
-// produce the merged row. Only editable fields are synced across clients
-// (read-only joined columns stay untouched), and 출고예정일 is recomputed
-// when 데드라인 changes so derived columns stay consistent without a
-// server round-trip.
+// Given the previous row and `payload.new` from a Supabase realtime UPDATE
+// (flat_order_details 기준), 표시 컬럼 전체를 동기화한다. flat_order_details
+// 는 orders/products/brands/bundles 변경 시 트리거로 갱신되므로 이제는
+// JOIN 유래 컬럼(제품명/brand_name/고객명/소재 등)도 realtime 으로 전파된다.
+// `원부자재` / `발주_현황` 은 아직 flat 에 물리 컬럼이 없는 derived 컬럼이라
+// 이전 값을 유지한다.
 function worksMergeRealtimeUpdate(
   prev: Row,
   payloadNew: Record<string, unknown>,
   ctx: { holidays: Set<string> },
 ): Row {
-  const n = payloadNew
-  const newDeadline = n.데드라인 !== undefined
-    ? (n.데드라인 ? String(n.데드라인).slice(0, 10) : '')
-    : prev.데드라인
+  // payload.new 는 flat_order_details 한 행 전체 → Item 캐스팅 후 재변환
+  const nextFromFlat = transformWorksRow(payloadNew as Item, ctx)
   return {
-    ...prev,
-    중량: (n.중량 as number | null) ?? prev.중량,
-    데드라인: newDeadline,
-    출고예정일: calcShipDateFromRow({ ...prev, 데드라인: newDeadline }, ctx.holidays),
-    작업_위치: (n.작업_위치 as string) ?? prev.작업_위치,
-    검수: (n.검수 as boolean) ?? prev.검수,
-    포장: (n.포장 as boolean) ?? prev.포장,
-    rp_출력_시작: (n.rp_출력_시작 as boolean) ?? prev.rp_출력_시작,
-    왁스_파트_전달: (n.왁스_파트_전달 as boolean) ?? prev.왁스_파트_전달,
-    주물_후_수량: (n.주물_후_수량 as number | null) ?? prev.주물_후_수량,
-    디자이너_노트: (n.디자이너_노트 as string) ?? prev.디자이너_노트,
-    사출_방식: (n.사출_방식 as string) ?? prev.사출_방식,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    reference_files: (n.reference_files as any) ?? prev.reference_files,
-    updated_at: (n.updated_at as string) ?? prev.updated_at,
+    ...nextFromFlat,
+    // derived(미물리화) 컬럼은 보존 — 별도 소스(purchase orders/원부자재)에서 갱신됨
+    원부자재: prev.원부자재,
+    발주_현황: prev.발주_현황,
   }
 }
 
@@ -332,7 +320,7 @@ export const worksPageConfig: PageConfig<Item, Row> = {
   pageKey: VIEW_PAGE_KEY,
   apiBase: '/api/order-items',
   realtimeChannel: 'order_items_changes',
-  realtimeTable: 'order_items',
+  realtimeTable: 'flat_order_details',
   selectOptionsTable: 'order_items',
   columns: COLUMNS,
   colHeaders: COL_HEADERS,
