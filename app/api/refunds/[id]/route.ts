@@ -8,9 +8,17 @@ import { REFUNDS_COLUMNS, REFUNDS_EDITABLE_FIELDS } from '@/features/refunds/ref
 export const maxDuration = 10
 
 // FIELD_SPECS 는 refundsConfig 의 COLUMNS + EDITABLE_FIELDS 로부터 파생.
+// 드리프트 조기 감지 — EDITABLE_FIELDS 에 있는데 COLUMNS 에도 overrides
+// 에도 없으면 모듈 로드 시 throw.
 const FIELD_SPECS = deriveFieldSpecs({
   columns: REFUNDS_COLUMNS as readonly SpecColumnLike[],
   editableFields: REFUNDS_EDITABLE_FIELDS,
+  // Link 컬럼의 FK (order_item_id / bundle_id) 는 COLUMNS 에 없는
+  // orphan 편집 키 — UUID 형식(텍스트)으로 spec 을 주입한다.
+  overrides: {
+    order_item_id: { type: 'text', maxLength: 64 },
+    bundle_id: { type: 'text', maxLength: 64 },
+  },
   page: 'refunds',
 })
 
