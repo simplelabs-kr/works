@@ -206,10 +206,10 @@ function formatDate(val: string | null | undefined): string {
 
 // ── Row transform (Item → Row) ───────────────────────────────────────────────
 
-// flat_order_details row → display Row. Derives 제품명_코드 (trimmed 고유_번호
-// tail, length depends on encoding), 출고예정일 (workday math), and 순금_중량
-// (mass × purity%). Everything else is a direct passthrough with a default
-// for null columns. Passed to DataGrid via `worksPageConfig.transformRow`.
+// flat_order_details row → display Row. DB 측에서 제품명_코드 (제품명 + `[`
+// + 고유_번호 끝 4자리 hex + `]`) / 출고예정일 (workday math) / 순금_중량
+// (mass × purity%) 를 이미 계산해 내려주므로 여기서는 null 정규화만 한다.
+// Passed to DataGrid via `worksPageConfig.transformRow`.
 function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
   const hs = ctx.holidays
   // 출고예정일: DB 측 computed 컬럼을 우선, 없으면 로컬 계산(휴일 캐시 활용)으로 폴백.
