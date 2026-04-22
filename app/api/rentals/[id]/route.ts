@@ -13,6 +13,12 @@ export const maxDuration = 10
 const FIELD_SPECS = deriveFieldSpecs({
   columns: RENTALS_COLUMNS as readonly SpecColumnLike[],
   editableFields: RENTALS_EDITABLE_FIELDS,
+  // Link 컬럼의 FK (order_item_id / bundle_id) 는 COLUMNS 에 없는
+  // orphan 편집 키 — UUID 형식(텍스트)으로 spec 을 주입한다.
+  overrides: {
+    order_item_id: { type: 'text', maxLength: 64 },
+    bundle_id: { type: 'text', maxLength: 64 },
+  },
   page: 'rentals',
 })
 
