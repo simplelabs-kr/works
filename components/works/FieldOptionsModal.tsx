@@ -20,20 +20,33 @@ interface Props {
   onClose: () => void
 }
 
-// Airtable-ish pastel palette — 12 colors.
+// Airtable-style palette — 12 families × 5 shades = 60 colors.
+// 각 계열은 dark → light 순으로 5단계.
 const COLOR_PALETTE: string[] = [
-  '#FEE2E2', // red
-  '#FFEDD5', // orange
-  '#FEF3C7', // amber
-  '#FEF9C3', // yellow
-  '#DCFCE7', // green
-  '#CCFBF1', // teal
-  '#CFFAFE', // cyan
-  '#DBEAFE', // blue
-  '#E0E7FF', // indigo
-  '#EDE9FE', // violet
-  '#FCE7F3', // pink
-  '#F3F4F6', // gray
+  // 빨강 계열
+  '#9e2a2b', '#c0392b', '#e74c3c', '#f1948a', '#fadbd8',
+  // 주황 계열
+  '#935116', '#d35400', '#e67e22', '#f0b27a', '#fdebd0',
+  // 노랑 계열
+  '#7d6608', '#b7950b', '#f1c40f', '#f7dc6f', '#fef9e7',
+  // 초록 계열
+  '#1e8449', '#27ae60', '#58d68d', '#a9dfbf', '#d5f5e3',
+  // 청록 계열
+  '#117a65', '#1abc9c', '#48c9b0', '#a2d9ce', '#d1f2eb',
+  // 파랑 계열
+  '#1a5276', '#2980b9', '#5dade2', '#aed6f1', '#d6eaf8',
+  // 남색/인디고 계열
+  '#1b2a4a', '#2e4057', '#5b7fa6', '#a9c4e4', '#dceefb',
+  // 보라 계열
+  '#6c3483', '#8e44ad', '#bb8fce', '#d7bde2', '#f4ecf7',
+  // 분홍 계열
+  '#922b21', '#c0392b', '#e91e8c', '#f48fb1', '#fce4ec',
+  // 회색 계열
+  '#212121', '#616161', '#9e9e9e', '#e0e0e0', '#f5f5f5',
+  // 갈색 계열
+  '#4e342e', '#795548', '#a1887f', '#d7ccc8', '#efebe9',
+  // 청회색 계열
+  '#263238', '#546e7a', '#90a4ae', '#cfd8dc', '#eceff1',
 ]
 
 function nextPaletteColor(existing: OptionItem[]): string {
@@ -305,30 +318,49 @@ export default function FieldOptionsModal({
                     background: '#fff',
                     border: '1px solid #E5E7EB',
                     borderRadius: 6,
-                    padding: 6,
+                    padding: 8,
                     boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(6, 20px)',
-                    gap: 6,
+                    gridTemplateColumns: 'repeat(12, 20px)',
+                    gap: 4,
                     zIndex: 1,
                   }}
                 >
-                  {COLOR_PALETTE.map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => updateColor(idx, c)}
-                      aria-label={`색상 ${c}`}
-                      style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 4,
-                        border: it.bg === c ? '2px solid #2563EB' : '1px solid #E5E7EB',
-                        background: c,
-                        cursor: 'pointer',
-                        padding: 0,
-                      }}
-                    />
-                  ))}
+                  {COLOR_PALETTE.map((c, ci) => {
+                    const selected = it.bg === c
+                    return (
+                      <button
+                        key={`${c}-${ci}`}
+                        onClick={() => updateColor(idx, c)}
+                        aria-label={`색상 ${c}`}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = 'scale(1.2)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = 'scale(1)'
+                        }}
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: '50%',
+                          border: 'none',
+                          background: c,
+                          cursor: 'pointer',
+                          padding: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#fff',
+                          fontSize: 12,
+                          lineHeight: 1,
+                          fontWeight: 700,
+                          transition: 'transform 120ms ease',
+                        }}
+                      >
+                        {selected ? '✓' : ''}
+                      </button>
+                    )
+                  })}
                 </div>
               )}
             </div>
