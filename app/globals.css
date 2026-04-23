@@ -82,9 +82,9 @@ body {
   letter-spacing: 0.01em !important;
   border-right: 1px solid #e8eaef !important;
   border-bottom: 1px solid #e2e5eb !important;
-  padding: 0 8px !important;
+  padding: 0 4px !important;
   height: 33px !important;
-  line-height: normal !important;
+  line-height: 1 !important;
   text-align: left !important;
   vertical-align: middle !important;
   user-select: none !important;
@@ -103,7 +103,7 @@ body {
    inline style in afterGetColHeader; moved here so it doesn't re-apply on
    every horizontal scroll re-render. */
 .handsontable thead th:first-child {
-  padding-left: 12px !important;
+  padding-left: 6px !important;
 }
 
 .handsontable thead th .colHeader {
@@ -111,6 +111,7 @@ body {
   align-items: center !important;
   width: 100% !important;
   height: 100% !important;
+  line-height: 1 !important;
   overflow: hidden !important;
   white-space: nowrap !important;
 }
