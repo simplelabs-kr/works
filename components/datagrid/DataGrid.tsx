@@ -1335,7 +1335,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       if (!div) return
       const icon = document.createElement('span')
       icon.className = 'field-type-icon'
-      icon.style.cssText = 'display:inline-flex;align-items:center;height:100%;margin-right:6px;flex-shrink:0;transform:translateY(0.5px);'
+      icon.style.cssText = 'display:inline-flex;align-items:center;height:100%;margin-right:6px;flex-shrink:0;transform:translateY(1px);'
       icon.innerHTML = getFieldTypeIcon(colDef.fieldType as FieldType)
       const textSpan = document.createElement('span')
       // text span 도 flex + height:100% 로 내부 글리프를 셀 수직 중앙에 정렬.
