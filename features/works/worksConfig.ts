@@ -39,8 +39,8 @@ export const EDITABLE_FIELD_MAP: Record<string, string> = {
 export const COLUMNS = [
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
-  { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'text'     as FieldType },
-  { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
+  { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'lookup'   as FieldType },
+  { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: 'metal_purity',  title: '함량비',  readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'date'     as FieldType },
   { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'date'    as FieldType },
@@ -83,7 +83,7 @@ export const COLUMNS = [
   { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
-  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'text'     as FieldType },
+  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
   { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
@@ -116,20 +116,39 @@ export const COLUMNS = [
 export const COL_HEADERS: string[] = (COLUMNS as any[]).map((c) => c.title ?? '')
 
 // ── Field type icons ─────────────────────────────────────────────────────────
+//
+// lucide-react 를 의존성으로 끌지 않고 lucide 원본 SVG path 데이터를 직접
+// 임베드해 사용한다. 모든 아이콘은 24x24 viewBox (lucide 표준) 에 렌더
+// 사이즈 13x13. `stroke-width` 는 아이콘 타입별로 다소 조정해 13px 출력
+// 크기에서 잘 보이도록 맞춤.
 
 export function getFieldTypeIcon(type: FieldType): string {
-  const s = 'stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"'
+  const svg = (paths: string, sw = 2) =>
+    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
+
   const icons: Record<FieldType, string> = {
-    text:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0.5" y="9.5" font-size="11" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none">A</text></svg>`,
-    longtext: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="1" y1="3" x2="11" y2="3"/><line x1="1" y1="6" x2="11" y2="6"/><line x1="1" y1="9" x2="7" y2="9"/></svg>`,
-    number:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><line x1="4.5" y1="1" x2="3" y2="11"/><line x1="8.5" y1="1" x2="7" y2="11"/><line x1="1.5" y1="4.5" x2="10.5" y2="4.5"/><line x1="1" y1="7.5" x2="10" y2="7.5"/></svg>`,
-    date:     `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="2" width="10" height="9" rx="1.5"/><line x1="4" y1="1" x2="4" y2="3.5"/><line x1="8" y1="1" x2="8" y2="3.5"/><line x1="1" y1="5" x2="11" y2="5"/></svg>`,
-    checkbox: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/><polyline points="3.5,6 5.5,8 8.5,4"/></svg>`,
-    select:   `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="4.5"/><polyline points="4,5.5 6,7.5 8,5.5"/></svg>`,
-    formula:  `<svg width="17" height="15" viewBox="0 0 14 12" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="9.5" font-size="10" font-weight="500" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" fill="#9CA3AF" stroke="none" font-style="italic">fx</text></svg>`,
-    image:    `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><rect x="1" y="1.5" width="10" height="9" rx="1.5"/><circle cx="4" cy="4.5" r="1"/><polyline points="1,9.5 4,6.5 6,8.5 8,6 11,9.5"/></svg>`,
-    attachment: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M6.5 2L3.5 5a2.12 2.12 0 0 0 3 3l4-4a1.41 1.41 0 0 0-2-2L4.5 6a.71.71 0 0 0 1 1L8.5 4"/></svg>`,
-    link: `<svg width="17" height="15" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" ${s}><path d="M5 3.5H3.5a2 2 0 0 0 0 4H5"/><path d="M7 8.5h1.5a2 2 0 0 0 0-4H7"/><line x1="4.5" y1="6" x2="7.5" y2="6"/></svg>`,
+    // Type — text
+    text:     svg(`<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>`),
+    // AlignLeft — long text
+    longtext: svg(`<path d="M21 6H3"/><path d="M17 12H3"/><path d="M21 18H3"/>`),
+    // Hash — number / numeric / integer
+    number:   svg(`<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>`),
+    // Calendar — date
+    date:     svg(`<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`),
+    // CheckSquare — checkbox / boolean
+    checkbox: svg(`<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`),
+    // ChevronDown — select
+    select:   svg(`<polyline points="6 9 12 15 18 9"/>`, 2.2),
+    // ƒ — formula / derived
+    formula:  `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="2" y="11" font-size="12" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="#9CA3AF" stroke="none" font-style="italic">ƒ</text></svg>`,
+    // Image (lucide)
+    image:    svg(`<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>`),
+    // Paperclip — attachment
+    attachment: svg(`<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>`),
+    // Link2 — link
+    link:     svg(`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>`),
+    // ArrowUpRight — lookup (readOnly + JOIN 파생 text)
+    lookup:   svg(`<path d="M7 7h10v10"/><path d="m7 17 10-10"/>`),
   }
   return icons[type] ?? ''
 }

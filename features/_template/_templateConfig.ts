@@ -41,7 +41,7 @@ export const TEMPLATE_COLUMNS = [
   // ── JOIN / 집계 파생 — readOnly: true ─────────────────────────────
   // flat_{table} 에 물리 컬럼으로 저장되어 필터·정렬 가능.
   // EDITABLE_FIELDS 에는 넣지 않는다.
-  { data: 'category_name', title: '카테고리', readOnly: true, width: 120, fieldType: 'text' as FieldType },
+  { data: 'category_name', title: '카테고리', readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

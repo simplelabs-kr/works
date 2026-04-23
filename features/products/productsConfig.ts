@@ -108,8 +108,8 @@ export const PRODUCTS_COLUMNS = [
   { data: '슬랙_thread_id', title: '슬랙 Thread ID', readOnly: false, width: 140, fieldType: 'text' as FieldType, maxLength: 100 },
 
   // JOIN 파생 — 읽기 전용. flat_products 에 물리 컬럼으로 저장되어 필터 가능.
-  { data: '가다번호_목록', title: '가다번호',     readOnly: true, width: 120, fieldType: 'text'   as FieldType },
-  { data: '가다위치_목록', title: '가다 위치',    readOnly: true, width: 120, fieldType: 'text'   as FieldType },
+  { data: '가다번호_목록', title: '가다번호',     readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
+  { data: '가다위치_목록', title: '가다 위치',    readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
   { data: 'mold_개수',     title: '몰드 수',      readOnly: true, width: 80,  fieldType: 'number' as FieldType },
   { data: 'sample_개수',   title: '샘플 수',      readOnly: true, width: 80,  fieldType: 'number' as FieldType },
   { data: 'claim_개수',    title: '클레임 수',    readOnly: true, width: 80,  fieldType: 'number' as FieldType },

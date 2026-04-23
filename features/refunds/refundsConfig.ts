@@ -57,9 +57,9 @@ export const REFUNDS_COLUMNS = [
   { data: '반품_구분',  title: '반품 구분',  readOnly: false, width: 120, fieldType: 'select' as FieldType, renderer: 반품구분Renderer },
 
   // ── 브랜드 / 고객 (JOIN 유래, readOnly) ───────────────────
-  { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'text' as FieldType },
-  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'text' as FieldType },
-  { data: '고객명',     title: '고객명',     readOnly: true, width: 120, fieldType: 'text' as FieldType },
+  { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'lookup' as FieldType },
+  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
+  { data: '고객명',     title: '고객명',     readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
 
   // ── 링크 컬럼 (클릭 시 검색 팝오버 → FK PATCH) ──────────────
   // `readOnly: true` 는 inline 텍스트 편집 방지 — 실제 편집은 popover 에서.

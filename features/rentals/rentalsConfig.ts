@@ -55,9 +55,9 @@ export const RENTALS_COLUMNS = [
   { data: '고유번호',   title: '고유번호',   readOnly: true,  width: 120, fieldType: 'text' as FieldType },
 
   // ── 브랜드 / 제품 (JOIN 유래, readOnly) ───────────────────
-  { data: '브랜드명',   title: '브랜드',     readOnly: true,  width: 140, fieldType: 'text' as FieldType },
-  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'text' as FieldType },
-  { data: '제품명',     title: '제품명',     readOnly: true,  width: 220, fieldType: 'text' as FieldType },
+  { data: '브랜드명',   title: '브랜드',     readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
+  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
+  { data: '제품명',     title: '제품명',     readOnly: true,  width: 220, fieldType: 'lookup' as FieldType },
 
   // ── 링크 컬럼 (클릭 시 검색 팝오버 → FK PATCH) ──────────────
   // `readOnly: true` 는 inline 텍스트 편집 방지 — 실제 편집은 popover 에서.

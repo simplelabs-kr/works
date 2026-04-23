@@ -138,6 +138,29 @@ body {
   cursor: default;
 }
 
+/* readonly 셀 잠금 아이콘 — selected 상태일 때만 우측 세로 중앙에 lucide Lock
+   SVG 를 ::after 로 오버레이한다. "이 셀은 편집 불가" 를 시각적으로 암시하는
+   affordance. td 에 position:relative 를 명시적으로 선언해 ::after 가 td 에
+   앵커되도록 한다 (globals 의 td 기본 규칙에는 position 지정 없음). */
+.handsontable td.current.htDimmed {
+  position: relative;
+}
+.handsontable td.current.htDimmed::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239CA3AF' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect width='18' height='11' x='3' y='11' rx='2' ry='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  pointer-events: none;
+  opacity: 0.7;
+  z-index: 11;
+}
+
 .handsontable tbody tr:hover td {
   background-color: var(--works-row-hover) !important;
 }

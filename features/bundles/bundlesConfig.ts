@@ -44,8 +44,8 @@ export const BUNDLES_COLUMNS = [
   { data: '번들_고유번호',   title: '번들 고유번호',   readOnly: false, width: 140, fieldType: 'text' as FieldType },
 
   // ── 브랜드 (JOIN 유래, readOnly) ───────────────────────────
-  { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'text' as FieldType },
-  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'text' as FieldType },
+  { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'lookup' as FieldType },
+  { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
 
   // ── 편집 가능 — text ──────────────────────────────────────
   { data: '송장번호',   title: '송장번호',   readOnly: false, width: 150, fieldType: 'text' as FieldType },
