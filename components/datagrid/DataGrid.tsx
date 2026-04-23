@@ -18,7 +18,9 @@ import type { ManagedColumn } from '@/components/works/ColumnManagerDropdown'
 import ShortcutsModal from '@/components/works/ShortcutsModal'
 import FieldOptionsModal from '@/components/works/FieldOptionsModal'
 import LinkSearchPopover, { type LinkCandidate } from '@/components/works/LinkSearchPopover'
+import LinkListPopover from '@/components/works/LinkListPopover'
 import type { LinkConfig } from '@/features/works/linkRenderer'
+import { type LinkListConfig, type LinkListChip, parseChips } from '@/features/works/linkListRenderer'
 import { type PersistedView, type PersistedSettings } from '@/lib/works/viewSettings'
 import { loadEffectiveSettings, persistViewPatch } from '@/lib/works/viewPresets'
 import { usePresets } from '@/components/nav/PresetsContext'
@@ -203,6 +205,20 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         row: number
         column: string
         config: LinkConfig
+      }
+    | null
+  >(null)
+
+  // Linklist 컬럼 팝오버 — chip UI (정방향 N=1 / 역방향 N≥0 양쪽 대응).
+  const [linkListMenu, setLinkListMenu] = useState<
+    | {
+        top: number
+        left: number
+        width: number
+        row: number
+        column: string
+        config: LinkListConfig
+        connected: LinkListChip[]
       }
     | null
   >(null)
@@ -745,6 +761,189 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         type: 'error',
         message: e instanceof Error ? e.message : '링크 업데이트 실패',
       }, 2500)
+    }
+  }
+
+  // ── Linklist (chip) handlers ────────────────────────────────────────
+  //
+  // 정방향 (maxLinks=1): 현재 row 의 fkColumn 을 picked.id 로 PATCH.
+  //   display 셀은 낙관적으로 picked.display 로 교체. 실패 시 롤백.
+  // 역방향 (maxLinks 미지정): 상대 테이블 row 의 fkColumn 을 currentRowId
+  //   로 PATCH. 캐시 컬럼(현재 셀) 에 낙관적으로 chip 을 push. 트리거
+  //   가 flat_{this}.{cacheField} 를 재계산하면 realtime 로 최종 반영.
+  const handleLinkListAdd = async (
+    rowIdx: number,
+    column: string,
+    config: LinkListConfig,
+    picked: LinkListChip,
+  ) => {
+    const hot = hotRef.current
+    if (!hot) return
+    const displayData = displayRowsRef.current[rowIdx]
+    if (!displayData || isGroupHeader(displayData)) return
+    const rowData = displayData as Row
+    if (!rowData?.id) return
+
+    const displayCol = propToColRef.current[column] ?? -1
+    const prevCellVal = displayCol >= 0 ? hot.getDataAtCell(rowIdx, displayCol) : null
+
+    if (config.maxLinks === 1) {
+      // 정방향: 현재 row PATCH.
+      const prevFk = (rowData as unknown as Record<string, unknown>)[config.fkColumn]
+      if (displayCol >= 0) {
+        hot.setDataAtCell(rowIdx, displayCol, picked.display, 'linkListUpdate')
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowData.id
+            ? { ...r, [column]: picked.display, [config.fkColumn]: picked.id }
+            : r,
+        ),
+      )
+      try {
+        const res = await fetch(`${apiBase}/${rowData.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: config.fkColumn, value: picked.id }),
+        })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+        }
+      } catch (e) {
+        if (displayCol >= 0) hot.setDataAtCell(rowIdx, displayCol, prevCellVal, 'linkListRollback')
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowData.id
+              ? { ...r, [column]: prevCellVal, [config.fkColumn]: prevFk }
+              : r,
+          ),
+        )
+        showToast({ type: 'error', message: e instanceof Error ? e.message : '링크 추가 실패' }, 2500)
+      }
+    } else {
+      // 역방향: 상대 row PATCH → 현재 row 의 캐시 컬럼 낙관 업데이트.
+      const prevChips = parseChips(prevCellVal)
+      const nextChips = [...prevChips, picked]
+      if (displayCol >= 0) {
+        hot.setDataAtCell(rowIdx, displayCol, nextChips, 'linkListUpdate')
+      }
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowData.id ? { ...r, [column]: nextChips } : r)),
+      )
+      // connected 상태도 갱신 — 팝오버가 열린 채로 계속 추가 가능.
+      setLinkListMenu((m) => (m ? { ...m, connected: nextChips } : m))
+      try {
+        const res = await fetch(`/api/${config.linkTable}/${picked.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: config.fkColumn, value: rowData.id }),
+        })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+        }
+      } catch (e) {
+        if (displayCol >= 0) hot.setDataAtCell(rowIdx, displayCol, prevChips, 'linkListRollback')
+        setRows((prev) =>
+          prev.map((r) => (r.id === rowData.id ? { ...r, [column]: prevChips } : r)),
+        )
+        setLinkListMenu((m) => (m ? { ...m, connected: prevChips } : m))
+        showToast({ type: 'error', message: e instanceof Error ? e.message : '링크 추가 실패' }, 2500)
+      }
+    }
+  }
+
+  const handleLinkListRemove = async (
+    rowIdx: number,
+    column: string,
+    config: LinkListConfig,
+    chipId: string,
+  ) => {
+    const hot = hotRef.current
+    if (!hot) return
+    const displayData = displayRowsRef.current[rowIdx]
+    if (!displayData || isGroupHeader(displayData)) return
+    const rowData = displayData as Row
+    if (!rowData?.id) return
+
+    const displayCol = propToColRef.current[column] ?? -1
+    const prevCellVal = displayCol >= 0 ? hot.getDataAtCell(rowIdx, displayCol) : null
+
+    if (config.maxLinks === 1) {
+      // 정방향: 현재 row FK 를 null 로.
+      const prevFk = (rowData as unknown as Record<string, unknown>)[config.fkColumn]
+      if (displayCol >= 0) {
+        hot.setDataAtCell(rowIdx, displayCol, '', 'linkListUpdate')
+      }
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === rowData.id
+            ? { ...r, [column]: '', [config.fkColumn]: null }
+            : r,
+        ),
+      )
+      setLinkListMenu((m) => (m ? { ...m, connected: [] } : m))
+      try {
+        const res = await fetch(`${apiBase}/${rowData.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: config.fkColumn, value: null }),
+        })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+        }
+      } catch (e) {
+        if (displayCol >= 0) hot.setDataAtCell(rowIdx, displayCol, prevCellVal, 'linkListRollback')
+        setRows((prev) =>
+          prev.map((r) =>
+            r.id === rowData.id
+              ? { ...r, [column]: prevCellVal, [config.fkColumn]: prevFk }
+              : r,
+          ),
+        )
+        setLinkListMenu((m) =>
+          m
+            ? {
+                ...m,
+                connected: prevCellVal
+                  ? [{ id: String(prevFk ?? ''), display: String(prevCellVal) }]
+                  : [],
+              }
+            : m,
+        )
+        showToast({ type: 'error', message: e instanceof Error ? e.message : '링크 해제 실패' }, 2500)
+      }
+    } else {
+      // 역방향: 상대 row 의 FK 를 null 로.
+      const prevChips = parseChips(prevCellVal)
+      const nextChips = prevChips.filter((c) => c.id !== chipId)
+      if (displayCol >= 0) {
+        hot.setDataAtCell(rowIdx, displayCol, nextChips, 'linkListUpdate')
+      }
+      setRows((prev) =>
+        prev.map((r) => (r.id === rowData.id ? { ...r, [column]: nextChips } : r)),
+      )
+      setLinkListMenu((m) => (m ? { ...m, connected: nextChips } : m))
+      try {
+        const res = await fetch(`/api/${config.linkTable}/${chipId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field: config.fkColumn, value: null }),
+        })
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string }
+          throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+        }
+      } catch (e) {
+        if (displayCol >= 0) hot.setDataAtCell(rowIdx, displayCol, prevChips, 'linkListRollback')
+        setRows((prev) =>
+          prev.map((r) => (r.id === rowData.id ? { ...r, [column]: prevChips } : r)),
+        )
+        setLinkListMenu((m) => (m ? { ...m, connected: prevChips } : m))
+        showToast({ type: 'error', message: e instanceof Error ? e.message : '링크 해제 실패' }, 2500)
+      }
     }
   }
 
@@ -1751,6 +1950,40 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const pi = hotRef.current?.toPhysicalColumn(coords.col) ?? coords.col
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (effectiveColumnsRef.current as any[])[pi]
+      // Linklist 컬럼: 첫 클릭으로 chip 팝오버 열기. 정방향/역방향
+      // 모두 동일 팝오버를 쓰며, connected 는 현재 row 데이터에서 파생.
+      if (colDef?.fieldType === 'linklist' && colDef.linkListConfig && !trashedMode) {
+        const td = hotRef.current?.getCell(coords.row, coords.col) as HTMLElement | null
+        if (!td) return
+        const rect = td.getBoundingClientRect()
+        const cfg = colDef.linkListConfig as LinkListConfig
+        const rowData = displayRowsRef.current[coords.row]
+        if (!rowData || isGroupHeader(rowData)) return
+        const column = colDef.data as string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawValue = (rowData as any)[column]
+        let connected: LinkListChip[]
+        if (cfg.maxLinks === 1) {
+          // 정방향: cell 은 display string, id 는 row[fkColumn].
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const fkId = (rowData as any)[cfg.fkColumn] as string | null | undefined
+          const displayStr = rawValue == null ? '' : String(rawValue)
+          connected = fkId && displayStr ? [{ id: String(fkId), display: displayStr }] : []
+        } else {
+          // 역방향: cell 은 JSONB 배열.
+          connected = parseChips(rawValue)
+        }
+        setLinkListMenu({
+          top: rect.bottom + 4,
+          left: rect.left,
+          width: Math.max(rect.width, 260),
+          row: coords.row,
+          column,
+          config: cfg,
+          connected,
+        })
+        return
+      }
       // Link 컬럼: 첫 클릭으로 바로 검색 팝오버를 연다 (select 컬럼처럼
       // 두 번 클릭 요구하지 않는다 — 링크 변경은 드문 작업이라 즉시 열리는
       // 편이 자연스럽다). trash view 에서는 편집 막힘.
@@ -3459,6 +3692,42 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
             handleLinkPick(linkMenu.row, linkMenu.column, linkMenu.config, picked)
           }
           onClose={() => setLinkMenu(null)}
+        />
+      )}
+
+      {/* Linklist (chip) 팝오버 */}
+      {linkListMenu && (
+        <LinkListPopover
+          top={linkListMenu.top}
+          left={linkListMenu.left}
+          width={linkListMenu.width}
+          connected={linkListMenu.connected}
+          endpoint={`/api/${linkListMenu.config.linkTable}`}
+          displayField={linkListMenu.config.displayField}
+          secondaryField={linkListMenu.config.secondaryField}
+          singleSelect={linkListMenu.config.maxLinks === 1}
+          placeholder={
+            linkListMenu.config.searchFields && linkListMenu.config.searchFields.length > 0
+              ? `${linkListMenu.config.searchFields.join(' / ')} 검색…`
+              : '검색어 입력…'
+          }
+          onAdd={(picked) =>
+            handleLinkListAdd(
+              linkListMenu.row,
+              linkListMenu.column,
+              linkListMenu.config,
+              picked,
+            )
+          }
+          onRemove={(chipId) =>
+            handleLinkListRemove(
+              linkListMenu.row,
+              linkListMenu.column,
+              linkListMenu.config,
+              chipId,
+            )
+          }
+          onClose={() => setLinkListMenu(null)}
         />
       )}
 

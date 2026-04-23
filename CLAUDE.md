@@ -46,8 +46,8 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 4. `upsert_flat_{table}()` 함수 생성
 5. 트리거 생성 (원본 + JOIN 대상 테이블들)
 6. 초기 데이터 bulk 적재 (Python psycopg2)
-7. `search_{table}` / `count_{table}` RPC 생성
-   - `flat_{table}` 기반으로 조회
+7. `search_flat_{table}` / `count_flat_{table}` RPC 생성
+   - `flat_{table}` 기반으로 조회 (JOIN 금지)
    - `filter_group_to_sql()` 사용
    - `filters_json`: `RootFilterState {logic, conditions}` 형태
 8. `field_options` 등록 (select 컬럼 옵션)
@@ -115,7 +115,7 @@ Works 의 모든 페이지(=테이블)는 예외 없이 flat table 기반으로 
 - **API Route**: 복잡한 `JOIN` 은 금지. 데이터 조회는 `flat_{table}` 단일 테이블에서만 수행한다.
 - **API Route 공통화**: `lib/api/createTableRoute.ts` 의 팩토리를 사용.
   RPC 이름 / 테이블 / 필드 스펙만 주입하면 된다 — 직접 핸들러 작성 금지.
-- **Pagination**: 전체 개수 `COUNT(*)` 대신 `count_{table}` RPC 를 사용하고,
+- **Pagination**: 전체 개수 `COUNT(*)` 대신 `count_flat_{table}` RPC 를 사용하고,
   그리드는 100건 단위 무한 스크롤.
 
 ## 4. AI Anti-Patterns (절대 금지 사항)

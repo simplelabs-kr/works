@@ -1,20 +1,16 @@
 // Linklist 컬럼 렌더러 + 컬럼 설정 shape.
 //
 // linklist 는 한 row 가 여러 개 (또는 0~1개) 의 다른 row 를 "chip" 형태
-// 로 가리키는 셀이다. 정방향 (fk → 1 개) 과 역방향 (1:N 의 역참조 → N 개)
-// 모두 동일한 chip UI 로 표현한다.
+// 로 가리키는 셀이다. 정방향 (maxLinks=1, fk → 1개) 과 역방향
+// (undefined, 1:N 의 역참조 → N개) 모두 동일한 chip UI 로 표현한다.
 //
 // 실제 데이터:
-//   - 정방향 (forward, N=1):  `{fkColumn}` 이 단일 uuid. 표시는 JOIN 으로
-//     가져온 display 컬럼. flat_{table} 엔 display 컬럼만 있으므로
-//     chip 1 개를 그리려면 `{display}` / `{fkColumn}` 를 함께 읽는다.
-//   - 역방향 (reverse, N≥0): flat_{table} 에 JSONB 캐시 컬럼
+//   - 정방향 (forward, maxLinks=1):  `{fkColumn}` 이 단일 uuid. 표시는
+//     flat_{table} 의 display 컬럼 (string). renderer 는 빈 문자열이
+//     아니면 chip 1 개로 렌더.
+//   - 역방향 (reverse, maxLinks 미지정): flat_{table} 에 JSONB 캐시 컬럼
 //     (예: order_item_목록 = `[{id,display,secondary?}, ...]`) 을 두고,
-//     트리거로 동기화. 여기서는 이 배열을 그대로 chip 으로 렌더.
-//
-// 현재 렌더러는 배열 (역방향) 만 처리한다. 정방향 칩 전환은 별도 단계
-// 에서 bundlesConfig / repairsConfig 등에 `linkListConfig.mode = 'forward'`
-// 로 선언하며 진행.
+//     트리거로 동기화. renderer 는 배열을 그대로 chip 으로 렌더.
 
 export type LinkListChip = {
   id: string
@@ -23,40 +19,45 @@ export type LinkListChip = {
 }
 
 export type LinkListConfig = {
-  // 'reverse' — flat_{table} 의 JSONB 배열 컬럼을 그대로 렌더.
-  // 'forward' — 단일 fk 컬럼을 읽어 1개짜리 chip 으로 렌더 (추후 단계).
-  mode: 'reverse' | 'forward'
+  // 후보 검색 API endpoint prefix (예: 'order-items' → '/api/order-items').
+  linkTable: string
 
-  // 팝오버의 후보 검색을 띄울 엔드포인트 (예: '/api/order_items').
-  endpoint: string
+  // 정방향: 현재 row 의 FK 컬럼 (예: 'order_item_id'). PATCH 대상.
+  // 역방향: 상대 테이블의 FK 컬럼 (예: order_items.bundle_id 의 'bundle_id').
+  //         add/remove 시 `/api/{linkTable}/{chipId}` 에 `{field: fkColumn, value}` PATCH.
+  fkColumn: string
 
-  // 팝오버 표시 필드 (secondary 는 부가정보 1줄).
+  // 팝오버 표시 필드.
   displayField: string
   secondaryField?: string
+  searchFields?: string[]
 
-  // 정방향일 때만 사용 — PATCH 대상 FK 컬럼.
-  fkColumn?: string
+  // 정방향 (N=1) 이면 1 로 지정. 미지정이면 역방향 (N≥0).
+  maxLinks?: number
 
-  // 역방향일 때만 사용 — 상대 테이블의 FK 컬럼명 (역참조 PATCH 대상).
-  // 예: bundles 에서 order_items 역참조 → order_items.bundle_id
-  reverseFkColumn?: string
-  // 역방향 상대 테이블명 (API 엔드포인트 prefix 와 동일 전제).
-  reverseTable?: string
+  // 역방향 모드에서 JSONB 캐시 컬럼명 힌트 (기본값 = col.data).
+  // 현재는 문서화 목적 — 런타임에선 col.data 를 사용.
+  cacheField?: string
 }
 
-// 칩 셀 렌더러. 값이 `LinkListChip[]` 또는 JSON 문자열일 수 있어 방어적
-// 으로 파싱한다. JSONB 가 Handsontable 까지 통과하면 string 으로 들어
-// 올 수도 있다.
+// 셀 값을 chip 배열로 정규화. JSONB 가 Handsontable 까지 string 으로
+// 통과할 수 있어 방어적으로 파싱.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseChips(value: any): LinkListChip[] {
+export function parseChips(value: any): LinkListChip[] {
+  if (value == null || value === '') return []
   if (Array.isArray(value)) return value as LinkListChip[]
-  if (typeof value === 'string' && value.length > 0) {
-    try {
-      const parsed = JSON.parse(value)
-      if (Array.isArray(parsed)) return parsed as LinkListChip[]
-    } catch {
-      /* fallthrough */
+  if (typeof value === 'string') {
+    // JSON array string 이면 파싱, 아니면 단일 chip (forward 모드의 display 문자열).
+    const trimmed = value.trim()
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (Array.isArray(parsed)) return parsed as LinkListChip[]
+      } catch {
+        /* not a JSON array — treat as forward display string */
+      }
     }
+    return [{ id: '', display: value }]
   }
   return []
 }

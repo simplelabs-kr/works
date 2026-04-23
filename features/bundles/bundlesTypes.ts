@@ -9,6 +9,12 @@
 // → Airtable 원본이 아니며 RPC / DB 트리거로 관리. migrate_bundles.py 도
 //   동일하게 반영.
 
+export type BundleChip = {
+  id: string
+  display: string
+  secondary?: string
+}
+
 export type BundleItem = {
   id: string
   updated_at?: string | null
@@ -51,6 +57,12 @@ export type BundleItem = {
   입금_확인_일시: string | null
   출고_체크_일시: string | null
 
+  // Reverse linklist caches (JSONB 배열 — 트리거가 sync_flat_bundle() 로 갱신).
+  // 각 요소 = { id, display, secondary? }.
+  order_item_목록: BundleChip[] | null
+  repair_목록: BundleChip[] | null
+  rental_목록: BundleChip[] | null
+
   // FK (read-only in grid catalog; 타입엔 유지)
   brand_id: string | null
 }
@@ -86,6 +98,10 @@ export type BundleRow = {
 
   입금_확인_일시: string | null
   출고_체크_일시: string | null
+
+  order_item_목록: BundleChip[]
+  repair_목록: BundleChip[]
+  rental_목록: BundleChip[]
 
   brand_id: string | null
 }

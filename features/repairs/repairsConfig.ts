@@ -16,7 +16,7 @@
 import type { FieldType } from '@/features/works/worksTypes'
 import type { PageConfig } from '@/components/datagrid/types'
 import { checkboxRenderer } from '@/features/works/worksRenderers'
-import { linkRenderer, type LinkConfig } from '@/features/works/linkRenderer'
+import { linkListRenderer, type LinkListConfig } from '@/features/works/linkListRenderer'
 import { 소재Renderer, 작업위치Renderer } from './repairsRenderers'
 import type { RepairItem, RepairRow } from './repairsTypes'
 
@@ -50,22 +50,24 @@ export const REPAIRS_EDITABLE_FIELDS: Record<string, string> = {
 }
 
 // 링크 컬럼 설정 — 제품명 셀을 클릭하면 products 에서 검색 후 product_id 를 PATCH.
-const 제품명LinkConfig: LinkConfig = {
+const 제품명LinkListConfig: LinkListConfig = {
   linkTable: 'products',
   fkColumn: 'product_id',
   searchFields: ['제품명', '제품코드'],
   displayField: '제품명',
   secondaryField: '브랜드코드',
+  maxLinks: 1,
 }
 
 // order_item 고유번호 링크 — order-items 에서 검색 후 order_item_id 를 PATCH.
 // display 는 flat_repairs.order_item_고유번호 (JOIN denormalized 컬럼).
-const order_item_고유번호LinkConfig: LinkConfig = {
+const order_item_고유번호LinkListConfig: LinkListConfig = {
   linkTable: 'order-items',
   fkColumn: 'order_item_id',
   searchFields: ['고유_번호', '제품명'],
   displayField: '고유_번호',
   secondaryField: '제품명',
+  maxLinks: 1,
 }
 
 // Handsontable datePickerConfig — works 페이지와 동일하게 한글 레이블
@@ -111,13 +113,13 @@ export const REPAIRS_COLUMNS = [
   // ── 브랜드 / 제품 / 고객 (JOIN 유래) ──────────────────────────────
   { data: '브랜드명',   title: '브랜드',     readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
   { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
-  // 제품명: 링크 컬럼 — 클릭 시 products 검색 팝오버에서 링크 변경 가능.
-  // `readOnly: true` 는 inline 텍스트 편집 방지용. 실제 PATCH 는 product_id.
-  { data: '제품명',     title: '제품명',     readOnly: true,  width: 220, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: 제품명LinkConfig },
+  // 제품명: chip 링크 컬럼 (정방향 N=1) — 클릭 시 products 검색 팝오버에서 링크 변경.
+  // `readOnly: true` + `editor: false` — 직접 타이핑 차단, 팝오버 경유만. 실제 PATCH 는 product_id.
+  { data: '제품명',     title: '제품명',     readOnly: true,  width: 240, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 제품명LinkListConfig },
   { data: '고객명',     title: '고객명',     readOnly: true,  width: 120, fieldType: 'lookup' as FieldType },
-  // order_item 고유번호: 링크 컬럼 — 클릭 시 order-items 검색. PATCH 대상은 order_item_id.
+  // order_item 고유번호: chip 링크 컬럼 (정방향 N=1) — order-items 검색 후 order_item_id PATCH.
   // flat_repairs.order_item_고유번호 (JOIN denormalized) 를 display 로 사용.
-  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 160, fieldType: 'link' as FieldType, renderer: linkRenderer, linkConfig: order_item_고유번호LinkConfig },
+  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_고유번호LinkListConfig },
 
   // ── 수선 내용 ──────────────────────────────────────────────────────
   { data: '수선_내용',  title: '수선 내용',  readOnly: false, width: 220, fieldType: 'longtext' as FieldType, type: 'text' },

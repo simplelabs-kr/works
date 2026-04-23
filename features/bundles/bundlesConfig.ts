@@ -1,20 +1,20 @@
-// Bundles (번들) grid configuration — Case B (직접 JOIN).
+// Bundles (번들) grid configuration — Case A (flat_bundles).
 //
-// search_bundles / count_bundles RPC 가 bundles + brands 를 직접 JOIN.
-// flat table 없음 — realtime 전파도 없다. DataGrid 가 realtimeTable 을
-// 요구하지만 source 테이블이 publication 에 없는 한 이벤트는 오지 않는다.
+// search_flat_bundles / count_flat_bundles RPC 가 flat_bundles 단일 테이블
+// 에서 조회. 트리거가 bundles + brands + order_items / repairs / rentals
+// 역참조 변경을 flat 에 동기화 (JSONB 캐시 컬럼 포함).
 //
 // ⚠️ 25K 레코드 — `initialLoadPolicy: 'require-filter'` 로 필터 없이 열면
 // 빈 그리드. 기간/브랜드 필터가 핵심.
 //
-// 스키마에서 제거된 컬럼 (formula): 구분 / 정산_상태 / 정산_기한 /
-// 생성일(STR → created_at) / 출고_체크_일시(STR). Airtable 원본이 아니며
-// RPC 계산 또는 DB 트리거로 관리한다.
+// 역방향 linklist: order_item_목록 / repair_목록 / rental_목록 — chip UI
+// (readOnly). add/remove 시 상대 테이블의 bundle_id 를 PATCH.
 
 import type { FieldType } from '@/features/works/worksTypes'
 import type { PageConfig } from '@/components/datagrid/types'
 import { checkboxRenderer } from '@/features/works/worksRenderers'
-import type { BundleItem, BundleRow } from './bundlesTypes'
+import { linkListRenderer, type LinkListConfig } from '@/features/works/linkListRenderer'
+import type { BundleItem, BundleRow, BundleChip } from './bundlesTypes'
 
 export const BUNDLES_VIEW_PAGE_KEY = 'bundles'
 
@@ -37,6 +37,32 @@ export const BUNDLES_EDITABLE_FIELDS: Record<string, string> = {
   '명세서_출력_완료': '명세서_출력_완료',
 }
 
+// 역방향 linklist 설정. cacheField 는 col.data 와 동일 (문서화 목적).
+// fkColumn 은 상대 테이블의 bundle_id — add/remove 시 PATCH 대상.
+const order_item_목록LinkListConfig: LinkListConfig = {
+  linkTable: 'order-items',
+  fkColumn: 'bundle_id',
+  cacheField: 'order_item_목록',
+  displayField: '표시명',
+  searchFields: ['제품명', '제품코드', '고유_번호'],
+}
+
+const repair_목록LinkListConfig: LinkListConfig = {
+  linkTable: 'repairs',
+  fkColumn: 'bundle_id',
+  cacheField: 'repair_목록',
+  displayField: '표시명',
+  searchFields: ['고유번호'],
+}
+
+const rental_목록LinkListConfig: LinkListConfig = {
+  linkTable: 'rentals',
+  fkColumn: 'bundle_id',
+  cacheField: 'rental_목록',
+  displayField: '표시명',
+  searchFields: ['고유번호'],
+}
+
 // 컬럼 카탈로그.
 // ⚠️ 기본 정렬 (created_at DESC) 은 RPC 측 ORDER BY 로 제공.
 export const BUNDLES_COLUMNS = [
@@ -46,6 +72,13 @@ export const BUNDLES_COLUMNS = [
   // ── 브랜드 (JOIN 유래, readOnly) ───────────────────────────
   { data: '브랜드명',   title: '브랜드',     readOnly: true, width: 140, fieldType: 'lookup' as FieldType },
   { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
+
+  // ── 역방향 linklist (chip UI, readOnly) ────────────────────
+  // flat_bundles 의 JSONB 캐시 컬럼. 트리거가 order_items / repairs / rentals
+  // 의 bundle_id 변경 시 자동 재계산. add/remove 는 상대 row 의 bundle_id 를 PATCH.
+  { data: 'order_item_목록', title: '주문 제품 목록', readOnly: true, width: 300, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_목록LinkListConfig },
+  { data: 'repair_목록',     title: '수선 목록',       readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: repair_목록LinkListConfig },
+  { data: 'rental_목록',     title: '대여 목록',       readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: rental_목록LinkListConfig },
 
   // ── 편집 가능 — text ──────────────────────────────────────
   { data: '송장번호',   title: '송장번호',   readOnly: false, width: 150, fieldType: 'text' as FieldType },
@@ -103,6 +136,18 @@ function dateOrEmpty(v: unknown): string {
   if (!v) return ''
   return String(v).slice(0, 10)
 }
+function chipArr(v: unknown): BundleChip[] {
+  if (Array.isArray(v)) return v as BundleChip[]
+  if (typeof v === 'string' && v.trim().startsWith('[')) {
+    try {
+      const p = JSON.parse(v)
+      if (Array.isArray(p)) return p as BundleChip[]
+    } catch {
+      /* ignore */
+    }
+  }
+  return []
+}
 
 // ── Item → Row 변환 ──────────────────────────────────────────────────
 
@@ -139,14 +184,19 @@ function transformBundleRow(item: BundleItem): BundleRow {
     입금_확인_일시: item.입금_확인_일시 ?? null,
     출고_체크_일시: item.출고_체크_일시 ?? null,
 
+    order_item_목록: chipArr(item.order_item_목록),
+    repair_목록: chipArr(item.repair_목록),
+    rental_목록: chipArr(item.rental_목록),
+
     brand_id: item.brand_id ?? null,
   }
 }
 
 // ── Realtime UPDATE 머지 ─────────────────────────────────────────────
 //
-// Case B — source 테이블이 publication 에 없으면 이벤트는 오지 않는다.
-// 편집 가능 필드 + 트리거가 갱신하는 타임스탬프만 동기화.
+// flat_bundles UPDATE 수신 시 모든 컬럼 (brands JOIN + JSONB 캐시 포함) 을
+// 실시간 동기화. 트리거가 order_items/repairs/rentals 의 bundle_id 변경 시
+// 대상 bundle 에 sync_flat_bundle() 을 호출하므로 캐시도 전파된다.
 function bundlesMergeRealtimeUpdate(
   prev: BundleRow,
   payloadNew: Record<string, unknown>,
@@ -155,6 +205,8 @@ function bundlesMergeRealtimeUpdate(
   return {
     ...prev,
     번들_고유번호: n.번들_고유번호 !== undefined ? str(n.번들_고유번호) : prev.번들_고유번호,
+    브랜드명: n.브랜드명 !== undefined ? str(n.브랜드명) : prev.브랜드명,
+    브랜드코드: n.브랜드코드 !== undefined ? str(n.브랜드코드) : prev.브랜드코드,
     송장번호: n.송장번호 !== undefined ? str(n.송장번호) : prev.송장번호,
     비고: n.비고 !== undefined ? str(n.비고) : prev.비고,
     명세서_url: n.명세서_url !== undefined ? str(n.명세서_url) : prev.명세서_url,
@@ -171,6 +223,9 @@ function bundlesMergeRealtimeUpdate(
     명세서_출력_완료: n.명세서_출력_완료 !== undefined ? boolFlag(n.명세서_출력_완료) : prev.명세서_출력_완료,
     입금_확인_일시: n.입금_확인_일시 !== undefined ? (n.입금_확인_일시 as string | null) : prev.입금_확인_일시,
     출고_체크_일시: n.출고_체크_일시 !== undefined ? (n.출고_체크_일시 as string | null) : prev.출고_체크_일시,
+    order_item_목록: n.order_item_목록 !== undefined ? chipArr(n.order_item_목록) : prev.order_item_목록,
+    repair_목록: n.repair_목록 !== undefined ? chipArr(n.repair_목록) : prev.repair_목록,
+    rental_목록: n.rental_목록 !== undefined ? chipArr(n.rental_목록) : prev.rental_목록,
     updated_at: n.updated_at !== undefined ? (n.updated_at as string | null) : prev.updated_at,
   }
 }
@@ -181,9 +236,8 @@ export const bundlesPageConfig: PageConfig<BundleItem, BundleRow> = {
   pageKey: BUNDLES_VIEW_PAGE_KEY,
   pageName: '번들',
   apiBase: '/api/bundles',
-  // flat table 없음 — source 테이블이 publication 에 없으면 realtime 이벤트는 오지 않음.
   realtimeChannel: 'bundles_changes',
-  realtimeTable: 'bundles',
+  realtimeTable: 'flat_bundles',
   selectOptionsTable: 'bundles',
   columns: BUNDLES_COLUMNS,
   colHeaders: BUNDLES_COL_HEADERS,
