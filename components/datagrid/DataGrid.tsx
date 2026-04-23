@@ -207,6 +207,30 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     | null
   >(null)
 
+  // Longtext 확장 팝오버 — 편집 상태에서 Space 또는 expand 아이콘 클릭으로
+  // 열리며 400x200 고정 크기. 외부 클릭 / Escape 시 자동 저장(Airtable UX).
+  // `row` 는 HOT visual row idx, `column` 은 data key.
+  const expandEditorRef = useRef<HTMLDivElement>(null)
+  const expandTextareaRef = useRef<HTMLTextAreaElement>(null)
+  const [expandEditor, setExpandEditor] = useState<
+    | {
+        top: number
+        left: number
+        row: number
+        col: number
+        column: string
+        initialValue: string
+      }
+    | null
+  >(null)
+
+  // Longtext 셀 선택 시 우측 상단에 뜨는 ↗ expand 아이콘 위치.
+  // afterSelection / afterDeselect / 스크롤 훅에서 갱신.
+  const [longtextExpandIcon, setLongtextExpandIcon] = useState<
+    | { top: number; left: number; row: number; col: number; column: string }
+    | null
+  >(null)
+
   const summaryInnerRef = useRef<HTMLDivElement>(null)
   const customScrollbarRef = useRef<HTMLDivElement>(null)
   const customScrollbarInnerRef = useRef<HTMLDivElement>(null)
@@ -618,6 +642,45 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     setSelectMenu(null)
   }
 
+  // longtext expand 팝오버 오픈. HOT 편집이 이미 열려 있으면 현재 textarea
+  // 값을 "현재 값" 으로 가져와서 (편집 중이던 내용 보존) editor 를 닫은 뒤
+  // 팝오버를 띄운다. 저장은 팝오버 닫힘 시 afterChange 경로로 흐르도록
+  // setDataAtCell 을 사용 — PATCH / undo stack 이 일관된다.
+  const openLongtextExpand = (
+    row: number,
+    col: number,
+    column: string,
+    td: HTMLElement,
+  ) => {
+    const hot = hotRef.current
+    if (!hot) return
+    // 편집 중이면 textarea 의 현재 값을 우선 사용
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const activeEditor = hot.getActiveEditor() as any
+    let initial: string
+    if (activeEditor?.TEXTAREA && activeEditor.state === 'STATE_EDITING') {
+      initial = String(activeEditor.TEXTAREA.value ?? '')
+      // revert=true → HOT 가 임시값을 커밋하지 않게 막고 우리만 저장 경로 소유
+      hot.destroyEditor(true)
+    } else {
+      const d = displayRowsRef.current[row]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      initial = d && !isGroupHeader(d) ? String((d as any)[column] ?? '') : ''
+    }
+    const rect = td.getBoundingClientRect()
+    // 팝오버는 400x200. 화면 아래로 넘치면 셀 위에 띄운다 (최소 padding 8).
+    const POPOVER_W = 400
+    const POPOVER_H = 200
+    const vh = window.innerHeight
+    const vw = window.innerWidth
+    let top = rect.bottom + 4
+    if (top + POPOVER_H + 8 > vh) top = Math.max(8, rect.top - POPOVER_H - 4)
+    let left = rect.left
+    if (left + POPOVER_W + 8 > vw) left = Math.max(8, vw - POPOVER_W - 8)
+    setExpandEditor({ top, left, row, col, column, initialValue: initial })
+    setLongtextExpandIcon(null)
+  }
+
   // 링크 팝오버에서 행을 선택했을 때 호출. display 컬럼(readOnly, JOIN 유래)
   // 을 낙관적으로 값 교체하고 FK 컬럼을 PATCH 한다. display 컬럼은
   // EDITABLE_FIELDS 에 없으므로 afterChange 의 PATCH 경로를 자연스럽게
@@ -697,6 +760,44 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
   }, [selectMenu])
+
+  // Longtext expand 팝오버 — Airtable 방식의 auto-save UX:
+  //   외부 클릭 / Escape → 값 변경이 있으면 setDataAtCell 로 커밋 (PATCH/
+  //   realtime/undo 경로 일관) 후 팝오버 닫힘.
+  // 열리면 자동 포커스 + 커서를 끝으로. (useLayoutEffect 대신 rAF 로 DOM
+  // 마운트 이후 시점을 보장.)
+  useEffect(() => {
+    if (!expandEditor) return
+    const rafId = requestAnimationFrame(() => {
+      const ta = expandTextareaRef.current
+      if (!ta) return
+      ta.focus()
+      const len = ta.value.length
+      ta.setSelectionRange(len, len)
+    })
+    const saveAndClose = () => {
+      const ta = expandTextareaRef.current
+      const newVal = ta?.value ?? expandEditor.initialValue
+      const colIdx = propToColRef.current[expandEditor.column] ?? -1
+      if (colIdx >= 0 && newVal !== expandEditor.initialValue) {
+        hotRef.current?.setDataAtCell(expandEditor.row, colIdx, newVal)
+      }
+      setExpandEditor(null)
+    }
+    const onMouseDown = (e: MouseEvent) => {
+      if (!expandEditorRef.current?.contains(e.target as Node)) saveAndClose()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); saveAndClose() }
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      cancelAnimationFrame(rafId)
+      document.removeEventListener('mousedown', onMouseDown, true)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [expandEditor])
 
   const hasData = dataLoaded.current && rows.length > 0
 
@@ -978,6 +1079,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       fixedColumnsStart: 0,
       outsideClickDeselects: (target: HTMLElement) => {
         if (selectMenuRef.current?.contains(target)) return false
+        if (expandEditorRef.current?.contains(target)) return false
         if (customScrollbarRef.current?.contains(target)) return false
         if (customVScrollbarRef.current?.contains(target)) return false
         return true
@@ -1504,8 +1606,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       //
       // 우리는 편집 시작 시점의 TD offsetWidth/Height 를 그대로 holder +
       // textarea 에 `!important` 로 박고, input 이벤트마다 재적용해 autoResize
-      // 의 후속 리사이즈를 무효화한다. longtext/date 는 위에서 이미 처리했고,
-      // select/checkbox 는 editor:false 라 여기 도달하지 않는다.
+      // 의 후속 리사이즈를 무효화한다. longtext 는 아래로 확장 — short row
+      // height(32px) × 4.5 = 144px 고정.
+      // 선택/체크박스는 editor:false 라 여기 도달하지 않는다.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const editor = hotRef.current?.getActiveEditor() as any
       const textarea: HTMLTextAreaElement | undefined = editor?.TEXTAREA
@@ -1514,7 +1617,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const td = hotRef.current?.getCell(row, col, true) as HTMLElement | null
       if (!td) return
       const w = td.offsetWidth
-      const h = td.offsetHeight
+      const isLongtext = colDef.fieldType === 'longtext'
+      // longtext: short-row 4.5배 고정 높이. 그 외: 셀 높이 그대로.
+      const h = isLongtext ? ROW_HEIGHT_PX.short * 4.5 : td.offsetHeight
       const applyGeometry = () => {
         textarea.style.setProperty('width', `${w}px`, 'important')
         textarea.style.setProperty('height', `${h}px`, 'important')
@@ -1740,25 +1845,51 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // Freeze is now driven entirely by our contextMenu callbacks →
     // setFrozenCount → the dedicated useEffect that syncs fixedColumnsStart.
     // No hook plumbing required here because we dropped manualColumnFreeze.
-    // Selection → update selectedRowIndices for summary bar
-    hotRef.current.addHook('afterSelectionEnd', (r1: number, _c1: number, r2: number) => {
-      if (r1 < 0) { setSelectedRowIndices(null); return }
+    // Selection → update selectedRowIndices for summary bar + longtext ↗ icon
+    hotRef.current.addHook('afterSelectionEnd', (r1: number, c1: number, r2: number, c2: number) => {
+      if (r1 < 0) { setSelectedRowIndices(null); setLongtextExpandIcon(null); return }
       const minR = Math.min(r1, r2)
       const maxR = Math.max(r1, r2)
-      if (minR === maxR) { setSelectedRowIndices(null); return }
-      // Translate HOT visual row indices → raw-rows indices (SummaryBar
-      // reads from the raw rows array), skipping group-header rows so
-      // the summary doesn't treat synthetic headers as data.
-      const indices: number[] = []
-      for (let i = minR; i <= maxR; i++) {
-        const d = displayRowsRef.current[i]
-        if (!d || isGroupHeader(d)) continue
-        const rawIdx = rowsRef.current.findIndex(r => r.id === d.id)
-        if (rawIdx >= 0) indices.push(rawIdx)
+      if (minR === maxR) { setSelectedRowIndices(null) } else {
+        // Translate HOT visual row indices → raw-rows indices (SummaryBar
+        // reads from the raw rows array), skipping group-header rows so
+        // the summary doesn't treat synthetic headers as data.
+        const indices: number[] = []
+        for (let i = minR; i <= maxR; i++) {
+          const d = displayRowsRef.current[i]
+          if (!d || isGroupHeader(d)) continue
+          const rawIdx = rowsRef.current.findIndex(r => r.id === d.id)
+          if (rawIdx >= 0) indices.push(rawIdx)
+        }
+        setSelectedRowIndices(indices.length > 0 ? indices : null)
       }
-      setSelectedRowIndices(indices.length > 0 ? indices : null)
+      // ↗ expand icon — single longtext cell 에서만 노출.
+      const isSingle = r1 === r2 && c1 === c2
+      if (!isSingle) { setLongtextExpandIcon(null); return }
+      const d = displayRowsRef.current[r1]
+      if (!d || isGroupHeader(d)) { setLongtextExpandIcon(null); return }
+      const pi = hotRef.current?.toPhysicalColumn(c1) ?? c1
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const colDef = (effectiveColumnsRef.current as any[])[pi]
+      if (!colDef || colDef.fieldType !== 'longtext' || colDef.readOnly) {
+        setLongtextExpandIcon(null)
+        return
+      }
+      const td = hotRef.current?.getCell(r1, c1, true) as HTMLElement | null
+      if (!td) { setLongtextExpandIcon(null); return }
+      const rect = td.getBoundingClientRect()
+      setLongtextExpandIcon({
+        top: rect.top + 2,
+        left: rect.right - 22,
+        row: r1,
+        col: c1,
+        column: colDef.data,
+      })
     })
-    hotRef.current.addHook('afterDeselect', () => setSelectedRowIndices(null))
+    hotRef.current.addHook('afterDeselect', () => {
+      setSelectedRowIndices(null)
+      setLongtextExpandIcon(null)
+    })
     // Copy: overwrite clipboard with plain TSV + show toast
     hotRef.current.addHook('afterCopy', (data: (string | number | boolean | null)[][]) => {
       const tsv = data
@@ -1774,12 +1905,44 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     hotRef.current.addHook('afterScrollVertically', () => {
       const hot = hotRef.current
       if (!hot) return
+      // ↗ icon 은 fixed 좌표로 찍혀 있어 스크롤 시 셀과 어긋난다 — 숨긴다.
+      setLongtextExpandIcon(null)
       const lastVisible = hot.getLastFullyVisibleRow()
       if (lastVisible === null) return
       const total = hot.countRows()
       if (total > 0 && lastVisible >= Math.floor(total * 0.9)) {
         scrollLoadRef.current?.()
       }
+    })
+    hotRef.current.addHook('afterScrollHorizontally', () => {
+      setLongtextExpandIcon(null)
+    })
+    // Space key on a *selected* longtext cell (편집 상태 진입 전) → expand 팝오버.
+    // HOT 기본: Space 가 편집을 시작하지 않아 남는 동작. 편집 중에는
+    // textarea 가 key 를 소모하므로 이 훅은 발동하지 않음 → Space 는 공백
+    // 입력 그대로. 아이콘 클릭 / ↗ 버튼이 편집 중 expand 의 진입점이다.
+    hotRef.current.addHook('beforeKeyDown', (e: KeyboardEvent) => {
+      if (e.key !== ' ') return
+      const hot = hotRef.current
+      if (!hot) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ed = hot.getActiveEditor() as any
+      if (ed && ed.state === 'STATE_EDITING') return
+      const sel = hot.getSelectedLast()
+      if (!sel) return
+      const [r1, c1, r2, c2] = sel
+      if (r1 !== r2 || c1 !== c2 || r1 < 0) return
+      const d = displayRowsRef.current[r1]
+      if (!d || isGroupHeader(d)) return
+      const pi = hot.toPhysicalColumn(c1) ?? c1
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const colDef = (effectiveColumnsRef.current as any[])[pi]
+      if (!colDef || colDef.fieldType !== 'longtext' || colDef.readOnly) return
+      const td = hot.getCell(r1, c1, true) as HTMLElement | null
+      if (!td) return
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      openLongtextExpand(r1, c1, colDef.data, td)
     })
     return () => {
       // Disconnect any IntersectionObservers HOT registered against our
@@ -3291,6 +3454,86 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           }
           onClose={() => setLinkMenu(null)}
         />
+      )}
+
+      {/* Longtext 셀 ↗ expand 아이콘 (single-cell 선택 시) */}
+      {longtextExpandIcon && !expandEditor && (
+        <button
+          type="button"
+          aria-label="확장 편집"
+          title="확장 편집"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            const hot = hotRef.current
+            if (!hot) return
+            const td = hot.getCell(longtextExpandIcon.row, longtextExpandIcon.col, true) as HTMLElement | null
+            if (!td) return
+            openLongtextExpand(longtextExpandIcon.row, longtextExpandIcon.col, longtextExpandIcon.column, td)
+          }}
+          style={{
+            position: 'fixed',
+            top: longtextExpandIcon.top,
+            left: longtextExpandIcon.left,
+            width: 20,
+            height: 20,
+            zIndex: 9998,
+            background: '#fff',
+            border: '1px solid var(--works-focus-ring)',
+            borderRadius: 4,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+            fontSize: 11,
+            lineHeight: 1,
+            color: 'var(--works-focus-ring)',
+          }}
+        >↗</button>
+      )}
+
+      {/* Longtext expand 팝오버 (400x200, 외부 클릭/Escape → auto-save) */}
+      {expandEditor && (
+        <div
+          ref={expandEditorRef}
+          role="dialog"
+          aria-label="확장 편집"
+          style={{
+            position: 'fixed',
+            top: expandEditor.top,
+            left: expandEditor.left,
+            width: 400,
+            height: 200,
+            zIndex: 9999,
+            background: '#fff',
+            border: '1px solid var(--works-focus-ring)',
+            borderRadius: 6,
+            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+            padding: 8,
+            boxSizing: 'border-box',
+            display: 'flex',
+          }}
+        >
+          <textarea
+            ref={expandTextareaRef}
+            defaultValue={expandEditor.initialValue}
+            style={{
+              width: '100%',
+              height: '100%',
+              resize: 'none',
+              border: 'none',
+              outline: 'none',
+              fontSize: 13,
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", sans-serif',
+              lineHeight: 1.4,
+              color: '#0f172a',
+              background: 'transparent',
+              padding: 0,
+            }}
+          />
+        </div>
       )}
 
       {/* Select 컬럼 옵션 관리 모달 */}
