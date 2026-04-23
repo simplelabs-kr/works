@@ -1481,8 +1481,55 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           // picker is already shown by HOT when the editor opens, so
           // there's nothing to do here.
         }, 30)
+        return
       }
 
+      // ── 인라인 편집 geometry 강제 (Airtable UX) ──────────────────────
+      //
+      // HOT 기본 TextEditor 동작:
+      //   1) refreshDimensions() 가 textarea 를 cellWidth - padding (=16px)
+      //      좁게 만든다.
+      //   2) autoResize 플러그인이 input 이벤트마다 다시 같은 계산으로
+      //      textarea 를 덮어써서 셀보다 좁은 floating box 로 보인다.
+      //   3) handsontableInputHolder 는 top/left 만 받고 width/height 는
+      //      설정되지 않아 CSS `width:100%` 가 붙을 기준이 없다.
+      //
+      // 우리는 편집 시작 시점의 TD offsetWidth/Height 를 그대로 holder +
+      // textarea 에 `!important` 로 박고, input 이벤트마다 재적용해 autoResize
+      // 의 후속 리사이즈를 무효화한다. longtext/date 는 위에서 이미 처리했고,
+      // select/checkbox 는 editor:false 라 여기 도달하지 않는다.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const editor = hotRef.current?.getActiveEditor() as any
+      const textarea: HTMLTextAreaElement | undefined = editor?.TEXTAREA
+      const holder: HTMLElement | undefined = editor?.TEXTAREA_PARENT
+      if (!textarea || !holder) return
+      const td = hotRef.current?.getCell(row, col, true) as HTMLElement | null
+      if (!td) return
+      const w = td.offsetWidth
+      const h = td.offsetHeight
+      const applyGeometry = () => {
+        textarea.style.setProperty('width', `${w}px`, 'important')
+        textarea.style.setProperty('height', `${h}px`, 'important')
+        textarea.style.setProperty('min-width', `${w}px`, 'important')
+        textarea.style.setProperty('min-height', `${h}px`, 'important')
+        textarea.style.setProperty('max-width', `${w}px`, 'important')
+        textarea.style.setProperty('max-height', `${h}px`, 'important')
+        holder.style.setProperty('width', `${w}px`, 'important')
+        holder.style.setProperty('height', `${h}px`, 'important')
+      }
+      applyGeometry()
+      // autoResize 는 input 이벤트에 걸려 textarea 를 다시 계산 — 매 입력마다
+      // 우리 값으로 덮어써 single-line geometry 를 유지한다.
+      // HOT 는 textarea 인스턴스를 편집 세션 간 재사용 → 이전 세션의 리스너가
+      // 남아 리크 되지 않도록 textarea 에 stash 한 이전 핸들러를 먼저 제거한다.
+      // (HOT TS 타입에는 afterFinishEditing 훅이 없어 편집 종료 이벤트로
+      // 정리할 수 없어 이 방식을 택함.)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const prev = (textarea as any).__inlineGeometryHandler as (() => void) | undefined
+      if (prev) textarea.removeEventListener('input', prev)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(textarea as any).__inlineGeometryHandler = applyGeometry
+      textarea.addEventListener('input', applyGeometry)
     })
     // select 컬럼: 첫 클릭=선택, 두 번째 클릭=드롭다운 오픈
     // beforeOnCellMouseDown에서 클릭 전 선택 상태를 캡처
