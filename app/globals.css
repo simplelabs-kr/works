@@ -251,15 +251,18 @@ body {
   accent-color: var(--works-focus-ring);
 }
 
-/* 편집 input — 위치/크기는 HOT 가 .handsontableInputHolder 에 부여한다.
-   우리는 input 자체를 holder 에 꽉 채우고 (width/height 100%) 셀과 동일한
-   좌우 여백(padding: 0 8px) 과 single-line 표시 규약을 강제한다.
-   - box-sizing:border-box → padding 이 input 폭을 벗어나지 않게 고정
-   - white-space:nowrap + overflow:hidden → 긴 텍스트도 줄바꿈 없이 한 줄 유지
-     (커서는 좌우 스크롤로 이동 — Airtable 텍스트 편집 UX 와 동일).
+/* 편집 input — Airtable 스타일 인라인 편집.
+   HOT 기본 CSS 는 `.handsontableInput` 에 `box-shadow: 0 0 0 2px #5292F7
+   inset` 을 넣어 편집 시 파란 "플로팅 박스" 가 셀 위에 뜬 것처럼 보인다.
+   우리는 이 그림자를 제거하고 input 을 셀에 완전히 겹쳐 인라인 편집으로
+   보이게 한다.
+   - 그림자/테두리 모두 제거 → 셀 자체의 outline 만 편집 강조 역할
+   - width/height 100% + box-sizing:border-box → 셀과 정확히 동일 크기
+   - padding/line-height/font → 셀(td) 렌더 값과 동일 → 진입 시 텍스트 위치 유지
+   - white-space:nowrap + overflow:hidden → single-line ellipsis UX
    모든 HOT 기본 editor 가 textarea 지만 텍스트 컬럼은 전부 single-line 이라
-   multi-line wrap 이 불필요하다. 향후 multi-line 컬럼이 필요하면 해당
-   컬럼의 editor 에 별도 className 을 부여해 예외 처리한다. */
+   multi-line wrap 이 불필요하다. 향후 multi-line 컬럼은 editor 에 별도
+   className 을 부여해 예외 처리. */
 .handsontable .handsontableInput {
   font-size: 13px !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif !important;
@@ -275,13 +278,24 @@ body {
   white-space: nowrap !important;
   overflow: hidden !important;
   resize: none !important;
+  /* 핵심: HOT 기본 inset box-shadow 제거 — 플로팅 박스 느낌의 원인 */
+  box-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
 }
 
-/* HOT 은 .handsontableInputHolder 를 셀 좌상단에 절대 배치하고 내부
-   textarea 를 확장한다. holder 자체 크기를 셀에 맞추지 않으면 width:100%
-   가 계산되지 않으므로 함께 강제. */
+.handsontable .handsontableInput:focus {
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* HOT 은 .handsontableInputHolder 를 셀 좌상단에 절대 배치한다. holder 가
+   셀 크기에 맞아야 내부 input 의 width/height 100% 가 셀과 일치한다. */
 .handsontable .handsontableInputHolder {
   box-sizing: border-box !important;
+  background: transparent !important;
 }
 
 /* 편집 중 셀 */
