@@ -16,6 +16,7 @@ export type FieldType =
   | 'image'
   | 'attachment'
   | 'link'
+  | 'linklist'
   | 'lookup'
 
 export type ImageItem = { url: string; name: string }

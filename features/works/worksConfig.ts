@@ -158,6 +158,8 @@ export function getFieldTypeIcon(type: FieldType): string {
     attachment: svg(`<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>`),
     // Link2 — link
     link:     svg(`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>`),
+    // Link2 + small dot cluster — linklist (bidirectional chip list)
+    linklist: svg(`<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/><circle cx="20" cy="4" r="1.5" fill="${C}" stroke="none"/>`),
     // ArrowUpRight — lookup (readOnly + JOIN 파생 text)
     lookup:   svg(`<path d="M7 7h10v10"/><path d="m7 17 10-10"/>`),
   }
