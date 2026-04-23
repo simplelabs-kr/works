@@ -136,7 +136,9 @@ export function getFieldTypeIcon(type: FieldType): string {
 
   const icons: Record<FieldType, string> = {
     // 'A' glyph — short (single-line) text. Airtable-style.
-    text:     `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="7" y="11" font-size="12" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="${C}" stroke="none" text-anchor="middle">A</text></svg>`,
+    // dominant-baseline="central" 로 글리프를 SVG 박스 수직 중앙에 위치시킴
+    // (기본 baseline 렌더는 위쪽으로 치우쳐 보임).
+    text:     `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="7" y="7" font-size="12" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="${C}" stroke="none" text-anchor="middle" dominant-baseline="central">A</text></svg>`,
     // AlignLeft — long text
     longtext: svg(`<path d="M21 6H3"/><path d="M17 12H3"/><path d="M21 18H3"/>`),
     // Hash — number / numeric / integer
@@ -148,7 +150,8 @@ export function getFieldTypeIcon(type: FieldType): string {
     // ChevronDown inside circle border — select
     select:   svg(`<circle cx="12" cy="12" r="10"/><polyline points="8 10 12 14 16 10"/>`),
     // 'fx' glyph — formula / derived (italic f + smaller x)
-    formula:  `<svg width="14" height="13" viewBox="0 0 16 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="11" font-size="11" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic">f</text><text x="6" y="11" font-size="9" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic">x</text></svg>`,
+    // dominant-baseline="central" 로 SVG 박스 수직 중앙 정렬.
+    formula:  `<svg width="14" height="13" viewBox="0 0 16 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="1" y="7" font-size="11" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic" dominant-baseline="central">f</text><text x="7" y="8" font-size="9" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic" dominant-baseline="central">x</text></svg>`,
     // Image (lucide)
     image:    svg(`<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>`),
     // Paperclip — attachment
