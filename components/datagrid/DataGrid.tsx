@@ -1348,6 +1348,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       textSpan.style.textOverflow = 'ellipsis'
       textSpan.style.whiteSpace = 'nowrap'
       textSpan.style.minWidth = '0'
+      // 폰트 ascender/descender 비대칭으로 text 가 여전히 1px 위쪽 치우침 —
+      // transform 으로 1px 내려 아이콘과 시각 중앙 맞춤 (아이콘은 유지).
+      textSpan.style.transform = 'translateY(1px)'
       textSpan.textContent = div.textContent ?? ''
       div.textContent = ''
       div.style.display = 'inline-flex'
