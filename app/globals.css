@@ -251,10 +251,15 @@ body {
   accent-color: var(--works-focus-ring);
 }
 
-/* 편집 input - 위치/크기는 HOT 내부 계산에 맡김.
-   셀의 `padding: 0 8px` 와 동일한 좌우 여백을 input 에도 적용해야
-   편집 진입 시 텍스트가 좌상단으로 붙지 않는다 (Airtable UX 와 동일).
-   box-sizing:border-box 로 padding 이 input 폭을 벗어나지 않게 고정. */
+/* 편집 input — 위치/크기는 HOT 가 .handsontableInputHolder 에 부여한다.
+   우리는 input 자체를 holder 에 꽉 채우고 (width/height 100%) 셀과 동일한
+   좌우 여백(padding: 0 8px) 과 single-line 표시 규약을 강제한다.
+   - box-sizing:border-box → padding 이 input 폭을 벗어나지 않게 고정
+   - white-space:nowrap + overflow:hidden → 긴 텍스트도 줄바꿈 없이 한 줄 유지
+     (커서는 좌우 스크롤로 이동 — Airtable 텍스트 편집 UX 와 동일).
+   모든 HOT 기본 editor 가 textarea 지만 텍스트 컬럼은 전부 single-line 이라
+   multi-line wrap 이 불필요하다. 향후 multi-line 컬럼이 필요하면 해당
+   컬럼의 editor 에 별도 className 을 부여해 예외 처리한다. */
 .handsontable .handsontableInput {
   font-size: 13px !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif !important;
@@ -262,8 +267,21 @@ body {
   background: #ffffff !important;
   caret-color: var(--works-focus-ring) !important;
   box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: var(--grid-row-h) !important;
   padding: 0 8px !important;
   line-height: var(--grid-row-h) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  resize: none !important;
+}
+
+/* HOT 은 .handsontableInputHolder 를 셀 좌상단에 절대 배치하고 내부
+   textarea 를 확장한다. holder 자체 크기를 셀에 맞추지 않으면 width:100%
+   가 계산되지 않으므로 함께 강제. */
+.handsontable .handsontableInputHolder {
+  box-sizing: border-box !important;
 }
 
 /* 편집 중 셀 */
