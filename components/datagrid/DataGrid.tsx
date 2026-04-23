@@ -207,18 +207,18 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     | null
   >(null)
 
-  // Longtext 확장 팝오버 — 편집 상태에서 Space 또는 expand 아이콘 클릭으로
-  // 열리며 400x200 고정 크기. 외부 클릭 / Escape 시 자동 저장(Airtable UX).
-  // `row` 는 HOT visual row idx, `column` 은 data key.
+  // Longtext 확장 모달 — 화면 중앙 고정(600×400), backdrop 포함.
+  // Space 또는 ↗ 아이콘으로 진입. 저장 버튼 / Cmd(Ctrl)+Enter → setDataAtCell
+  // 커밋, 취소 / Escape → 변경 버림. `row` 는 HOT visual row idx,
+  // `column` 은 data key.
   const expandEditorRef = useRef<HTMLDivElement>(null)
   const expandTextareaRef = useRef<HTMLTextAreaElement>(null)
   const [expandEditor, setExpandEditor] = useState<
     | {
-        top: number
-        left: number
         row: number
         col: number
         column: string
+        title: string
         initialValue: string
       }
     | null
@@ -226,8 +226,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
   // Longtext 셀 선택 시 우측 상단에 뜨는 ↗ expand 아이콘 위치.
   // afterSelection / afterDeselect / 스크롤 훅에서 갱신.
+  const longtextExpandIconRef = useRef<HTMLButtonElement>(null)
   const [longtextExpandIcon, setLongtextExpandIcon] = useState<
-    | { top: number; left: number; row: number; col: number; column: string }
+    | { top: number; left: number; row: number; col: number; column: string; title: string }
     | null
   >(null)
 
@@ -642,15 +643,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     setSelectMenu(null)
   }
 
-  // longtext expand 팝오버 오픈. HOT 편집이 이미 열려 있으면 현재 textarea
+  // longtext expand 모달 오픈. HOT 편집이 이미 열려 있으면 현재 textarea
   // 값을 "현재 값" 으로 가져와서 (편집 중이던 내용 보존) editor 를 닫은 뒤
-  // 팝오버를 띄운다. 저장은 팝오버 닫힘 시 afterChange 경로로 흐르도록
-  // setDataAtCell 을 사용 — PATCH / undo stack 이 일관된다.
+  // 모달을 띄운다. 저장은 모달 "저장" 버튼에서 setDataAtCell 로 흐르며
+  // afterChange 경로에서 PATCH / undo / realtime 이 일관된다.
   const openLongtextExpand = (
     row: number,
     col: number,
     column: string,
-    td: HTMLElement,
+    title: string,
   ) => {
     const hot = hotRef.current
     if (!hot) return
@@ -667,17 +668,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       initial = d && !isGroupHeader(d) ? String((d as any)[column] ?? '') : ''
     }
-    const rect = td.getBoundingClientRect()
-    // 팝오버는 400x200. 화면 아래로 넘치면 셀 위에 띄운다 (최소 padding 8).
-    const POPOVER_W = 400
-    const POPOVER_H = 200
-    const vh = window.innerHeight
-    const vw = window.innerWidth
-    let top = rect.bottom + 4
-    if (top + POPOVER_H + 8 > vh) top = Math.max(8, rect.top - POPOVER_H - 4)
-    let left = rect.left
-    if (left + POPOVER_W + 8 > vw) left = Math.max(8, vw - POPOVER_W - 8)
-    setExpandEditor({ top, left, row, col, column, initialValue: initial })
+    setExpandEditor({ row, col, column, title, initialValue: initial })
     setLongtextExpandIcon(null)
   }
 
@@ -761,11 +752,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     return () => document.removeEventListener('mousedown', handler, true)
   }, [selectMenu])
 
-  // Longtext expand 팝오버 — Airtable 방식의 auto-save UX:
-  //   외부 클릭 / Escape → 값 변경이 있으면 setDataAtCell 로 커밋 (PATCH/
-  //   realtime/undo 경로 일관) 후 팝오버 닫힘.
-  // 열리면 자동 포커스 + 커서를 끝으로. (useLayoutEffect 대신 rAF 로 DOM
-  // 마운트 이후 시점을 보장.)
+  // Longtext expand 모달 — 열리면 자동 포커스 + 커서 끝으로.
+  // Escape → 취소 (변경 버림), Cmd/Ctrl+Enter → 저장.
+  // (backdrop 클릭 / 버튼 클릭은 아래 렌더 블록의 React 핸들러에서 처리)
   useEffect(() => {
     if (!expandEditor) return
     const rafId = requestAnimationFrame(() => {
@@ -775,7 +764,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const len = ta.value.length
       ta.setSelectionRange(len, len)
     })
-    const saveAndClose = () => {
+    const commit = () => {
       const ta = expandTextareaRef.current
       const newVal = ta?.value ?? expandEditor.initialValue
       const colIdx = propToColRef.current[expandEditor.column] ?? -1
@@ -784,17 +773,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
       setExpandEditor(null)
     }
-    const onMouseDown = (e: MouseEvent) => {
-      if (!expandEditorRef.current?.contains(e.target as Node)) saveAndClose()
-    }
+    const cancel = () => setExpandEditor(null)
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); saveAndClose() }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); return }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        commit()
+      }
     }
-    document.addEventListener('mousedown', onMouseDown, true)
     document.addEventListener('keydown', onKeyDown)
     return () => {
       cancelAnimationFrame(rafId)
-      document.removeEventListener('mousedown', onMouseDown, true)
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [expandEditor])
@@ -1080,6 +1069,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       outsideClickDeselects: (target: HTMLElement) => {
         if (selectMenuRef.current?.contains(target)) return false
         if (expandEditorRef.current?.contains(target)) return false
+        if (longtextExpandIconRef.current?.contains(target)) return false
         if (customScrollbarRef.current?.contains(target)) return false
         if (customVScrollbarRef.current?.contains(target)) return false
         return true
@@ -1884,6 +1874,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         row: r1,
         col: c1,
         column: colDef.data,
+        title: colDef.title ?? colDef.data,
       })
     })
     hotRef.current.addHook('afterDeselect', () => {
@@ -1938,11 +1929,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const colDef = (effectiveColumnsRef.current as any[])[pi]
       if (!colDef || colDef.fieldType !== 'longtext' || colDef.readOnly) return
-      const td = hot.getCell(r1, c1, true) as HTMLElement | null
-      if (!td) return
       e.preventDefault()
       e.stopImmediatePropagation()
-      openLongtextExpand(r1, c1, colDef.data, td)
+      openLongtextExpand(r1, c1, colDef.data, colDef.title ?? colDef.data)
     })
     return () => {
       // Disconnect any IntersectionObservers HOT registered against our
@@ -3456,20 +3445,26 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         />
       )}
 
-      {/* Longtext 셀 ↗ expand 아이콘 (single-cell 선택 시) */}
+      {/* Longtext 셀 ↗ expand 아이콘 (single-cell 선택 시).
+          onClick 사용 — onMouseDown 은 HOT 의 document-level mousedown
+          핸들러보다 늦게 발동해 deselect → 버튼 unmount 경쟁이 있었다.
+          outsideClickDeselects 에 아이콘 ref 를 예외 처리해두면 click
+          이벤트까지 버튼이 살아 있다. */}
       {longtextExpandIcon && !expandEditor && (
         <button
+          ref={longtextExpandIconRef}
           type="button"
           aria-label="확장 편집"
-          title="확장 편집"
-          onMouseDown={(e) => {
+          title="확장 편집 (Space)"
+          onClick={(e) => {
             e.preventDefault()
             e.stopPropagation()
-            const hot = hotRef.current
-            if (!hot) return
-            const td = hot.getCell(longtextExpandIcon.row, longtextExpandIcon.col, true) as HTMLElement | null
-            if (!td) return
-            openLongtextExpand(longtextExpandIcon.row, longtextExpandIcon.col, longtextExpandIcon.column, td)
+            openLongtextExpand(
+              longtextExpandIcon.row,
+              longtextExpandIcon.col,
+              longtextExpandIcon.column,
+              longtextExpandIcon.title,
+            )
           }}
           style={{
             position: 'fixed',
@@ -3494,47 +3489,120 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         >↗</button>
       )}
 
-      {/* Longtext expand 팝오버 (400x200, 외부 클릭/Escape → auto-save) */}
-      {expandEditor && (
-        <div
-          ref={expandEditorRef}
-          role="dialog"
-          aria-label="확장 편집"
-          style={{
-            position: 'fixed',
-            top: expandEditor.top,
-            left: expandEditor.left,
-            width: 400,
-            height: 200,
-            zIndex: 9999,
-            background: '#fff',
-            border: '1px solid var(--works-focus-ring)',
-            borderRadius: 6,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-            padding: 8,
-            boxSizing: 'border-box',
-            display: 'flex',
-          }}
-        >
-          <textarea
-            ref={expandTextareaRef}
-            defaultValue={expandEditor.initialValue}
+      {/* Longtext expand 모달 (중앙 고정, 600×400, backdrop).
+          저장: 버튼 클릭 / Cmd(Ctrl)+Enter.
+          취소: 버튼 클릭 / Escape / backdrop 클릭. */}
+      {expandEditor && (() => {
+        const commit = () => {
+          const ta = expandTextareaRef.current
+          const newVal = ta?.value ?? expandEditor.initialValue
+          const colIdx = propToColRef.current[expandEditor.column] ?? -1
+          if (colIdx >= 0 && newVal !== expandEditor.initialValue) {
+            hotRef.current?.setDataAtCell(expandEditor.row, colIdx, newVal)
+          }
+          setExpandEditor(null)
+        }
+        const cancel = () => setExpandEditor(null)
+        return (
+          <div
+            role="dialog"
+            aria-modal
+            aria-label={`${expandEditor.title} 편집`}
             style={{
-              width: '100%',
-              height: '100%',
-              resize: 'none',
-              border: 'none',
-              outline: 'none',
-              fontSize: 13,
-              fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", sans-serif',
-              lineHeight: 1.4,
-              color: '#0f172a',
-              background: 'transparent',
-              padding: 0,
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(15, 23, 42, 0.35)',
+              zIndex: 10000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-          />
-        </div>
-      )}
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) cancel()
+            }}
+          >
+            <div
+              ref={expandEditorRef}
+              className="bg-white rounded-[8px] shadow-[0_12px_32px_rgba(0,0,0,0.16)]"
+              style={{ width: 600, height: 400, display: 'flex', flexDirection: 'column' }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderBottom: '1px solid #E5E7EB',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: '#0f172a',
+                }}
+              >
+                {expandEditor.title}
+              </div>
+              {/* Body */}
+              <div style={{ flex: 1, padding: 16, display: 'flex' }}>
+                <textarea
+                  ref={expandTextareaRef}
+                  defaultValue={expandEditor.initialValue}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    resize: 'none',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: 6,
+                    outline: 'none',
+                    fontSize: 13,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", sans-serif',
+                    lineHeight: 1.5,
+                    color: '#0f172a',
+                    background: '#fff',
+                    padding: '10px 12px',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+              {/* Footer */}
+              <div
+                style={{
+                  padding: '12px 16px',
+                  borderTop: '1px solid #E5E7EB',
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={cancel}
+                  style={{
+                    padding: '6px 14px',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: 6,
+                    background: '#fff',
+                    color: '#374151',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >취소</button>
+                <button
+                  type="button"
+                  onClick={commit}
+                  style={{
+                    padding: '6px 14px',
+                    border: '1px solid var(--works-focus-ring)',
+                    borderRadius: 6,
+                    background: 'var(--works-focus-ring)',
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                  }}
+                >저장</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Select 컬럼 옵션 관리 모달 */}
       {fieldOptionsEditor && (
