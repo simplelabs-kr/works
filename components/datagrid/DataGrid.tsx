@@ -1448,16 +1448,24 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const colDef = (effectiveColumnsRef.current as any[])[pi]
       if (!colDef) return
 
-      if (colDef.fieldType === 'longtext') {
+      // longtext: 별도 확장(80px) 대신 셀 크기 유지 + 내부 wrap/scroll.
+      // className 만 적용하고 inline geometry 블록으로 계속 흐른다. HOT 가
+      // textarea 인스턴스를 재사용하므로 기본값으로 reset 후 longtext 에만
+      // 다시 붙인다.
+      {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const editor = hotRef.current?.getActiveEditor() as any
-        const textarea = editor?.TEXTAREA
-        if (textarea) {
-          textarea.style.minHeight = '80px'
-          textarea.style.whiteSpace = 'pre-wrap'
-          textarea.style.resize = 'vertical'
+        const ed = hotRef.current?.getActiveEditor() as any
+        const ta: HTMLTextAreaElement | undefined = ed?.TEXTAREA
+        if (ta) {
+          ta.classList.remove('handsontableInput--longtext')
+          // 이전 세션에서 남았을 수 있는 minHeight/resize 스타일 clear
+          ta.style.minHeight = ''
+          ta.style.whiteSpace = ''
+          ta.style.resize = ''
+          if (colDef.fieldType === 'longtext') {
+            ta.classList.add('handsontableInput--longtext')
+          }
         }
-        return
       }
 
       if (colDef.type === 'date') {
