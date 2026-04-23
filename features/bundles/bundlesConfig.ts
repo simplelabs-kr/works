@@ -136,17 +136,36 @@ function dateOrEmpty(v: unknown): string {
   if (!v) return ''
   return String(v).slice(0, 10)
 }
-function chipArr(v: unknown): BundleChip[] {
-  if (Array.isArray(v)) return v as BundleChip[]
-  if (typeof v === 'string' && v.trim().startsWith('[')) {
+// JSONB 배열을 chip 객체로 정규화.
+// DB 저장 형태: [{ id, <displayField>, <secondaryField?>, ... }]
+// renderer 기대 형태: [{ id, display, secondary? }]
+// linklist 설정의 displayField / secondaryField 로 매핑한다.
+function chipArr(v: unknown, config: LinkListConfig): BundleChip[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any[] = []
+  if (Array.isArray(v)) {
+    raw = v
+  } else if (typeof v === 'string' && v.trim().startsWith('[')) {
     try {
       const p = JSON.parse(v)
-      if (Array.isArray(p)) return p as BundleChip[]
+      if (Array.isArray(p)) raw = p
     } catch {
       /* ignore */
     }
   }
-  return []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return raw.map((r: any) => {
+    const display = r?.[config.displayField] ?? r?.display ?? ''
+    const chip: BundleChip = {
+      id: String(r?.id ?? ''),
+      display: String(display),
+    }
+    if (config.secondaryField) {
+      const sec = r?.[config.secondaryField] ?? r?.secondary
+      if (sec != null && sec !== '') chip.secondary = String(sec)
+    }
+    return chip
+  })
 }
 
 // ── Item → Row 변환 ──────────────────────────────────────────────────
@@ -184,9 +203,9 @@ function transformBundleRow(item: BundleItem): BundleRow {
     입금_확인_일시: item.입금_확인_일시 ?? null,
     출고_체크_일시: item.출고_체크_일시 ?? null,
 
-    order_item_목록: chipArr(item.order_item_목록),
-    repair_목록: chipArr(item.repair_목록),
-    rental_목록: chipArr(item.rental_목록),
+    order_item_목록: chipArr(item.order_item_목록, order_item_목록LinkListConfig),
+    repair_목록: chipArr(item.repair_목록, repair_목록LinkListConfig),
+    rental_목록: chipArr(item.rental_목록, rental_목록LinkListConfig),
 
     brand_id: item.brand_id ?? null,
   }
@@ -223,9 +242,9 @@ function bundlesMergeRealtimeUpdate(
     명세서_출력_완료: n.명세서_출력_완료 !== undefined ? boolFlag(n.명세서_출력_완료) : prev.명세서_출력_완료,
     입금_확인_일시: n.입금_확인_일시 !== undefined ? (n.입금_확인_일시 as string | null) : prev.입금_확인_일시,
     출고_체크_일시: n.출고_체크_일시 !== undefined ? (n.출고_체크_일시 as string | null) : prev.출고_체크_일시,
-    order_item_목록: n.order_item_목록 !== undefined ? chipArr(n.order_item_목록) : prev.order_item_목록,
-    repair_목록: n.repair_목록 !== undefined ? chipArr(n.repair_목록) : prev.repair_목록,
-    rental_목록: n.rental_목록 !== undefined ? chipArr(n.rental_목록) : prev.rental_목록,
+    order_item_목록: n.order_item_목록 !== undefined ? chipArr(n.order_item_목록, order_item_목록LinkListConfig) : prev.order_item_목록,
+    repair_목록: n.repair_목록 !== undefined ? chipArr(n.repair_목록, repair_목록LinkListConfig) : prev.repair_목록,
+    rental_목록: n.rental_목록 !== undefined ? chipArr(n.rental_목록, rental_목록LinkListConfig) : prev.rental_목록,
     updated_at: n.updated_at !== undefined ? (n.updated_at as string | null) : prev.updated_at,
   }
 }
