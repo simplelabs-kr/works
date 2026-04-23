@@ -1335,9 +1335,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       if (!div) return
       const icon = document.createElement('span')
       icon.className = 'field-type-icon'
-      icon.style.cssText = 'display:inline-flex;align-items:center;margin-right:6px;flex-shrink:0;'
+      icon.style.cssText = 'display:inline-flex;align-items:center;height:100%;margin-right:6px;flex-shrink:0;'
       icon.innerHTML = getFieldTypeIcon(colDef.fieldType as FieldType)
       const textSpan = document.createElement('span')
+      // text span 도 flex + height:100% 로 내부 글리프를 셀 수직 중앙에 정렬.
+      // line-height:1 만 주면 ascender/descender 비대칭 때문에 text 가
+      // 시각적으로 위쪽에 치우쳐 보임.
+      textSpan.style.display = 'flex'
+      textSpan.style.alignItems = 'center'
+      textSpan.style.height = '100%'
       textSpan.style.overflow = 'hidden'
       textSpan.style.textOverflow = 'ellipsis'
       textSpan.style.whiteSpace = 'nowrap'
