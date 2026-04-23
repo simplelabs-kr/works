@@ -720,7 +720,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       })
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
+        const err = new Error(body.error ?? `PATCH 실패 (${res.status})`) as Error & { status?: number }
+        err.status = res.status
+        throw err
       }
       // 성공 시 flat_{table} 트리거가 나머지 denormalized 컬럼(브랜드명 등)
       // 을 실시간으로 전파하므로 추가 refetch 불필요.
@@ -736,6 +738,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
             : r,
         ),
       )
+      // 403 (편집 불가 필드) 는 readOnly 정책 위반 — 토스트 없이 롤백만.
+      const status = (e as { status?: number })?.status
+      if (status === 403) return
       showToast({
         type: 'error',
         message: e instanceof Error ? e.message : '링크 업데이트 실패',
@@ -1506,8 +1511,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
                 ? { ...r, ...rollbackDerived, [prop as string]: rollbackPrimary }
                 : r
             ))
-            // Error toast
-            showToast({ message: '수정에 실패했습니다', type: 'error' }, 2000)
+            // Error toast — 403 (편집 불가 필드) 는 readOnly 정책 위반이라
+            // 토스트 없이 롤백만 수행한다.
+            if (res.status !== 403) {
+              showToast({ message: '수정에 실패했습니다', type: 'error' }, 2000)
+            }
           }
         })()
       }

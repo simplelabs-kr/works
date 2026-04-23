@@ -58,7 +58,6 @@ body {
   --works-header-bg: #fafbfc;
   --works-header-hover: #f1f3f6;
   --works-cell: #ffffff;
-  --works-readonly: #f6f7f9;
   --works-row-hover: #f1f2f4;
   --works-row-focus: #ecf2f9;
   --works-range: #e2ebf6;
@@ -136,7 +135,6 @@ body {
 }
 
 .handsontable td.htDimmed {
-  background-color: var(--works-readonly) !important;
   cursor: default;
 }
 
