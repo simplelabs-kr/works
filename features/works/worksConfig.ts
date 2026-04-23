@@ -129,12 +129,14 @@ export const COL_HEADERS: string[] = (COLUMNS as any[]).map((c) => c.title ?? ''
 // 크기에서 잘 보이도록 맞춤.
 
 export function getFieldTypeIcon(type: FieldType): string {
+  // 색상은 한 곳에서 관리 — 모든 fieldType 아이콘이 동일한 톤을 공유.
+  const C = '#4B5563' // gray-600 (이전: #9CA3AF gray-400 — 가독성 개선)
   const svg = (paths: string, sw = 2) =>
-    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="#9CA3AF" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
+    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="${C}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`
 
   const icons: Record<FieldType, string> = {
-    // Type — text
-    text:     svg(`<polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/>`),
+    // 'A' glyph — short (single-line) text. Airtable-style.
+    text:     `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="7" y="11" font-size="12" font-weight="700" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" fill="${C}" stroke="none" text-anchor="middle">A</text></svg>`,
     // AlignLeft — long text
     longtext: svg(`<path d="M21 6H3"/><path d="M17 12H3"/><path d="M21 18H3"/>`),
     // Hash — number / numeric / integer
@@ -143,10 +145,10 @@ export function getFieldTypeIcon(type: FieldType): string {
     date:     svg(`<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>`),
     // CheckSquare — checkbox / boolean
     checkbox: svg(`<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`),
-    // ChevronDown — select
-    select:   svg(`<polyline points="6 9 12 15 18 9"/>`, 2.2),
-    // ƒ — formula / derived
-    formula:  `<svg width="13" height="13" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="2" y="11" font-size="12" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="#9CA3AF" stroke="none" font-style="italic">ƒ</text></svg>`,
+    // ChevronDown inside circle border — select
+    select:   svg(`<circle cx="12" cy="12" r="10"/><polyline points="8 10 12 14 16 10"/>`),
+    // 'fx' glyph — formula / derived (italic f + smaller x)
+    formula:  `<svg width="14" height="13" viewBox="0 0 16 14" fill="none" xmlns="http://www.w3.org/2000/svg"><text x="0" y="11" font-size="11" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic">f</text><text x="6" y="11" font-size="9" font-weight="600" font-family="Georgia, 'Times New Roman', serif" fill="${C}" stroke="none" font-style="italic">x</text></svg>`,
     // Image (lucide)
     image:    svg(`<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>`),
     // Paperclip — attachment
