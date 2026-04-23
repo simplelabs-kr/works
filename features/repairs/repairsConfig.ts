@@ -127,16 +127,17 @@ export const REPAIRS_COLUMNS = [
   { data: '전_중량',    title: '전 중량',    readOnly: false, width: 90,  fieldType: 'number'   as FieldType, type: 'numeric' },
 
   // ── 비용 ───────────────────────────────────────────────────────────
-  // 수선_비용: repair_costs 룩업에서 자동 산출되는 값 — 읽기 전용
-  { data: '수선_비용',       title: '수선 비용',       readOnly: true,  width: 110, fieldType: 'number' as FieldType },
+  // 수선_비용: repair_costs 룩업에서 자동 산출되는 계산값 — formula
+  { data: '수선_비용',       title: '수선 비용',       readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
   { data: '수선_비용_조정',  title: '수선 비용 조정',  readOnly: false, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
-  // 최종_수선_비용: DB formula (수선_비용 + 수선_비용_조정) — 읽기 전용
-  { data: '최종_수선_비용',  title: '최종 수선 비용',  readOnly: true,  width: 120, fieldType: 'number' as FieldType },
+  // 최종_수선_비용: DB formula (수선_비용 + 수선_비용_조정) — formula
+  { data: '최종_수선_비용',  title: '최종 수선 비용',  readOnly: true,  width: 120, fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
   { data: '비용_조정_사유',  title: '비용 조정 사유',  readOnly: false, width: 180, fieldType: 'longtext' as FieldType, type: 'text' },
 
   // ── 원래 각인 (참고용) ─────────────────────────────────────────────
-  { data: '원래_각인_문구', title: '원래 각인 문구', readOnly: true, width: 140, fieldType: 'text' as FieldType },
-  { data: '원래_각인_폰트', title: '원래 각인 폰트', readOnly: true, width: 100, fieldType: 'text' as FieldType },
+  // order_items 에서 JOIN 해온 원본 값 (참조용) — lookup
+  { data: '원래_각인_문구', title: '원래 각인 문구', readOnly: true, width: 140, fieldType: 'lookup' as FieldType },
+  { data: '원래_각인_폰트', title: '원래 각인 폰트', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
 
   // ── 스케줄 / 위치 ──────────────────────────────────────────────────
   { data: '수선시작일', title: '수선시작일', readOnly: false, width: 110, fieldType: 'date' as FieldType,

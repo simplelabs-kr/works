@@ -77,9 +77,11 @@ export const COLUMNS = [
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any,
   },
-  { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'date' as FieldType },
+  // 출고예정일: 데드라인 / 생산시작일+제작_소요일 에서 workday 계산 — formula
+  { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'date' as FieldType },
   { data: '시세_g당',      title: '시세(g당)', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
-  { data: '소재비',        title: '소재비',  readOnly: true,  width: 100, fieldType: 'number'   as FieldType },
+  // 소재비: 중량 × 시세 계산값 — formula
+  { data: '소재비',        title: '소재비',  readOnly: true,  width: 100, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
   { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
@@ -88,17 +90,21 @@ export const COLUMNS = [
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
   { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '기준_중량',     title: '기준 중량', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
-  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'text' as FieldType },
-  { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 80, fieldType: 'text'     as FieldType },
+  // 허용_중량_범위 / 중량_검토: 기준_중량·중량 기반 계산 — formula
+  { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
+  { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 80, fieldType: 'formula'  as FieldType },
   { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
   { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'text'    as FieldType },
   { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'text'     as FieldType },
   { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
   { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'number' as FieldType },
-  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
-  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'text'    as FieldType, derived: true },
-  { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'text'    as FieldType, derived: true, renderer: purchaseStatusRenderer },
+  // 확정_공임: 기본_공임 + 공임_조정액 — formula
+  { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
+  // 번들_명칭: bundles JOIN 식별자 — lookup
+  { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  // derived:true → formula 아이콘
+  { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true },
+  { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
   { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'text'     as FieldType },

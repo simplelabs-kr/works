@@ -65,13 +65,14 @@ export const PRODUCTS_COLUMNS = [
   { data: '제품명',   title: '제품명',   readOnly: false, width: 220, fieldType: 'text' as FieldType },
 
   // ── 브랜드 연결 ────────────────────────────────────────────────────
-  { data: '브랜드명', title: '브랜드',   readOnly: true,  width: 140, fieldType: 'text' as FieldType },
+  { data: '브랜드명', title: '브랜드',   readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
 
   // ── 기본 ───────────────────────────────────────────────────────────
   { data: '카테고리', title: '카테고리', readOnly: false, width: 100, fieldType: 'select' as FieldType, renderer: 카테고리Renderer },
   { data: '발주_가능', title: '발주 가능', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '제공_중단', title: '제공 중단', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: 'parent_여부', title: '부모 여부', readOnly: true, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
+  // parent_여부: 트리거 기반 자동 산출 (자식 제품 존재 여부) — formula (output: checkbox)
+  { data: 'parent_여부', title: '부모 여부', readOnly: true, width: 80, fieldType: 'formula' as FieldType, outputType: 'checkbox', editor: false, renderer: checkboxRenderer },
 
   // ── 개발 ───────────────────────────────────────────────────────────
   { data: '개발_현황', title: '개발 현황', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 개발현황Renderer },
@@ -108,11 +109,13 @@ export const PRODUCTS_COLUMNS = [
   { data: '슬랙_thread_id', title: '슬랙 Thread ID', readOnly: false, width: 140, fieldType: 'text' as FieldType, maxLength: 100 },
 
   // JOIN 파생 — 읽기 전용. flat_products 에 물리 컬럼으로 저장되어 필터 가능.
-  { data: '가다번호_목록', title: '가다번호',     readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
-  { data: '가다위치_목록', title: '가다 위치',    readOnly: true, width: 120, fieldType: 'lookup' as FieldType },
-  { data: 'mold_개수',     title: '몰드 수',      readOnly: true, width: 80,  fieldType: 'number' as FieldType },
-  { data: 'sample_개수',   title: '샘플 수',      readOnly: true, width: 80,  fieldType: 'number' as FieldType },
-  { data: 'claim_개수',    title: '클레임 수',    readOnly: true, width: 80,  fieldType: 'number' as FieldType },
+  // *_목록: 연관 레코드 식별자 리스트 → lookup.
+  // *_개수: JOIN + COUNT 집계 (계산값) → formula.
+  { data: '가다번호_목록', title: '가다번호',     readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  { data: '가다위치_목록', title: '가다 위치',    readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  { data: 'mold_개수',     title: '몰드 수',      readOnly: true, width: 80,  fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
+  { data: 'sample_개수',   title: '샘플 수',      readOnly: true, width: 80,  fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
+  { data: 'claim_개수',    title: '클레임 수',    readOnly: true, width: 80,  fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
