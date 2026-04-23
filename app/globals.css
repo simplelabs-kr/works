@@ -251,13 +251,19 @@ body {
   accent-color: var(--works-focus-ring);
 }
 
-/* 편집 input - 위치/크기는 HOT 내부 계산에 맡김 */
+/* 편집 input - 위치/크기는 HOT 내부 계산에 맡김.
+   셀의 `padding: 0 8px` 와 동일한 좌우 여백을 input 에도 적용해야
+   편집 진입 시 텍스트가 좌상단으로 붙지 않는다 (Airtable UX 와 동일).
+   box-sizing:border-box 로 padding 이 input 폭을 벗어나지 않게 고정. */
 .handsontable .handsontableInput {
   font-size: 13px !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif !important;
   color: #0f172a !important;
   background: #ffffff !important;
   caret-color: var(--works-focus-ring) !important;
+  box-sizing: border-box !important;
+  padding: 0 8px !important;
+  line-height: var(--grid-row-h) !important;
 }
 
 /* 편집 중 셀 */

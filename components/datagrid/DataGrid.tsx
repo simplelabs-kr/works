@@ -993,12 +993,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       //      row against displayRowsRef at call time, so adding or
       //      removing grouping is a pure React-state change with no
       //      HOT re-init needed.
-      cells: (row: number) => {
+      cells: (row: number, col: number) => {
         const d = displayRowsRef.current[row]
         if (d && isGroupHeader(d)) {
           return { readOnly: true, editor: false, renderer: groupHeaderRenderer, className: 'group-header-row' }
         }
         if (trashedMode) return { readOnly: true, editor: false }
+        // Select 컬럼은 기본 텍스트 에디터를 비활성화 — 커스텀 드롭다운
+        // (selectMenu) 만이 편집 경로다. Enter/F2/더블클릭으로 텍스트
+        // 입력창이 열리면 Airtable UX 와 달라 보이므로 editor: false 로
+        // 막는다. col 은 VISUAL index → physical 변환 후 조회.
+        const pi = hotRef.current?.toPhysicalColumn(col) ?? col
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const colDef = (effectiveColumnsRef.current as any[])[pi]
+        if (colDef?.fieldType === 'select' && !colDef?.readOnly) {
+          return { editor: false }
+        }
         return {}
       },
       // Custom context menu: Airtable-style freeze semantics.
