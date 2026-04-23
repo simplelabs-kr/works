@@ -77,7 +77,7 @@ body {
 .handsontable thead th {
   background: var(--works-header-bg) !important;
   color: #374151 !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   font-weight: 600 !important;
   letter-spacing: 0.01em !important;
   border-right: 1px solid #e8eaef !important;
