@@ -661,7 +661,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // 새 row 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/gt/OR/
   // 중첩 그룹 등) 이 섞여 있으면 "완전 pre-fill 불가" 로 간주하고 해당
   // row 를 violation set 에 등록 → 배너 + 빨간 배경.
-  const createNewRow = useCallback(async (afterRowId?: string) => {
+  const createNewRow = useCallback(async (afterRowId?: string, targetCol: number = 0) => {
     const fs = filterStateRef.current
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cols = pageConfig.columns as any[]
@@ -736,15 +736,16 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       window.setTimeout(() => { newRowIdsRef.current.delete(id) }, 1500)
       // HOT 가 새 row 를 렌더한 다음 프레임에 focus 만 — 스크롤 위치는
       // 의도적으로 유지. selectCell 의 scrollToCell=false 로 viewport 가
-      // 점프하지 않게 한다. 새 row 가 삽입되면 그 아래 row 들이 자연스럽게
-      // 한 칸 아래로 밀리는 시각 효과만 남는다.
+      // 점프하지 않게 한다. col 은 호출자 (Shift+Enter / + 버튼) 가 넘긴
+      // 값을 그대로 사용 → 원래 선택 중이던 column 유지. 새 row 가 삽입되면
+      // 그 아래 row 들이 자연스럽게 한 칸 아래로 밀리는 시각 효과만 남는다.
       requestAnimationFrame(() => {
         const hot = hotRef.current
         if (!hot) return
         const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
         if (targetRow < 0) return
         try {
-          hot.selectCell(targetRow, 0, undefined, undefined, false)
+          hot.selectCell(targetRow, targetCol, undefined, undefined, false)
         } catch {
           // HOT destroyed during async gap — ignore.
         }
@@ -2382,16 +2383,31 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         if (ed && ed.state === 'STATE_EDITING') return
         const sel = hot.getSelectedLast()
         let afterId: string | undefined
+        let targetCol = 0
         if (sel) {
-          const [r1] = sel
+          const [r1, c1] = sel
           if (r1 >= 0) {
             const d = displayRowsRef.current[r1]
             if (d && !isGroupHeader(d)) afterId = (d as Row).id
           }
+          // 현재 column 을 그대로 신규 row 로 이어받도록 캡처.
+          if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
         }
+        // HOT 의 default Shift+Enter (selection 을 위로 1칸 이동) 를 막는다.
+        // preventDefault + stopImmediatePropagation + stopPropagation 을 전부
+        // 호출해 DOM / HOT 양쪽에서 후속 처리가 일어나지 않게 하고,
+        // 추가 보루로 현재 셀에 다시 selection 을 고정 (원래 row/col 유지)
+        // → async insert 가 끝나면 createNewRow 내부에서 신규 row 로 이동.
         e.preventDefault()
         e.stopImmediatePropagation()
-        void createNewRowRef.current(afterId)
+        e.stopPropagation()
+        if (sel) {
+          const [r1, c1] = sel
+          if (r1 >= 0 && typeof c1 === 'number' && c1 >= 0) {
+            try { hot.selectCell(r1, c1, undefined, undefined, false) } catch { /* noop */ }
+          }
+        }
+        void createNewRowRef.current(afterId, targetCol)
         return
       }
 
