@@ -4,9 +4,12 @@ import { requireUser } from '@/lib/auth/requireUser'
 
 export const maxDuration = 10
 
-// products 신규 행 생성. 스펙상 필수 입력은 제품명 하나이므로 제품명만
-// 서버에서 엄격 검증한다. 그 외 모든 컬럼은 클라이언트가 비워둔 채
-// 나중에 인라인 편집으로 채운다.
+// products 신규 행 생성. DataGrid + 버튼 / Shift+Enter 에서 bare-row
+// INSERT 로 호출된다 (body 가 비어 있거나 afterRowId 만 포함). products
+// 테이블의 `제품명` 은 NOT NULL + default 없음이라 DEFAULT VALUES 로는
+// 삽입 불가 — 그래서 제품명 미지정 시 placeholder "신규 제품" 을 채워
+// NOT NULL 제약을 만족시킨다. 사용자는 바로 인라인 편집으로 실제 이름을
+// 입력한다. 제품명 이 body 로 들어오면 그 값을 검증해서 사용.
 export async function POST(req: NextRequest) {
   const auth = await requireUser()
   if (auth.response) return auth.response
@@ -19,13 +22,11 @@ export async function POST(req: NextRequest) {
   }
 
   const 제품명Raw = body && typeof body === 'object' ? (body as Record<string, unknown>)['제품명'] : undefined
-  const 제품명 = typeof 제품명Raw === 'string' ? 제품명Raw.trim() : ''
-  if (!제품명) {
-    return NextResponse.json({ error: '제품명은 필수입니다' }, { status: 400 })
-  }
-  if (제품명.length > 200) {
+  const 제품명Trim = typeof 제품명Raw === 'string' ? 제품명Raw.trim() : ''
+  if (제품명Trim.length > 200) {
     return NextResponse.json({ error: '제품명이 너무 깁니다 (max 200)' }, { status: 400 })
   }
+  const 제품명 = 제품명Trim || '신규 제품'
 
   const { data, error } = await supabaseAdmin
     .from('products')
