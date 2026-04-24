@@ -3912,13 +3912,25 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       </div>
 
       {/* 필터 조건 위반 배너 — pre-fill 불가 조건으로 생성된 row 가 있는 동안
-          toolbar 바로 아래, grid area 위에 normal flow 로 배치. 배너 높이만큼
-          grid 영역이 아래로 밀려 내용을 가리지 않는다. X 클릭 →
+          floating 으로 표시. grid layout flow 를 차지하지 않도록
+          `position: fixed` 하단 중앙 배치 (toast 위쪽). X 클릭 →
           violatingRowIds 의 row 들을 숨김 + 배너 사라짐. */}
       {violatingRowIds.size > 0 && (
         <div
-          className="flex flex-shrink-0 items-center gap-3 border-b border-[#FECACA] bg-[#FEF2F2] px-4 py-2 text-[13px] text-[#991B1B]"
           role="status"
+          style={{
+            position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)', zIndex: 9998,
+            background: '#FEF2F2',
+            color: '#991B1B',
+            border: '1px solid #FECACA',
+            fontSize: 13,
+            padding: '8px 16px',
+            borderRadius: 6,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
         >
           <span>필터 조건에 맞지 않는 레코드 {violatingRowIds.size}건이 표시 중입니다</span>
           <button
