@@ -1635,7 +1635,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         const hider = masterEl.querySelector('.wtHider') as HTMLElement | null
         if (hider) {
           if (hider.style.paddingBottom !== '83px') hider.style.paddingBottom = '83px'
-          if (hider.style.backgroundColor !== 'rgb(246, 247, 248)') hider.style.backgroundColor = '#F6F7F8'
+          if (hider.style.backgroundColor !== 'rgb(248, 249, 250)') hider.style.backgroundColor = '#F8F9FA'
         }
       }
       const hInner = customScrollbarInnerRef.current
