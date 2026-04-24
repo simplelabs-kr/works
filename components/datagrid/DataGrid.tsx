@@ -1434,13 +1434,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         if (d && isGroupHeader(d)) {
           return { readOnly: true, editor: false, renderer: groupHeaderRenderer, className: 'group-header-row' }
         }
-        // 신규 레코드가 현재 필터를 pre-fill 만으로 충족 못 하는 경우,
-        // 해당 row 모든 셀에 violation className → 연한 빨강 배경.
-        const violating = d && !isGroupHeader(d) && violatingRowIdsRef.current.has((d as Row).id)
+        // violation 표시는 afterRenderer 훅에서 TD.style.backgroundColor 를
+        // 직접 설정 — cells() className 은 checkbox/formula/image 등
+        // custom renderer 가 이후에 배경을 덮어써서 적용되지 않음.
         if (trashedMode) {
-          return violating
-            ? { readOnly: true, editor: false, className: 'datagrid-row-violation' }
-            : { readOnly: true, editor: false }
+          return { readOnly: true, editor: false }
         }
         // Select 컬럼은 기본 텍스트 에디터를 비활성화 — 커스텀 드롭다운
         // (selectMenu) 만이 편집 경로다. Enter/F2/더블클릭으로 텍스트
@@ -1450,9 +1448,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colDef = (effectiveColumnsRef.current as any[])[pi]
         if (colDef?.fieldType === 'select' && !colDef?.readOnly) {
-          return violating ? { editor: false, className: 'datagrid-row-violation' } : { editor: false }
+          return { editor: false }
         }
-        return violating ? { className: 'datagrid-row-violation' } : {}
+        return {}
       },
       // Custom context menu: Airtable-style freeze semantics.
       // - "여기까지 고정": set fixedColumnsStart = clickedVisualCol + 1
@@ -1624,6 +1622,15 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     hotRef.current.addHook('afterRender', () => {
       const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
       if (!masterEl) return
+      // addRow 가 켜진 페이지에서는 좌측하단 FAB 가 마지막 row 를 가리지
+      // 않도록 HOT 내부 스크롤 컨테이너 (.wtHolder) 자체에 bottom padding
+      // 을 준다. wrapper 의 padding 은 HOT 가 wrapper.clientHeight 를 쓰는
+      // 방식이라 내부 스크롤 영역에는 전달되지 않음.
+      if (pageConfig.addRow?.enabled) {
+        if (masterEl.style.paddingBottom !== '80px') {
+          masterEl.style.paddingBottom = '80px'
+        }
+      }
       const hInner = customScrollbarInnerRef.current
       if (hInner) {
         const target = masterEl.scrollWidth
@@ -1657,6 +1664,26 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('beforeRenderer', (td: HTMLTableCellElement) => {
       if (td.dataset.selectCol) delete td.dataset.selectCol
+    })
+
+    // Violation row 배경 — 필터 pre-fill 만으로는 현재 필터 조건을 만족하지
+    // 못한 채로 삽입된 신규 row 를 연한 빨강으로 표시. cells() className
+    // 은 checkbox/formula/image 등 custom renderer 가 자체적으로
+    // TD.style.background 를 덮어써서 무시되므로, 모든 renderer 실행 이후
+    // 발동하는 afterRenderer 훅에서 직접 `!important` 우선순위로 설정한다.
+    // HOT 가 TD 를 recycle 하기 때문에 이전 violation 상태 잔상이 남을 수
+    // 있어 `data-violation` 을 sentinel 로 사용: 우리가 칠한 TD 만 우리가
+    // 해제한다 (다른 renderer 의 inline bg 는 건드리지 않는다).
+    hotRef.current.addHook('afterRenderer', (TD: HTMLTableCellElement, row: number) => {
+      const d = displayRowsRef.current[row]
+      const violating = !!d && !isGroupHeader(d) && violatingRowIdsRef.current.has((d as Row).id)
+      if (violating) {
+        TD.style.setProperty('background-color', '#fef2f2', 'important')
+        TD.dataset.violation = '1'
+      } else if (TD.dataset.violation) {
+        TD.style.removeProperty('background-color')
+        delete TD.dataset.violation
+      }
     })
 
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
@@ -3701,6 +3728,29 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         </button>
       </div>
 
+      {/* 필터 조건 위반 배너 — pre-fill 불가 조건으로 생성된 row 가 있는 동안
+          toolbar 바로 아래, grid area 위에 normal flow 로 배치. 배너 높이만큼
+          grid 영역이 아래로 밀려 내용을 가리지 않는다. X 클릭 →
+          violatingRowIds 의 row 들을 숨김 + 배너 사라짐. */}
+      {violatingRowIds.size > 0 && (
+        <div
+          className="flex flex-shrink-0 items-center gap-3 border-b border-[#FECACA] bg-[#FEF2F2] px-4 py-2 text-[13px] text-[#991B1B]"
+          role="status"
+        >
+          <span>필터 조건에 맞지 않는 레코드 {violatingRowIds.size}건이 표시 중입니다</span>
+          <button
+            type="button"
+            onClick={dismissViolationBanner}
+            aria-label="배너 닫기"
+            className="flex h-5 w-5 items-center justify-center rounded text-[#991B1B] hover:bg-[#FECACA]"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* Empty state */}
       {!hasData && !loading && (
         <div className="flex flex-1 items-center justify-center text-[13px] text-[#9CA3AF]">
@@ -3717,14 +3767,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       {/* Grid area — flex-1, fills remaining height */}
       <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
-        {/* HOT container — fills all available space. addRow 가 켜진 페이지
-            에서는 좌측하단 FAB 가 마지막 row 를 가리지 않도록 80px 하단
-            padding 확보. HOT 는 내부적으로 wrapper 의 clientHeight 를 쓰므로
-            padding 만큼 그리드 높이가 줄어 FAB 아래 여백이 생긴다. */}
+        {/* HOT container — fills all available space. 좌측하단 FAB 가
+            마지막 row 를 가리지 않도록 HOT 내부 스크롤 컨테이너
+            (.wtHolder) 에 afterRender 훅에서 80px bottom padding 을
+            주입한다 (여기 wrapper style 로는 내부 스크롤 영역에 전달되지
+            않음). */}
         <div
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-30 pointer-events-none' : ''}`}
-          style={pageConfig.addRow?.enabled ? { paddingBottom: 80 } : undefined}
         >
           <div ref={containerRef} />
         </div>
@@ -4234,26 +4284,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         </button>
       )}
 
-      {/* 필터 조건 위반 배너 — pre-fill 불가 조건으로 생성된 row 가 있는 동안
-          상단 중앙에 노출. X 클릭 → 해당 row 숨김 + 배너 사라짐. */}
-      {violatingRowIds.size > 0 && (
-        <div
-          className="fixed top-16 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-4 py-2 text-[13px] text-[#991B1B] shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
-          role="status"
-        >
-          <span>필터 조건에 맞지 않는 레코드 {violatingRowIds.size}건이 표시 중입니다</span>
-          <button
-            type="button"
-            onClick={dismissViolationBanner}
-            aria-label="배너 닫기"
-            className="flex h-5 w-5 items-center justify-center rounded text-[#991B1B] hover:bg-[#FECACA]"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
-      )}
     </div>
   )
 }
