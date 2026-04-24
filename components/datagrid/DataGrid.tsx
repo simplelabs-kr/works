@@ -1624,11 +1624,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       if (!masterEl) return
       // addRow 가 켜진 페이지에서는 좌측하단 FAB 가 마지막 row 를 가리지
       // 않도록 HOT 내부 스크롤 컨테이너 (.wtHolder) 자체에 bottom padding
-      // 을 준다. wrapper 의 padding 은 HOT 가 wrapper.clientHeight 를 쓰는
-      // 방식이라 내부 스크롤 영역에는 전달되지 않음.
+      // 을 주어 마지막 row 아래로 추가 스크롤 공간을 확보한다. wrapper 의
+      // padding 은 HOT 가 wrapper.clientHeight 를 쓰는 방식이라 내부 스크롤
+      // 영역에 전달되지 않고, 오히려 HOT height 계산이 틀어져 row 가 잘리는
+      // 문제가 있어 여기서 직접 주입한다.
       if (pageConfig.addRow?.enabled) {
-        if (masterEl.style.paddingBottom !== '80px') {
-          masterEl.style.paddingBottom = '80px'
+        if (masterEl.style.paddingBottom !== '64px') {
+          masterEl.style.paddingBottom = '64px'
         }
       }
       const hInner = customScrollbarInnerRef.current
