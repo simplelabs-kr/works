@@ -73,11 +73,38 @@ const ROW_THUMB_URL_W: Record<RowHeight, number> = {
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
 
-// 신규 레코드 pre-fill 대상 필드 타입 화이트리스트. select / boolean /
-// text 만 허용 — number / date / lookup / linklist 등은 필터 값이
-// 실제 컬럼 shape 와 다르거나 (lookup) 컬럼 자체가 read-only (lookup /
-// derived) 라서 INSERT 로 넘기면 실패한다.
-const PREFILL_ELIGIBLE_FIELD_TYPES = new Set(['select', 'boolean', 'text'])
+// 신규 레코드 pre-fill: 활성 필터의 "equals 계열" 조건을 INSERT body 에
+// 병합한다. FilterModal 은 fieldType 별로 다른 operator 를 쓰기 때문에
+// (select/text 는 'is', number 는 'eq', boolean 은 'is_checked' /
+// 'is_unchecked') 여기서 fieldType + operator 조합을 해석해 실제 값을
+// 돌려준다. 매칭 실패 (=equals 아닌 필터, 지원 밖 필드 타입) 시 호출측은
+// fullyPrefillable=false 로 기록 → violation 배너. lookup / formula /
+// image / attachment / date 는 제외: 각각 read-only (lookup/formula),
+// 값 shape 가 원시타입이 아님 (image/attachment), 필터에 순수 eq 가 없음
+// (date 는 is_before/is_after 등 range 기반).
+function resolveEqPrefill(
+  fieldType: string | undefined,
+  operator: string,
+  value: unknown,
+): { matched: true; value: unknown } | { matched: false } {
+  switch (fieldType) {
+    case 'select':
+    case 'text':
+    case 'longtext':
+      if (operator === 'is' && typeof value === 'string') return { matched: true, value }
+      return { matched: false }
+    case 'number':
+      if (operator === 'eq' && typeof value === 'number') return { matched: true, value }
+      return { matched: false }
+    case 'boolean':
+    case 'checkbox':
+      if (operator === 'is_checked') return { matched: true, value: true }
+      if (operator === 'is_unchecked') return { matched: true, value: false }
+      return { matched: false }
+    default:
+      return { matched: false }
+  }
+}
 
 // Synthetic row injected into HOT's data array to act as a group-by
 // section header. Distinguished from real Row objects by `__group: true`
@@ -663,16 +690,16 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // 아니면 배열 끝). HOT 포커스 + 스크롤. 서버 트리거가 flat 테이블을
   // populate 하면 realtime INSERT 가 실제 데이터로 머지한다 (id dedupe).
   //
-  // Pre-fill: 활성 필터에서 operator === 'eq' 이고 대상 컬럼 타입이
-  // select/boolean/text 인 조건 값들을 추출해 INSERT body 에 병합 →
-  // 새 row 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/gt/OR/
-  // 중첩 그룹 등) 이 섞여 있으면 "완전 pre-fill 불가" 로 간주하고 해당
-  // row 를 violation set 에 등록 → 배너 + 빨간 배경.
+  // Pre-fill: 활성 필터에서 equals 계열 조건 (fieldType 별 해석은
+  // `resolveEqPrefill` 참고) 의 값을 추출해 INSERT body 에 병합 → 새 row
+  // 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/range/OR/중첩
+  // 그룹 / read-only 컬럼 / derived 컬럼 등) 이 섞여 있으면 "완전 pre-fill
+  // 불가" 로 간주하고 해당 row 를 violation set 에 등록 → 배너 + 빨간 배경.
   const createNewRow = useCallback(async (afterRowId?: string, targetCol: number = 0) => {
     const fs = filterStateRef.current
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cols = pageConfig.columns as any[]
-    const colByData = new Map<string, { data: string; fieldType?: string }>()
+    const colByData = new Map<string, { data: string; fieldType?: string; readOnly?: boolean; derived?: boolean }>()
     for (const c of cols) {
       if (c && typeof c.data === 'string') colByData.set(c.data, c)
     }
@@ -685,17 +712,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       } else {
         for (const item of fs.conditions) {
           if (isFilterGroupItem(item)) { fullyPrefillable = false; continue }
-          if (item.operator !== 'eq') { fullyPrefillable = false; continue }
           const col = colByData.get(item.column)
           if (!col) { fullyPrefillable = false; continue }
-          if (!PREFILL_ELIGIBLE_FIELD_TYPES.has(col.fieldType ?? '')) {
-            fullyPrefillable = false
-            continue
-          }
-          const v = item.value
-          if (v === undefined || v === null) continue
-          if (Array.isArray(v) || (typeof v === 'object')) { fullyPrefillable = false; continue }
-          prefill[item.column] = v
+          // derived / readOnly 컬럼은 INSERT 로 넘겨도 서버가 reject — skip.
+          if (col.derived || col.readOnly) { fullyPrefillable = false; continue }
+          const resolved = resolveEqPrefill(col.fieldType, item.operator, item.value)
+          if (!resolved.matched) { fullyPrefillable = false; continue }
+          prefill[item.column] = resolved.value
         }
       }
     }
