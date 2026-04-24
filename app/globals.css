@@ -29,6 +29,17 @@ html[data-lnb-collapsed="true"] aside[data-worksy-lnb] > *:not([data-worksy-lnb-
   display: none !important;
 }
 
+/* ── Floating "add row" FAB ─────────────────────────────────────
+ * 고정 원형 + 버튼. bottom: 24px, left: 사이드바 너비 + 24px.
+ * LNB 폭은 데스크톱 기준 220px (expanded) / 36px (collapsed) —
+ * WorksShell 이 <html data-lnb-collapsed="true"> 로 토글한다. */
+.datagrid-add-fab {
+  left: 244px; /* 220 + 24 */
+}
+html[data-lnb-collapsed="true"] .datagrid-add-fab {
+  left: 60px; /* 36 + 24 */
+}
+
 body {
   color: #0F172A;
   -webkit-font-smoothing: antialiased;

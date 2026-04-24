@@ -528,6 +528,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSortModal, setShowSortModal] = useState(false)
+  // "자동 정렬 유지" — OFF (기본) 면 RPC 가 sort_order NULLS LAST, created_at
+  // ASC 기본 정렬을 사용하고 sortConditions 는 1회성. ON 이면 sortConditions
+  // 가 영구 정렬 키가 되고 sort_order 는 무시된다. 세션 내 로컬 상태 —
+  // persist 불필요. 현재는 order-items 페이지에서만 의미 있음
+  // (addRow.enabled 와 함께 노출).
+  const [keepCustomSort, setKeepCustomSort] = useState(false)
+  const keepCustomSortRef = useRef(false)
 
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
@@ -602,6 +609,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   useEffect(() => { holidaySetRef.current = holidaySet }, [holidaySet])
   useEffect(() => { filterStateRef.current = filterState }, [filterState])
   useEffect(() => { sortConditionsRef.current = sortConditions }, [sortConditions])
+  useEffect(() => { keepCustomSortRef.current = keepCustomSort }, [keepCustomSort])
   useEffect(() => { searchTermRef.current = searchTerm }, [searchTerm])
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
   useEffect(() => { hiddenColumnsRef.current = hiddenColumns }, [hiddenColumns])
@@ -619,6 +627,50 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       setOffset(o => o + 100)
     }
   }, [])
+
+  // 신규 행 생성. POST `${apiBase}/create` 결과로 돌아온 id 로 placeholder
+  // row 를 하단에 낙관적으로 추가하고, HOT 에서 해당 row 에 focus + 스크롤.
+  // 서버 트리거가 flat 테이블을 populate 하면 realtime INSERT 가 실제 데이터로
+  // 머지한다 (id dedupe). order-items 의 경우 order_id 가 비면 flat row 가
+  // 생성되지 않으므로 optimistic row 는 사용자가 필드를 채우기 전까지 유지.
+  const createNewRow = useCallback(async (afterRowId?: string) => {
+    try {
+      const res = await fetch(`${apiBase}/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(afterRowId ? { afterRowId } : {}),
+      })
+      if (!res.ok) {
+        console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
+        return
+      }
+      const { id } = (await res.json()) as { id?: string }
+      if (!id) return
+      const placeholder = { id } as unknown as Row
+      setRows(prev => (prev.some(r => r.id === id) ? prev : [...prev, placeholder]))
+      // HOT 가 새 row 를 렌더한 다음 프레임에 focus + scroll.
+      requestAnimationFrame(() => {
+        const hot = hotRef.current
+        if (!hot) return
+        const lastRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
+        const targetRow = lastRow >= 0 ? lastRow : hot.countRows() - 1
+        if (targetRow < 0) return
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(hot as any).scrollViewportTo(targetRow, 0)
+          hot.selectCell(targetRow, 0)
+        } catch {
+          // HOT destroyed during async gap — ignore.
+        }
+      })
+    } catch (e) {
+      console.error('[DataGrid] create 오류:', e)
+    }
+  }, [apiBase])
+  // 마운트 시 1회 등록되는 HOT 훅 (beforeKeyDown) 에서 최신 createNewRow 를
+  // 호출하기 위해 ref 로 미러링.
+  const createNewRowRef = useRef(createNewRow)
+  useEffect(() => { createNewRowRef.current = createNewRow }, [createNewRow])
 
   const handleLoad = () => {
     isAppend.current = false
@@ -1044,6 +1096,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         sorts: apiSorts,
         search_term: searchTermRef.current || null,
         trashed_only: !!trashedMode,
+        keep_custom_sort: keepCustomSortRef.current,
       }),
     })
       .then(res => res.json())
@@ -2163,6 +2216,31 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // textarea 가 key 를 소모하므로 이 훅은 발동하지 않음 → Space 는 공백
     // 입력 그대로. 아이콘 클릭 / ↗ 버튼이 편집 중 expand 의 진입점이다.
     hotRef.current.addHook('beforeKeyDown', (e: KeyboardEvent) => {
+      // Shift+Enter — 현재 선택된 row 다음에 신규 row 생성. addRow 가 enabled
+      // 인 페이지에서만 활성. 편집 중에는 editor 가 key 를 먼저 소모하므로
+      // 이 훅은 발동하지 않는다 (cell selection 상태 전용).
+      if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (!pageConfig.addRow?.enabled) return
+        const hot = hotRef.current
+        if (!hot) return
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ed = hot.getActiveEditor() as any
+        if (ed && ed.state === 'STATE_EDITING') return
+        const sel = hot.getSelectedLast()
+        let afterId: string | undefined
+        if (sel) {
+          const [r1] = sel
+          if (r1 >= 0) {
+            const d = displayRowsRef.current[r1]
+            if (d && !isGroupHeader(d)) afterId = (d as Row).id
+          }
+        }
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        void createNewRowRef.current(afterId)
+        return
+      }
+
       if (e.key !== ' ') return
       const hot = hotRef.current
       if (!hot) return
@@ -3360,6 +3438,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
               onChange={setSortConditions}
               onApply={handleLoad}
               onClose={() => setShowSortModal(false)}
+              {...(pageConfig.addRow?.enabled ? { keepCustomSort, onKeepCustomSortChange: setKeepCustomSort } : {})}
             />
           )}
         </div>
@@ -4039,6 +4118,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           startIndex={galleryStartIdx}
           onClose={() => setGalleryImages(null)}
         />
+      )}
+
+      {/* Floating + 버튼 — 좌측 하단 고정, 사이드바 옆.
+          클릭 시 선택 없는 상태로 신규 행을 생성하여 하단 append. */}
+      {pageConfig.addRow?.enabled && (
+        <button
+          type="button"
+          onClick={() => void createNewRow()}
+          className="datagrid-add-fab fixed bottom-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[#2D7FF9] text-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] hover:bg-[#1E6FE8] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors"
+          aria-label="새 행 추가"
+          title="새 행 추가 (Shift+Enter)"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
       )}
     </div>
   )
