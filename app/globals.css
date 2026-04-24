@@ -40,6 +40,15 @@ html[data-lnb-collapsed="true"] .datagrid-add-fab {
   left: 60px; /* 36 + 24 */
 }
 
+/* ── Filter-violation row tint ──────────────────────────────────
+ * 필터 조건을 완전히 pre-fill 로 충족 못 한 채 생성된 신규 레코드는
+ * DataGrid 가 이 className 을 모든 셀에 부여 → 연한 빨강 배경으로
+ * 표시. `!important` 는 HOT 가 select/hover 시 다른 배경을 덮는 것을
+ * 방지 (선택돼도 violation 이 우선). */
+.handsontable td.datagrid-row-violation {
+  background: #fef2f2 !important;
+}
+
 body {
   color: #0F172A;
   -webkit-font-smoothing: antialiased;

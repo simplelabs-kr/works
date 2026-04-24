@@ -28,9 +28,10 @@ export async function POST(req: NextRequest) {
   } catch {
     body = null
   }
-  const afterRowIdRaw =
-    body && typeof body === 'object' ? (body as Record<string, unknown>)['afterRowId'] : undefined
+  const bodyObj = (body && typeof body === 'object') ? (body as Record<string, unknown>) : {}
+  const afterRowIdRaw = bodyObj['afterRowId']
   const afterRowId = typeof afterRowIdRaw === 'string' && afterRowIdRaw.trim() ? afterRowIdRaw : null
+  const prefill = sanitizePrefill(bodyObj['prefill'])
 
   const sortOrder = await computeSortOrder(afterRowId)
   if (sortOrder == null) {
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('order_items')
-    .insert({ sort_order: sortOrder })
+    .insert({ ...prefill, sort_order: sortOrder })
     .select('id')
     .single()
 
@@ -49,6 +50,28 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ id: data.id, sort_order: sortOrder })
+}
+
+// 클라이언트가 활성 필터에서 추출한 pre-fill 필드. 메타 컬럼 /
+// sort_order / id 등 서버 관리 필드는 덮어쓰지 못하도록 deny-list.
+// 키는 영문/숫자/_/한글만 허용 (컬럼명 관례). 값은 primitive 만 — 배열/
+// 객체는 filter 단에서 단일 값 조건만 올라오므로 컷.
+const RESERVED_COLUMNS = new Set([
+  'id', 'created_at', 'updated_at', 'deleted_at', 'sort_order',
+])
+const COLUMN_NAME_RE = /^[A-Za-z0-9_가-힣]+$/
+function sanitizePrefill(raw: unknown): Record<string, string | number | boolean | null> {
+  const out: Record<string, string | number | boolean | null> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (RESERVED_COLUMNS.has(k)) continue
+    if (!COLUMN_NAME_RE.test(k)) continue
+    if (v === null) { out[k] = null; continue }
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      out[k] = v
+    }
+  }
+  return out
 }
 
 async function computeSortOrder(afterRowId: string | null): Promise<number | null> {

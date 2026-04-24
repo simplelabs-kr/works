@@ -8,7 +8,7 @@ import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
 import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
-import { countAllConditions, normalizeFilterStateToData } from '@/components/works/FilterModal'
+import { countAllConditions, isFilterGroup as isFilterGroupItem, normalizeFilterStateToData } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 import { normalizeSortConditionsToData } from '@/components/works/SortModal'
@@ -72,6 +72,12 @@ const ROW_THUMB_URL_W: Record<RowHeight, number> = {
 
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
+
+// 신규 레코드 pre-fill 대상 필드 타입 화이트리스트. select / boolean /
+// text 만 허용 — number / date / lookup / linklist 등은 필터 값이
+// 실제 컬럼 shape 와 다르거나 (lookup) 컬럼 자체가 read-only (lookup /
+// derived) 라서 INSERT 로 넘기면 실패한다.
+const PREFILL_ELIGIBLE_FIELD_TYPES = new Set(['select', 'boolean', 'text'])
 
 // Synthetic row injected into HOT's data array to act as a group-by
 // section header. Distinguished from real Row objects by `__group: true`
@@ -535,6 +541,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // (addRow.enabled 와 함께 노출).
   const [keepCustomSort, setKeepCustomSort] = useState(false)
   const keepCustomSortRef = useRef(false)
+  // + 버튼 / Shift+Enter 로 생성된 row 중 "현재 필터를 완전히 pre-fill 로
+  // 충족시킬 수 없는" 경우 id 를 여기에 기록. HOT 의 cells 콜백이 이 set
+  // 을 참조해 배경을 연한 빨강으로 칠하고, 상단 floating 배너가 건수를
+  // 표시한다. 배너 X 클릭 / 페이지 리로드 시 해제. "pre-fill 가능" 은
+  // `PREFILL_ELIGIBLE_FIELD_TYPES` + operator === 'eq' + 최상위 AND 로만
+  // 정의 (Airtable 의 "새 레코드가 필터 조건에 맞지 않음" 경고 동등).
+  const [violatingRowIds, setViolatingRowIds] = useState<Set<string>>(new Set())
+  const violatingRowIdsRef = useRef<Set<string>>(new Set())
 
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
@@ -610,6 +624,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   useEffect(() => { filterStateRef.current = filterState }, [filterState])
   useEffect(() => { sortConditionsRef.current = sortConditions }, [sortConditions])
   useEffect(() => { keepCustomSortRef.current = keepCustomSort }, [keepCustomSort])
+  useEffect(() => {
+    violatingRowIdsRef.current = violatingRowIds
+    // HOT 의 cells 콜백은 render 타이밍에만 호출되므로 state 변경 후
+    // 수동 재렌더로 className 을 즉시 반영.
+    hotRef.current?.render()
+  }, [violatingRowIds])
   useEffect(() => { searchTermRef.current = searchTerm }, [searchTerm])
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
   useEffect(() => { hiddenColumnsRef.current = hiddenColumns }, [hiddenColumns])
@@ -629,16 +649,55 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   }, [])
 
   // 신규 행 생성. POST `${apiBase}/create` 결과로 돌아온 id 로 placeholder
-  // row 를 하단에 낙관적으로 추가하고, HOT 에서 해당 row 에 focus + 스크롤.
-  // 서버 트리거가 flat 테이블을 populate 하면 realtime INSERT 가 실제 데이터로
-  // 머지한다 (id dedupe). order-items 의 경우 order_id 가 비면 flat row 가
-  // 생성되지 않으므로 optimistic row 는 사용자가 필드를 채우기 전까지 유지.
+  // row 를 낙관적으로 추가한다 (afterRowId 지정 시 해당 row 바로 다음,
+  // 아니면 배열 끝). HOT 포커스 + 스크롤. 서버 트리거가 flat 테이블을
+  // populate 하면 realtime INSERT 가 실제 데이터로 머지한다 (id dedupe).
+  //
+  // Pre-fill: 활성 필터에서 operator === 'eq' 이고 대상 컬럼 타입이
+  // select/boolean/text 인 조건 값들을 추출해 INSERT body 에 병합 →
+  // 새 row 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/gt/OR/
+  // 중첩 그룹 등) 이 섞여 있으면 "완전 pre-fill 불가" 로 간주하고 해당
+  // row 를 violation set 에 등록 → 배너 + 빨간 배경.
   const createNewRow = useCallback(async (afterRowId?: string) => {
+    const fs = filterStateRef.current
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cols = pageConfig.columns as any[]
+    const colByData = new Map<string, { data: string; fieldType?: string }>()
+    for (const c of cols) {
+      if (c && typeof c.data === 'string') colByData.set(c.data, c)
+    }
+
+    const prefill: Record<string, unknown> = {}
+    let fullyPrefillable = true
+    if (fs.conditions.length > 0) {
+      if (fs.logic !== 'AND') {
+        fullyPrefillable = false
+      } else {
+        for (const item of fs.conditions) {
+          if (isFilterGroupItem(item)) { fullyPrefillable = false; continue }
+          if (item.operator !== 'eq') { fullyPrefillable = false; continue }
+          const col = colByData.get(item.column)
+          if (!col) { fullyPrefillable = false; continue }
+          if (!PREFILL_ELIGIBLE_FIELD_TYPES.has(col.fieldType ?? '')) {
+            fullyPrefillable = false
+            continue
+          }
+          const v = item.value
+          if (v === undefined || v === null) continue
+          if (Array.isArray(v) || (typeof v === 'object')) { fullyPrefillable = false; continue }
+          prefill[item.column] = v
+        }
+      }
+    }
+
     try {
+      const reqBody: Record<string, unknown> = {}
+      if (afterRowId) reqBody.afterRowId = afterRowId
+      if (Object.keys(prefill).length > 0) reqBody.prefill = prefill
       const res = await fetch(`${apiBase}/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(afterRowId ? { afterRowId } : {}),
+        body: JSON.stringify(reqBody),
       })
       if (!res.ok) {
         console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
@@ -646,14 +705,32 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
       const { id } = (await res.json()) as { id?: string }
       if (!id) return
-      const placeholder = { id } as unknown as Row
-      setRows(prev => (prev.some(r => r.id === id) ? prev : [...prev, placeholder]))
+      const placeholder = { id, ...prefill } as unknown as Row
+      setRows(prev => {
+        if (prev.some(r => r.id === id)) return prev
+        if (afterRowId) {
+          const idx = prev.findIndex(r => r.id === afterRowId)
+          if (idx >= 0) {
+            const next = [...prev]
+            next.splice(idx + 1, 0, placeholder)
+            return next
+          }
+        }
+        return [...prev, placeholder]
+      })
+      if (!fullyPrefillable) {
+        setViolatingRowIds(prev => {
+          if (prev.has(id)) return prev
+          const next = new Set(prev)
+          next.add(id)
+          return next
+        })
+      }
       // HOT 가 새 row 를 렌더한 다음 프레임에 focus + scroll.
       requestAnimationFrame(() => {
         const hot = hotRef.current
         if (!hot) return
-        const lastRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
-        const targetRow = lastRow >= 0 ? lastRow : hot.countRows() - 1
+        const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
         if (targetRow < 0) return
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -666,7 +743,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     } catch (e) {
       console.error('[DataGrid] create 오류:', e)
     }
-  }, [apiBase])
+  }, [apiBase, pageConfig.columns])
+
+  // 배너 닫기: violation 표시된 row 들을 숨기고 set 비움. 실제 DB 레코드는
+  // 그대로 남아 다음 refetch 시점에 서버 필터 기준으로 (포함되면) 다시
+  // 들어온다.
+  const dismissViolationBanner = useCallback(() => {
+    const ids = violatingRowIdsRef.current
+    if (ids.size === 0) return
+    setRows(prev => prev.filter(r => !ids.has(r.id)))
+    setViolatingRowIds(new Set())
+  }, [])
   // 마운트 시 1회 등록되는 HOT 훅 (beforeKeyDown) 에서 최신 createNewRow 를
   // 호출하기 위해 ref 로 미러링.
   const createNewRowRef = useRef(createNewRow)
@@ -1347,7 +1434,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         if (d && isGroupHeader(d)) {
           return { readOnly: true, editor: false, renderer: groupHeaderRenderer, className: 'group-header-row' }
         }
-        if (trashedMode) return { readOnly: true, editor: false }
+        // 신규 레코드가 현재 필터를 pre-fill 만으로 충족 못 하는 경우,
+        // 해당 row 모든 셀에 violation className → 연한 빨강 배경.
+        const violating = d && !isGroupHeader(d) && violatingRowIdsRef.current.has((d as Row).id)
+        if (trashedMode) {
+          return violating
+            ? { readOnly: true, editor: false, className: 'datagrid-row-violation' }
+            : { readOnly: true, editor: false }
+        }
         // Select 컬럼은 기본 텍스트 에디터를 비활성화 — 커스텀 드롭다운
         // (selectMenu) 만이 편집 경로다. Enter/F2/더블클릭으로 텍스트
         // 입력창이 열리면 Airtable UX 와 달라 보이므로 editor: false 로
@@ -1356,9 +1450,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colDef = (effectiveColumnsRef.current as any[])[pi]
         if (colDef?.fieldType === 'select' && !colDef?.readOnly) {
-          return { editor: false }
+          return violating ? { editor: false, className: 'datagrid-row-violation' } : { editor: false }
         }
-        return {}
+        return violating ? { className: 'datagrid-row-violation' } : {}
       },
       // Custom context menu: Airtable-style freeze semantics.
       // - "여기까지 고정": set fixedColumnsStart = clickedVisualCol + 1
@@ -3623,10 +3717,14 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       {/* Grid area — flex-1, fills remaining height */}
       <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
-        {/* HOT container — fills all available space */}
+        {/* HOT container — fills all available space. addRow 가 켜진 페이지
+            에서는 좌측하단 FAB 가 마지막 row 를 가리지 않도록 80px 하단
+            padding 확보. HOT 는 내부적으로 wrapper 의 clientHeight 를 쓰므로
+            padding 만큼 그리드 높이가 줄어 FAB 아래 여백이 생긴다. */}
         <div
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-30 pointer-events-none' : ''}`}
+          style={pageConfig.addRow?.enabled ? { paddingBottom: 80 } : undefined}
         >
           <div ref={containerRef} />
         </div>
@@ -4120,20 +4218,41 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         />
       )}
 
-      {/* Floating + 버튼 — 좌측 하단 고정, 사이드바 옆.
-          클릭 시 선택 없는 상태로 신규 행을 생성하여 하단 append. */}
+      {/* Floating + 버튼 — 좌측 하단 고정, 사이드바 옆. Airtable 스타일로
+          연한 회색 테두리 + 회색 아이콘. */}
       {pageConfig.addRow?.enabled && (
         <button
           type="button"
           onClick={() => void createNewRow()}
-          className="datagrid-add-fab fixed bottom-6 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-[#2D7FF9] text-white shadow-[0_4px_12px_rgba(0,0,0,0.18)] hover:bg-[#1E6FE8] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors"
+          className="datagrid-add-fab fixed bottom-6 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-[#D1D5DB] bg-white text-[#9CA3AF] shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:bg-[#E5E7EB] hover:text-[#6B7280] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors"
           aria-label="새 행 추가"
           title="새 행 추가 (Shift+Enter)"
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
           </svg>
         </button>
+      )}
+
+      {/* 필터 조건 위반 배너 — pre-fill 불가 조건으로 생성된 row 가 있는 동안
+          상단 중앙에 노출. X 클릭 → 해당 row 숨김 + 배너 사라짐. */}
+      {violatingRowIds.size > 0 && (
+        <div
+          className="fixed top-16 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-md border border-[#FECACA] bg-[#FEF2F2] px-4 py-2 text-[13px] text-[#991B1B] shadow-[0_4px_12px_rgba(0,0,0,0.08)]"
+          role="status"
+        >
+          <span>필터 조건에 맞지 않는 레코드 {violatingRowIds.size}건이 표시 중입니다</span>
+          <button
+            type="button"
+            onClick={dismissViolationBanner}
+            aria-label="배너 닫기"
+            className="flex h-5 w-5 items-center justify-center rounded text-[#991B1B] hover:bg-[#FECACA]"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
+          </button>
+        </div>
       )}
     </div>
   )
