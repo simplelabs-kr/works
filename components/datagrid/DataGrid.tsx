@@ -549,6 +549,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // 정의 (Airtable 의 "새 레코드가 필터 조건에 맞지 않음" 경고 동등).
   const [violatingRowIds, setViolatingRowIds] = useState<Set<string>>(new Set())
   const violatingRowIdsRef = useRef<Set<string>>(new Set())
+  // 방금 생성된 row 의 id. afterRenderer 에서 1회만 fade-in 애니메이션
+  // 적용 후 sentinel (dataset.fadeAnimated) 로 재실행 방지.
+  const newRowIdsRef = useRef<Set<string>>(new Set())
 
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
@@ -726,16 +729,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           return next
         })
       }
-      // HOT 가 새 row 를 렌더한 다음 프레임에 focus + scroll.
+      // Fade-in 애니메이션 등록. afterRenderer 훅이 첫 렌더 시 한 번만
+      // animation 을 적용한 뒤 sentinel 로 잠그므로, set 에서 즉시
+      // 빠져나가도 애니메이션은 재생된다. 일정 시간 후 메모리 정리만.
+      newRowIdsRef.current.add(id)
+      window.setTimeout(() => { newRowIdsRef.current.delete(id) }, 1500)
+      // HOT 가 새 row 를 렌더한 다음 프레임에 focus 만 — 스크롤 위치는
+      // 의도적으로 유지. selectCell 의 scrollToCell=false 로 viewport 가
+      // 점프하지 않게 한다. 새 row 가 삽입되면 그 아래 row 들이 자연스럽게
+      // 한 칸 아래로 밀리는 시각 효과만 남는다.
       requestAnimationFrame(() => {
         const hot = hotRef.current
         if (!hot) return
         const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
         if (targetRow < 0) return
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          ;(hot as any).scrollViewportTo(targetRow, 0)
-          hot.selectCell(targetRow, 0)
+          hot.selectCell(targetRow, 0, undefined, undefined, false)
         } catch {
           // HOT destroyed during async gap — ignore.
         }
@@ -1683,13 +1692,30 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // 해제한다 (다른 renderer 의 inline bg 는 건드리지 않는다).
     hotRef.current.addHook('afterRenderer', (TD: HTMLTableCellElement, row: number) => {
       const d = displayRowsRef.current[row]
-      const violating = !!d && !isGroupHeader(d) && violatingRowIdsRef.current.has((d as Row).id)
+      const isData = !!d && !isGroupHeader(d)
+      const id = isData ? (d as Row).id : null
+
+      const violating = isData && violatingRowIdsRef.current.has(id!)
       if (violating) {
         TD.style.setProperty('background-color', '#fef2f2', 'important')
         TD.dataset.violation = '1'
       } else if (TD.dataset.violation) {
         TD.style.removeProperty('background-color')
         delete TD.dataset.violation
+      }
+
+      // 신규 row fade-in. row id 단위 sentinel (`fadeAnimated`) 로 한 번만
+      // 적용 — TD 가 recycle 되어도 같은 id 에 대해 두 번 재생되지 않게.
+      // sentinel 값이 현재 id 와 같으면 이미 적용함.
+      if (isData && newRowIdsRef.current.has(id!)) {
+        if (TD.dataset.fadeAnimated !== id) {
+          TD.style.animation = 'dgRowFadeIn 400ms ease-out'
+          TD.dataset.fadeAnimated = id!
+        }
+      } else if (TD.dataset.fadeAnimated) {
+        // 다른 row 로 recycle 된 TD — 잔상 정리.
+        TD.style.removeProperty('animation')
+        delete TD.dataset.fadeAnimated
       }
     })
 

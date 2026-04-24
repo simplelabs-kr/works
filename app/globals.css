@@ -40,6 +40,16 @@ html[data-lnb-collapsed="true"] .datagrid-add-fab {
   left: 60px; /* 36 + 24 */
 }
 
+/* ── New-row fade-in animation ──────────────────────────────────
+ * Shift+Enter / + 버튼으로 생성한 row 가 "뚝" 하고 나타나는 대신
+ * 부드럽게 등장하도록 각 셀의 opacity 를 0 → 1 로 fade-in.
+ * DataGrid.tsx 의 afterRenderer 가 새 row id 의 첫 렌더 시 한 번만
+ * 인라인 animation 속성을 적용한다. */
+@keyframes dgRowFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 body {
   color: #0F172A;
   -webkit-font-smoothing: antialiased;
