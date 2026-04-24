@@ -182,8 +182,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // Each entry is a batch — all cell changes from a single afterChange invocation
   // (e.g. multi-cell Delete) collapse into one undo step. Items are keyed by rowId
   // so replay survives sort/infinite-scroll row reordering.
-  const undoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
-  const redoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
+  const undoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>([])
+  const redoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>([])
   const UNDO_LIMIT = 20
 
   // Set to true by cell-edit flows to skip the full `hot.loadData()` reload on the
@@ -552,6 +552,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // 방금 생성된 row 의 id. afterRenderer 에서 1회만 fade-in 애니메이션
   // 적용 후 sentinel (dataset.fadeAnimated) 로 재실행 방지.
   const newRowIdsRef = useRef<Set<string>>(new Set())
+  // Cmd+Z 실행취소 스택 — row add 전용 (cell edit 용 undoStackRef 는
+  // 별도). createNewRow 가 optimistic 으로 tempId 로 삽입한 직후 entry 를
+  // push 하고, 서버가 realId 를 돌려주면 entry.idPromise 가 resolve.
+  // undo 시 idPromise 를 await → realId 로 bulk-delete 호출.
+  // `pushedAt` 으로 cell-edit undo stack 과 LIFO 순서를 비교 — 더 최근의
+  // 액션이 먼저 undo 된다.
+  const rowAddUndoStackRef = useRef<Array<{ tempId: string; idPromise: Promise<string | null>; pushedAt: number }>>([])
 
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
@@ -693,66 +700,116 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     }
 
-    try {
-      const reqBody: Record<string, unknown> = {}
-      if (afterRowId) reqBody.afterRowId = afterRowId
-      if (Object.keys(prefill).length > 0) reqBody.prefill = prefill
-      const res = await fetch(`${apiBase}/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reqBody),
-      })
-      if (!res.ok) {
-        console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
-        return
-      }
-      const { id } = (await res.json()) as { id?: string }
-      if (!id) return
-      const placeholder = { id, ...prefill } as unknown as Row
-      setRows(prev => {
-        if (prev.some(r => r.id === id)) return prev
-        if (afterRowId) {
-          const idx = prev.findIndex(r => r.id === afterRowId)
-          if (idx >= 0) {
-            const next = [...prev]
-            next.splice(idx + 1, 0, placeholder)
-            return next
-          }
-        }
-        return [...prev, placeholder]
-      })
-      if (!fullyPrefillable) {
-        setViolatingRowIds(prev => {
-          if (prev.has(id)) return prev
-          const next = new Set(prev)
-          next.add(id)
+    // Optimistic insert. Next.js dev route 콜드 컴파일 + Supabase RTT 때문에
+    // 첫 add 가 체감상 느려지는 것을 제거하기 위해, tempId 로 placeholder 를
+    // 즉시 삽입하고 fetch 는 백그라운드에서 진행. 성공 시 tempId → realId
+    // 스왑, 실패 시 placeholder 제거. 사용자 입장에선 fetch latency 와 상관없이
+    // 즉각 row 가 나타난다.
+    const tempId = `tmp_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`
+    const placeholder = { id: tempId, ...prefill } as unknown as Row
+    setRows(prev => {
+      if (afterRowId) {
+        const idx = prev.findIndex(r => r.id === afterRowId)
+        if (idx >= 0) {
+          const next = [...prev]
+          next.splice(idx + 1, 0, placeholder)
           return next
-        })
-      }
-      // Fade-in 애니메이션 등록. afterRenderer 훅이 첫 렌더 시 한 번만
-      // animation 을 적용한 뒤 sentinel 로 잠그므로, set 에서 즉시
-      // 빠져나가도 애니메이션은 재생된다. 일정 시간 후 메모리 정리만.
-      newRowIdsRef.current.add(id)
-      window.setTimeout(() => { newRowIdsRef.current.delete(id) }, 1500)
-      // HOT 가 새 row 를 렌더한 다음 프레임에 focus 만 — 스크롤 위치는
-      // 의도적으로 유지. selectCell 의 scrollToCell=false 로 viewport 가
-      // 점프하지 않게 한다. col 은 호출자 (Shift+Enter / + 버튼) 가 넘긴
-      // 값을 그대로 사용 → 원래 선택 중이던 column 유지. 새 row 가 삽입되면
-      // 그 아래 row 들이 자연스럽게 한 칸 아래로 밀리는 시각 효과만 남는다.
-      requestAnimationFrame(() => {
-        const hot = hotRef.current
-        if (!hot) return
-        const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === id)
-        if (targetRow < 0) return
-        try {
-          hot.selectCell(targetRow, targetCol, undefined, undefined, false)
-        } catch {
-          // HOT destroyed during async gap — ignore.
         }
+      }
+      return [...prev, placeholder]
+    })
+    if (!fullyPrefillable) {
+      setViolatingRowIds(prev => {
+        if (prev.has(tempId)) return prev
+        const next = new Set(prev)
+        next.add(tempId)
+        return next
       })
-    } catch (e) {
-      console.error('[DataGrid] create 오류:', e)
     }
+    newRowIdsRef.current.add(tempId)
+    window.setTimeout(() => { newRowIdsRef.current.delete(tempId) }, 1500)
+
+    // Focus 즉시 — 스크롤은 유지, 원래 column 유지. tempId 기준으로 찾는다.
+    requestAnimationFrame(() => {
+      const hot = hotRef.current
+      if (!hot) return
+      const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === tempId)
+      if (targetRow < 0) return
+      try {
+        hot.selectCell(targetRow, targetCol, undefined, undefined, false)
+      } catch {
+        // HOT destroyed during async gap — ignore.
+      }
+    })
+
+    // Undo 스택에 entry 를 먼저 푸시 — idPromise 가 resolve 되기 전에
+    // 사용자가 Cmd+Z 를 누를 수도 있어서, undo 핸들러는 promise 를 await 한다.
+    const entry: { tempId: string; idPromise: Promise<string | null>; pushedAt: number } = {
+      tempId,
+      idPromise: Promise.resolve(null),
+      pushedAt: Date.now(),
+    }
+    entry.idPromise = (async (): Promise<string | null> => {
+      try {
+        const reqBody: Record<string, unknown> = {}
+        if (afterRowId) reqBody.afterRowId = afterRowId
+        if (Object.keys(prefill).length > 0) reqBody.prefill = prefill
+        const res = await fetch(`${apiBase}/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody),
+        })
+        if (!res.ok) {
+          console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
+          // Rollback.
+          setRows(prev => prev.filter(r => r.id !== tempId))
+          setViolatingRowIds(prev => {
+            if (!prev.has(tempId)) return prev
+            const next = new Set(prev); next.delete(tempId); return next
+          })
+          newRowIdsRef.current.delete(tempId)
+          showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+          return null
+        }
+        const payload = (await res.json()) as { id?: string; sort_order?: number }
+        const realId = payload.id
+        if (!realId) {
+          setRows(prev => prev.filter(r => r.id !== tempId))
+          return null
+        }
+        // tempId → realId 스왑. realtime 이 먼저 배달한 경우 (prev 에 이미
+        // realId 존재) placeholder 만 제거.
+        setRows(prev => {
+          const dup = prev.some(r => r.id === realId)
+          if (dup) return prev.filter(r => r.id !== tempId)
+          return prev.map(r => {
+            if (r.id !== tempId) return r
+            const merged = { ...r, id: realId } as Row
+            if (typeof payload.sort_order === 'number') {
+              (merged as unknown as Record<string, unknown>).sort_order = payload.sort_order
+            }
+            return merged
+          })
+        })
+        // Violation / fade-in 추적도 tempId → realId 로 이관.
+        setViolatingRowIds(prev => {
+          if (!prev.has(tempId)) return prev
+          const next = new Set(prev); next.delete(tempId); next.add(realId); return next
+        })
+        if (newRowIdsRef.current.has(tempId)) {
+          newRowIdsRef.current.delete(tempId)
+          newRowIdsRef.current.add(realId)
+          window.setTimeout(() => { newRowIdsRef.current.delete(realId) }, 1500)
+        }
+        return realId
+      } catch (e) {
+        console.error('[DataGrid] create 오류:', e)
+        setRows(prev => prev.filter(r => r.id !== tempId))
+        showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+        return null
+      }
+    })()
+    rowAddUndoStackRef.current.push(entry)
   }, [apiBase, pageConfig.columns])
 
   // 배너 닫기: violation 표시된 row 들을 숨기고 set 비움. 실제 DB 레코드는
@@ -778,36 +835,84 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   useEffect(() => {
     if (!pageConfig.addRow?.enabled) return
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
       const hot = hotRef.current
       const root = hot?.rootElement as HTMLElement | undefined
       if (!hot || !root) return
-      // 이벤트가 HOT 영역 내에서 발생했을 때만 가로챈다. 다른 모달 /
-      // 입력창에서의 Shift+Enter 는 기본 동작 그대로 둠.
       const target = e.target as Node | null
       if (!target || !root.contains(target)) return
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ed = hot.getActiveEditor() as any
-      if (ed && ed.state === 'STATE_EDITING') return
-      const sel = hot.getSelectedLast()
-      let afterId: string | undefined
-      let targetCol = 0
-      if (sel) {
-        const [r1, c1] = sel
-        if (r1 >= 0) {
-          const d = displayRowsRef.current[r1]
-          if (d && !isGroupHeader(d)) afterId = (d as Row).id
+      const isEditing = !!(ed && ed.state === 'STATE_EDITING')
+
+      // Shift+Enter — 신규 row 생성.
+      if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (isEditing) return
+        const sel = hot.getSelectedLast()
+        let afterId: string | undefined
+        let targetCol = 0
+        if (sel) {
+          const [r1, c1] = sel
+          if (r1 >= 0) {
+            const d = displayRowsRef.current[r1]
+            if (d && !isGroupHeader(d)) afterId = (d as Row).id
+          }
+          if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
         }
-        if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        void createNewRowRef.current(afterId, targetCol)
+        return
       }
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      e.stopPropagation()
-      void createNewRowRef.current(afterId, targetCol)
+
+      // Cmd/Ctrl+Z — row add 실행취소. Cell-edit undo 스택과 시간 비교 후
+      // 더 최근 액션을 우선 처리. row add 쪽이 최신이 아니면 통과시켜
+      // window 레벨의 cell-edit undo 핸들러가 처리하게 둔다.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+        if (isEditing) return
+        const rowAddTop = rowAddUndoStackRef.current[rowAddUndoStackRef.current.length - 1]
+        if (!rowAddTop) return
+        const cellTop = undoStackRef.current[undoStackRef.current.length - 1]
+        const cellTs = cellTop && typeof (cellTop as { pushedAt?: number }).pushedAt === 'number'
+          ? (cellTop as { pushedAt: number }).pushedAt
+          : 0
+        if (cellTs > rowAddTop.pushedAt) return // cell-edit 이 더 최근 → 기본 핸들러에 위임
+        const entry = rowAddUndoStackRef.current.pop()!
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        void (async () => {
+          const realId = await entry.idPromise
+          if (!realId) return // 이미 실패해서 rollback 된 상태 — 할 일 없음.
+          try {
+            const res = await fetch(`${apiBase}/bulk-delete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids: [realId] }),
+            })
+            if (!res.ok) {
+              showToast({ message: '실행취소에 실패했습니다', type: 'error' }, 3000)
+              // 스택 되돌리기 — 같은 entry 다시 push 해서 한 번 더 시도 가능하게.
+              rowAddUndoStackRef.current.push(entry)
+              return
+            }
+            setRows(prev => prev.filter(r => r.id !== realId))
+            setViolatingRowIds(prev => {
+              if (!prev.has(realId)) return prev
+              const next = new Set(prev); next.delete(realId); return next
+            })
+            showToast({ message: '추가가 취소되었습니다', type: 'success' }, 2000)
+          } catch {
+            showToast({ message: '실행취소에 실패했습니다', type: 'error' }, 3000)
+            rowAddUndoStackRef.current.push(entry)
+          }
+        })()
+        return
+      }
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [pageConfig.addRow?.enabled])
+  }, [pageConfig.addRow?.enabled, apiBase])
 
   const handleLoad = () => {
     isAppend.current = false
@@ -1987,7 +2092,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       // Commit the collected changes as a single batched undo entry.
       if (batchItems.length > 0) {
-        undoStackRef.current.push({ items: batchItems })
+        undoStackRef.current.push({ items: batchItems, pushedAt: Date.now() })
         if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift()
         redoStackRef.current = []
       }
@@ -3332,8 +3437,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // so DB sync and rollback behavior are unified with normal edits.
   useEffect(() => {
     const replay = (
-      fromStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
-      toStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
+      fromStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>,
+      toStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>,
       pickValue: (item: { oldVal: unknown; newVal: unknown }) => unknown,
       hotSource: 'undo' | 'redo',
     ) => {
@@ -3362,7 +3467,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         // Array form → single afterChange with all changes, keeps batch semantics.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hot.setDataAtCell(tuples as any, hotSource)
-        toStack.current.push({ items: validItems })
+        toStack.current.push({ items: validItems, pushedAt: Date.now() })
         if (toStack.current.length > UNDO_LIMIT) toStack.current.shift()
         return
       }
