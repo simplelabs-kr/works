@@ -1623,18 +1623,18 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
       if (!masterEl) return
       // FAB 가 마지막 row 를 가리지 않도록 .wtHider (스크롤 가능한 inner
-      // content sizer) 에 paddingBottom 을 줘서 scrollable 범위만 128px
+      // content sizer) 에 paddingBottom 을 줘서 scrollable 범위만 83px
       // 늘린다. HOT 의 row 가상화는 .wtHider 의 inline height (= 실제
       // row 높이 합) 만 참조하므로 padding 은 height 계산에 영향 없이
       // scrollHeight 만 키운다. 결과: 마지막 row 까지 정상 렌더 + 그 아래
-      // 128px 여백을 스크롤로 확보. 배경은 옅은 회색으로 — table cell 의
+      // 83px 여백을 스크롤로 확보. 배경은 옅은 회색으로 — table cell 의
       // 흰 배경과 구분되어 "여기는 데이터 영역 끝" 임을 시각적으로 알리지만
       // 시선을 끌지 않는 톤. .wtHolder 에 직접 padding 을 주는 방식은 HOT
       // 의 viewport height 계산을 틀어지게 해서 사용하지 않는다.
       if (pageConfig.addRow?.enabled) {
         const hider = masterEl.querySelector('.wtHider') as HTMLElement | null
         if (hider) {
-          if (hider.style.paddingBottom !== '128px') hider.style.paddingBottom = '128px'
+          if (hider.style.paddingBottom !== '83px') hider.style.paddingBottom = '83px'
           if (hider.style.backgroundColor !== 'rgb(243, 244, 246)') hider.style.backgroundColor = '#F3F4F6'
         }
       }
