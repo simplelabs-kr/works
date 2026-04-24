@@ -26,12 +26,13 @@ export const RENTALS_EDITABLE_FIELDS: Record<string, string> = {
 }
 
 // 링크 컬럼 설정 — order-items 검색 후 order_item_id 를 PATCH.
-// display (`order_item_고유번호`) 는 flat_rentals 에 denormalized 저장.
-const order_item_고유번호LinkListConfig: LinkListConfig = {
+// display (`order_item_표시명` = "제품명 [끝4자리]") 는 flat_rentals 에
+// denormalized 저장. 팝오버 검색은 제품명/고유_번호/표시명 모두 허용.
+const order_item_표시명LinkListConfig: LinkListConfig = {
   linkTable: 'order-items',
   fkColumn: 'order_item_id',
-  searchFields: ['고유_번호', '제품명'],
-  displayField: '고유_번호',
+  searchFields: ['order_item_표시명', '제품명', '고유_번호'],
+  displayField: 'order_item_표시명',
   secondaryField: '제품명',
   maxLinks: 1,
 }
@@ -60,7 +61,7 @@ export const RENTALS_COLUMNS = [
 
   // ── 링크 컬럼 (chip UI, 정방향 N=1) ─────────────────────────
   // `readOnly: true` + `editor: false` — 직접 타이핑 차단, 팝오버 경유만.
-  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_고유번호LinkListConfig },
+  { data: 'order_item_표시명', title: 'order_item', readOnly: true, width: 220, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
   { data: '번들_고유번호',       title: '번들 고유번호',       readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
 
   // ── 편집 가능 ──────────────────────────────────────────────
@@ -107,6 +108,7 @@ function transformRentalRow(item: RentalItem): RentalRow {
     브랜드코드: str(item.브랜드코드),
     제품명: str(item.제품명),
     order_item_고유번호: str(item.order_item_고유번호),
+    order_item_표시명: str(item.order_item_표시명),
     번들_고유번호: str(item.번들_고유번호),
 
     반납: boolFlag(item.반납),
@@ -133,6 +135,7 @@ function rentalsMergeRealtimeUpdate(
     브랜드코드: n.브랜드코드 !== undefined ? str(n.브랜드코드) : prev.브랜드코드,
     제품명: n.제품명 !== undefined ? str(n.제품명) : prev.제품명,
     order_item_고유번호: n.order_item_고유번호 !== undefined ? str(n.order_item_고유번호) : prev.order_item_고유번호,
+    order_item_표시명: n.order_item_표시명 !== undefined ? str(n.order_item_표시명) : prev.order_item_표시명,
     번들_고유번호: n.번들_고유번호 !== undefined ? str(n.번들_고유번호) : prev.번들_고유번호,
     반납: n.반납 !== undefined ? boolFlag(n.반납) : prev.반납,
     order_item_id: n.order_item_id !== undefined ? (n.order_item_id as string | null) : prev.order_item_id,

@@ -18,13 +18,15 @@ export type RentalItem = {
   // identity (DB 트리거 자동 생성)
   고유번호: string | null
 
-  // JOIN-derived (read-only) — search_rentals RPC 가 alias 로 반환.
+  // JOIN-derived (read-only) — search_flat_rentals RPC 가 alias 로 반환.
   //   order_items.고유_번호    AS order_item_고유번호
+  //   "제품명 [끝4자리]"         AS order_item_표시명
   //   bundles.번들_고유번호     AS 번들_고유번호
   브랜드명: string | null
   브랜드코드: string | null
   제품명: string | null
   order_item_고유번호: string | null
+  order_item_표시명: string | null
   번들_고유번호: string | null
 
   // owned
@@ -48,6 +50,7 @@ export type RentalRow = {
   브랜드코드: string
   제품명: string
   order_item_고유번호: string
+  order_item_표시명: string
   번들_고유번호: string
 
   반납: boolean
