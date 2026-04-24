@@ -370,6 +370,7 @@ export const worksPageConfig: PageConfig<Item, Row> = {
     allowedTypes: ['select', 'checkbox'],
     defaultColumn: undefined,
   },
+  addRow: { enabled: true },
 }
 
 // NOTE: 통합 휴지통으로 전환되어 이 페이지 전용 trash config는 삭제됨.
