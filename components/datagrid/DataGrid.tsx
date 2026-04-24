@@ -1622,17 +1622,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     hotRef.current.addHook('afterRender', () => {
       const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
       if (!masterEl) return
-      // addRow 가 켜진 페이지에서는 좌측하단 FAB 가 마지막 row 를 가리지
-      // 않도록 HOT 내부 스크롤 컨테이너 (.wtHolder) 자체에 bottom padding
-      // 을 주어 마지막 row 아래로 추가 스크롤 공간을 확보한다. wrapper 의
-      // padding 은 HOT 가 wrapper.clientHeight 를 쓰는 방식이라 내부 스크롤
-      // 영역에 전달되지 않고, 오히려 HOT height 계산이 틀어져 row 가 잘리는
-      // 문제가 있어 여기서 직접 주입한다.
-      if (pageConfig.addRow?.enabled) {
-        if (masterEl.style.paddingBottom !== '64px') {
-          masterEl.style.paddingBottom = '64px'
-        }
-      }
+      // FAB 가 마지막 row 를 가리지 않도록 하는 처리는 grid area 아래
+      // flex spacer (h-16) 로 해결 — HOT 가 보는 wrapper clientHeight
+      // 자체가 64px 작아져 마지막 row 가 잘리지 않고 정상 렌더된다.
+      // .wtHolder 에 padding 을 주는 방식은 HOT 의 height 계산을 오히려
+      // 틀어지게 해서 사용하지 않는다.
       const hInner = customScrollbarInnerRef.current
       if (hInner) {
         const target = masterEl.scrollWidth
@@ -3769,11 +3763,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       {/* Grid area — flex-1, fills remaining height */}
       <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
-        {/* HOT container — fills all available space. 좌측하단 FAB 가
-            마지막 row 를 가리지 않도록 HOT 내부 스크롤 컨테이너
-            (.wtHolder) 에 afterRender 훅에서 80px bottom padding 을
-            주입한다 (여기 wrapper style 로는 내부 스크롤 영역에 전달되지
-            않음). */}
+        {/* HOT container — fills all available space. */}
         <div
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-30 pointer-events-none' : ''}`}
@@ -3870,6 +3860,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           innerRef={summaryInnerRef}
         />
       </div>
+
+      {/* FAB 가 grid 위로 떠 있으면 마지막 row 가 가려진다. addRow 가 켜진
+          페이지에서는 grid area 아래에 64px spacer 를 둬서 flex layout 으로
+          그리드를 그만큼 위로 끌어올리고, fixed 한 FAB 는 spacer 영역에
+          올라간다. HOT 의 wrapper.clientHeight 가 자연스럽게 작아지므로
+          내부 height 계산이 틀어지지 않아 row 가 잘리지 않는다. */}
+      {pageConfig.addRow?.enabled && hasData && <div className="h-16 flex-shrink-0" aria-hidden="true" />}
 
       {/* select 컬럼 커스텀 드롭다운 */}
       {selectMenu && (
