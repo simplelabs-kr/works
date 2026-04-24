@@ -769,6 +769,46 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   const createNewRowRef = useRef(createNewRow)
   useEffect(() => { createNewRowRef.current = createNewRow }, [createNewRow])
 
+  // Shift+Enter capture-phase 리스너 — HOT 의 native keydown handler 보다
+  // 먼저 실행되도록 document 의 capture phase 에 등록한다. HOT 의
+  // beforeKeyDown 훅은 HOT 내부 keydown 처리와 같은 phase 여서 stopImm..
+  // 만으로는 HOT default (Shift+Enter = 위로 1칸 이동) 를 항상 막지 못해
+  // 29→28→30 순으로 selection 이 한 번 깜빡이는 문제가 있었다. 여기서
+  // 원천 차단.
+  useEffect(() => {
+    if (!pageConfig.addRow?.enabled) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return
+      const hot = hotRef.current
+      const root = hot?.rootElement as HTMLElement | undefined
+      if (!hot || !root) return
+      // 이벤트가 HOT 영역 내에서 발생했을 때만 가로챈다. 다른 모달 /
+      // 입력창에서의 Shift+Enter 는 기본 동작 그대로 둠.
+      const target = e.target as Node | null
+      if (!target || !root.contains(target)) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ed = hot.getActiveEditor() as any
+      if (ed && ed.state === 'STATE_EDITING') return
+      const sel = hot.getSelectedLast()
+      let afterId: string | undefined
+      let targetCol = 0
+      if (sel) {
+        const [r1, c1] = sel
+        if (r1 >= 0) {
+          const d = displayRowsRef.current[r1]
+          if (d && !isGroupHeader(d)) afterId = (d as Row).id
+        }
+        if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
+      }
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      e.stopPropagation()
+      void createNewRowRef.current(afterId, targetCol)
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [pageConfig.addRow?.enabled])
+
   const handleLoad = () => {
     isAppend.current = false
     setOffset(0)
@@ -2371,46 +2411,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // textarea 가 key 를 소모하므로 이 훅은 발동하지 않음 → Space 는 공백
     // 입력 그대로. 아이콘 클릭 / ↗ 버튼이 편집 중 expand 의 진입점이다.
     hotRef.current.addHook('beforeKeyDown', (e: KeyboardEvent) => {
-      // Shift+Enter — 현재 선택된 row 다음에 신규 row 생성. addRow 가 enabled
-      // 인 페이지에서만 활성. 편집 중에는 editor 가 key 를 먼저 소모하므로
-      // 이 훅은 발동하지 않는다 (cell selection 상태 전용).
-      if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        if (!pageConfig.addRow?.enabled) return
-        const hot = hotRef.current
-        if (!hot) return
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ed = hot.getActiveEditor() as any
-        if (ed && ed.state === 'STATE_EDITING') return
-        const sel = hot.getSelectedLast()
-        let afterId: string | undefined
-        let targetCol = 0
-        if (sel) {
-          const [r1, c1] = sel
-          if (r1 >= 0) {
-            const d = displayRowsRef.current[r1]
-            if (d && !isGroupHeader(d)) afterId = (d as Row).id
-          }
-          // 현재 column 을 그대로 신규 row 로 이어받도록 캡처.
-          if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
-        }
-        // HOT 의 default Shift+Enter (selection 을 위로 1칸 이동) 를 막는다.
-        // preventDefault + stopImmediatePropagation + stopPropagation 을 전부
-        // 호출해 DOM / HOT 양쪽에서 후속 처리가 일어나지 않게 하고,
-        // 추가 보루로 현재 셀에 다시 selection 을 고정 (원래 row/col 유지)
-        // → async insert 가 끝나면 createNewRow 내부에서 신규 row 로 이동.
-        e.preventDefault()
-        e.stopImmediatePropagation()
-        e.stopPropagation()
-        if (sel) {
-          const [r1, c1] = sel
-          if (r1 >= 0 && typeof c1 === 'number' && c1 >= 0) {
-            try { hot.selectCell(r1, c1, undefined, undefined, false) } catch { /* noop */ }
-          }
-        }
-        void createNewRowRef.current(afterId, targetCol)
-        return
-      }
-
+      // Shift+Enter 핸들링은 document capture-phase 리스너로 옮겼다 (아래
+      // useEffect). HOT 의 beforeKeyDown 은 HOT native keydown handler 와
+      // 같은 phase 여서 stopImmediatePropagation 이 HOT 자체 handler 를
+      // 항상 막지는 못한다 — 실제로 Shift+Enter 가 위로 한 칸 점프한 뒤
+      // 내려오는 깜빡임이 잔존했다. document capture 로 HOT 가 이벤트를
+      // 보기 전에 선점해 완전히 차단.
       if (e.key !== ' ') return
       const hot = hotRef.current
       if (!hot) return
