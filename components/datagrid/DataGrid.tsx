@@ -3705,6 +3705,32 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           )}
         </div>
 
+        {/* 필터 미충족 칩 — pre-fill 불가 조건으로 생성된 row 가 있을 때 필터
+            버튼 바로 옆에 amber pill 로 표시. 인과(필터→미충족) 시각적
+            인접. ✕ 클릭 → dismissViolationBanner (해당 row 들 숨김). */}
+        {violatingRowIds.size > 0 && (
+          <div
+            role="status"
+            className="flex flex-shrink-0 items-center gap-1 h-[24px] rounded-full border border-[#FDE68A] bg-[#FEF3C7] pl-2 pr-1 text-[12px] text-[#92400E]"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M6 1.5l5 9H1l5-9z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <path d="M6 5v2.5M6 9v.01" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span>필터 미충족 · {violatingRowIds.size}건</span>
+            <button
+              type="button"
+              onClick={dismissViolationBanner}
+              aria-label="필터 미충족 알림 닫기"
+              className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-[#92400E] hover:bg-[#FDE68A] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FDE68A]"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Server-side search */}
         <div className="relative flex-shrink-0">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -3910,41 +3936,6 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           ?
         </button>
       </div>
-
-      {/* 필터 조건 위반 배너 — pre-fill 불가 조건으로 생성된 row 가 있는 동안
-          floating 으로 표시. grid layout flow 를 차지하지 않도록
-          `position: fixed` 하단 중앙 배치 (toast 위쪽). X 클릭 →
-          violatingRowIds 의 row 들을 숨김 + 배너 사라짐. */}
-      {violatingRowIds.size > 0 && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed', bottom: 72, left: '50%', transform: 'translateX(-50%)', zIndex: 9998,
-            background: '#FEF2F2',
-            color: '#991B1B',
-            border: '1px solid #FECACA',
-            fontSize: 13,
-            padding: '8px 16px',
-            borderRadius: 6,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}
-        >
-          <span>필터 조건에 맞지 않는 레코드 {violatingRowIds.size}건이 표시 중입니다</span>
-          <button
-            type="button"
-            onClick={dismissViolationBanner}
-            aria-label="배너 닫기"
-            className="flex h-5 w-5 items-center justify-center rounded text-[#991B1B] hover:bg-[#FECACA]"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-              <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-            </svg>
-          </button>
-        </div>
-      )}
 
       {/* Empty state */}
       {!hasData && !loading && (
