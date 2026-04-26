@@ -40,6 +40,7 @@ export type PageDef = {
 // attached without a DB migration.
 export const WORKS_PAGES: PageDef[] = [
   { key: 'order-items', label: '생산관리', href: '/works/order-items', status: 'active', presetKey: 'works' },
+  { key: 'orders',      label: '발주',      href: '/works/orders',     status: 'active', presetKey: 'orders' },
   { key: 'packaging',   label: '포장/출고', href: null, status: 'coming-soon', presetKey: null },
   { key: 'products',    label: '제품 관리', href: '/works/products', status: 'active', presetKey: 'products' },
   { key: 'repairs',     label: '수선',      href: '/works/repairs',  status: 'active', presetKey: 'repairs' },

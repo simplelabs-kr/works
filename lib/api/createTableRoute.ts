@@ -41,10 +41,14 @@ export type ListRouteOpts = {
   searchRpc: string
   countRpc: string
   logPrefix: string
+  // search RPC 가 keep_custom_sort boolean 파라미터를 받는 경우에만 true.
+  // 기본 RPC 시그니처에는 없는 옵션 파라미터라 모든 테이블에 무조건 전달하면
+  // "function ... does not exist" 로 깨진다. 명시 opt-in.
+  supportsKeepCustomSort?: boolean
 }
 
 export function createListRoute(opts: ListRouteOpts) {
-  const { searchRpc, countRpc, logPrefix } = opts
+  const { searchRpc, countRpc, logPrefix, supportsKeepCustomSort } = opts
   return async function POST(request: NextRequest) {
     const auth = await requireUser()
     if (auth.response) return auth.response
@@ -63,19 +67,23 @@ export function createListRoute(opts: ListRouteOpts) {
     const searchRaw = typeof body.search_term === 'string' ? body.search_term : ''
     const searchTerm = searchRaw ? searchRaw.slice(0, MAX_SEARCH_LENGTH) : null
     const trashedOnly = body.trashed_only === true
+    const keepCustomSort = body.keep_custom_sort === true
 
     const noopResult = Promise.resolve({ data: null, error: null } as { data: null; error: null })
 
+    const searchArgs: Record<string, unknown> = {
+      filters_json:  filters,
+      sorts_json:    sorts,
+      search_term:   searchTerm,
+      result_offset: offset,
+      result_limit:  100,
+      trashed_only:  trashedOnly,
+    }
+    if (supportsKeepCustomSort) searchArgs.keep_custom_sort = keepCustomSort
+
     const [dataResult, filterCountResult, searchCountResult] = await Promise.all([
       // 1) 데이터 — 모든 파라미터 사용
-      supabaseAdmin.rpc(searchRpc, {
-        filters_json:  filters,
-        sorts_json:    sorts,
-        search_term:   searchTerm,
-        result_offset: offset,
-        result_limit:  100,
-        trashed_only:  trashedOnly,
-      }),
+      supabaseAdmin.rpc(searchRpc, searchArgs),
       // 2) filterCount — 필터만 (검색어 제외). count RPC 는 sorts/offset/limit 없음.
       offset === 0
         ? supabaseAdmin.rpc(countRpc, {
@@ -93,6 +101,7 @@ export function createListRoute(opts: ListRouteOpts) {
     if (dataResult.error) {
       logError(logPrefix, 'rpc error', dataResult.error, {
         filters, sorts, searchTerm, offset, trashedOnly,
+        ...(supportsKeepCustomSort ? { keepCustomSort } : {}),
       })
       return NextResponse.json({ error: '데이터 조회에 실패했습니다' }, { status: 500 })
     }

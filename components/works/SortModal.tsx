@@ -47,6 +47,12 @@ interface SortModalProps {
   onChange: (conditions: SortCondition[]) => void
   onApply: () => void
   onClose: () => void
+  // "자동 정렬 유지" — ON 이면 컬럼 정렬이 계속 유지되고 sort_order 는 무시.
+  // OFF (기본) 면 컬럼 정렬은 1회성이며 RPC 는 sort_order NULLS LAST,
+  // created_at ASC 를 기본으로 사용. 페이지가 이 기능을 노출하지 않는
+  // 경우 (order-items 이외) props 자체를 생략하면 토글이 숨겨진다.
+  keepCustomSort?: boolean
+  onKeepCustomSortChange?: (v: boolean) => void
 }
 
 function uid() {
@@ -59,7 +65,10 @@ export default function SortModal({
   onChange,
   onApply,
   onClose,
+  keepCustomSort,
+  onKeepCustomSortChange,
 }: SortModalProps) {
+  const showKeepToggle = typeof keepCustomSort === 'boolean' && typeof onKeepCustomSortChange === 'function'
   const modalRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -160,6 +169,45 @@ export default function SortModal({
       >
         + 정렬 추가
       </button>
+
+      {showKeepToggle && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 0 14px', borderTop: '1px solid #F1F5F9', marginBottom: 2,
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 13, color: '#111827', fontWeight: 500 }}>자동 정렬 유지</span>
+            <span style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+              OFF: 기본 순서(sort_order) 기준, 컬럼 정렬은 1회성 · ON: 컬럼 정렬을 계속 유지
+            </span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!!keepCustomSort}
+            onClick={() => onKeepCustomSortChange!(!keepCustomSort)}
+            style={{
+              position: 'relative',
+              width: 36, height: 20, borderRadius: 999,
+              background: keepCustomSort ? '#2D7FF9' : '#CBD5E1',
+              border: 'none', cursor: 'pointer', transition: 'background 0.15s',
+              flexShrink: 0, marginLeft: 12,
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute', top: 2,
+                left: keepCustomSort ? 18 : 2,
+                width: 16, height: 16, borderRadius: '50%',
+                background: 'white', transition: 'left 0.15s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }}
+            />
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid #F1F5F9', paddingTop: 14 }}>
         <button

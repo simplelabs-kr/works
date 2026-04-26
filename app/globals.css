@@ -29,6 +29,27 @@ html[data-lnb-collapsed="true"] aside[data-worksy-lnb] > *:not([data-worksy-lnb-
   display: none !important;
 }
 
+/* ── Floating "add row" FAB ─────────────────────────────────────
+ * 고정 원형 + 버튼. bottom: 24px, left: 사이드바 너비 + 24px.
+ * LNB 폭은 데스크톱 기준 220px (expanded) / 36px (collapsed) —
+ * WorksShell 이 <html data-lnb-collapsed="true"> 로 토글한다. */
+.datagrid-add-fab {
+  left: 244px; /* 220 + 24 */
+}
+html[data-lnb-collapsed="true"] .datagrid-add-fab {
+  left: 60px; /* 36 + 24 */
+}
+
+/* ── New-row fade-in animation ──────────────────────────────────
+ * Shift+Enter / + 버튼으로 생성한 row 가 "뚝" 하고 나타나는 대신
+ * 부드럽게 등장하도록 각 셀의 opacity 를 0 → 1 로 fade-in.
+ * DataGrid.tsx 의 afterRenderer 가 새 row id 의 첫 렌더 시 한 번만
+ * 인라인 animation 속성을 적용한다. */
+@keyframes dgRowFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 body {
   color: #0F172A;
   -webkit-font-smoothing: antialiased;

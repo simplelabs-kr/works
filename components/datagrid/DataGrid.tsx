@@ -8,7 +8,7 @@ import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
 import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
-import { countAllConditions, normalizeFilterStateToData } from '@/components/works/FilterModal'
+import { countAllConditions, isFilterGroup as isFilterGroupItem, normalizeFilterStateToData } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
 import { normalizeSortConditionsToData } from '@/components/works/SortModal'
@@ -72,6 +72,39 @@ const ROW_THUMB_URL_W: Record<RowHeight, number> = {
 
 // Debounce delay for server-side search
 const SEARCH_DEBOUNCE_MS = 500
+
+// 신규 레코드 pre-fill: 활성 필터의 "equals 계열" 조건을 INSERT body 에
+// 병합한다. FilterModal 은 fieldType 별로 다른 operator 를 쓰기 때문에
+// (select/text 는 'is', number 는 'eq', boolean 은 'is_checked' /
+// 'is_unchecked') 여기서 fieldType + operator 조합을 해석해 실제 값을
+// 돌려준다. 매칭 실패 (=equals 아닌 필터, 지원 밖 필드 타입) 시 호출측은
+// fullyPrefillable=false 로 기록 → violation 배너. lookup / formula /
+// image / attachment / date 는 제외: 각각 read-only (lookup/formula),
+// 값 shape 가 원시타입이 아님 (image/attachment), 필터에 순수 eq 가 없음
+// (date 는 is_before/is_after 등 range 기반).
+function resolveEqPrefill(
+  fieldType: string | undefined,
+  operator: string,
+  value: unknown,
+): { matched: true; value: unknown } | { matched: false } {
+  switch (fieldType) {
+    case 'select':
+    case 'text':
+    case 'longtext':
+      if (operator === 'is' && typeof value === 'string') return { matched: true, value }
+      return { matched: false }
+    case 'number':
+      if (operator === 'eq' && typeof value === 'number') return { matched: true, value }
+      return { matched: false }
+    case 'boolean':
+    case 'checkbox':
+      if (operator === 'is_checked') return { matched: true, value: true }
+      if (operator === 'is_unchecked') return { matched: true, value: false }
+      return { matched: false }
+    default:
+      return { matched: false }
+  }
+}
 
 // Synthetic row injected into HOT's data array to act as a group-by
 // section header. Distinguished from real Row objects by `__group: true`
@@ -176,8 +209,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // Each entry is a batch — all cell changes from a single afterChange invocation
   // (e.g. multi-cell Delete) collapse into one undo step. Items are keyed by rowId
   // so replay survives sort/infinite-scroll row reordering.
-  const undoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
-  const redoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>([])
+  const undoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>([])
+  const redoStackRef = useRef<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>([])
   const UNDO_LIMIT = 20
 
   // Set to true by cell-edit flows to skip the full `hot.loadData()` reload on the
@@ -528,6 +561,31 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   const [sortConditions, setSortConditions] = useState<SortCondition[]>([])
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSortModal, setShowSortModal] = useState(false)
+  // "자동 정렬 유지" — OFF (기본) 면 RPC 가 sort_order NULLS LAST, created_at
+  // ASC 기본 정렬을 사용하고 sortConditions 는 1회성. ON 이면 sortConditions
+  // 가 영구 정렬 키가 되고 sort_order 는 무시된다. 세션 내 로컬 상태 —
+  // persist 불필요. 현재는 order-items 페이지에서만 의미 있음
+  // (addRow.enabled 와 함께 노출).
+  const [keepCustomSort, setKeepCustomSort] = useState(false)
+  const keepCustomSortRef = useRef(false)
+  // + 버튼 / Shift+Enter 로 생성된 row 중 "현재 필터를 완전히 pre-fill 로
+  // 충족시킬 수 없는" 경우 id 를 여기에 기록. HOT 의 cells 콜백이 이 set
+  // 을 참조해 배경을 연한 빨강으로 칠하고, 상단 floating 배너가 건수를
+  // 표시한다. 배너 X 클릭 / 페이지 리로드 시 해제. "pre-fill 가능" 은
+  // `PREFILL_ELIGIBLE_FIELD_TYPES` + operator === 'eq' + 최상위 AND 로만
+  // 정의 (Airtable 의 "새 레코드가 필터 조건에 맞지 않음" 경고 동등).
+  const [violatingRowIds, setViolatingRowIds] = useState<Set<string>>(new Set())
+  const violatingRowIdsRef = useRef<Set<string>>(new Set())
+  // 방금 생성된 row 의 id. afterRenderer 에서 1회만 fade-in 애니메이션
+  // 적용 후 sentinel (dataset.fadeAnimated) 로 재실행 방지.
+  const newRowIdsRef = useRef<Set<string>>(new Set())
+  // Cmd+Z 실행취소 스택 — row add 전용 (cell edit 용 undoStackRef 는
+  // 별도). createNewRow 가 optimistic 으로 tempId 로 삽입한 직후 entry 를
+  // push 하고, 서버가 realId 를 돌려주면 entry.idPromise 가 resolve.
+  // undo 시 idPromise 를 await → realId 로 bulk-delete 호출.
+  // `pushedAt` 으로 cell-edit undo stack 과 LIFO 순서를 비교 — 더 최근의
+  // 액션이 먼저 undo 된다.
+  const rowAddUndoStackRef = useRef<Array<{ tempId: string; idPromise: Promise<string | null>; pushedAt: number }>>([])
 
   // Grid personalization state (Phase 1: in-memory only; Phase 2 will persist).
   const [rowHeight, setRowHeight] = useState<RowHeight>('short')
@@ -602,6 +660,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   useEffect(() => { holidaySetRef.current = holidaySet }, [holidaySet])
   useEffect(() => { filterStateRef.current = filterState }, [filterState])
   useEffect(() => { sortConditionsRef.current = sortConditions }, [sortConditions])
+  useEffect(() => { keepCustomSortRef.current = keepCustomSort }, [keepCustomSort])
+  useEffect(() => {
+    violatingRowIdsRef.current = violatingRowIds
+    // HOT 의 cells 콜백은 render 타이밍에만 호출되므로 state 변경 후
+    // 수동 재렌더로 className 을 즉시 반영.
+    hotRef.current?.render()
+  }, [violatingRowIds])
   useEffect(() => { searchTermRef.current = searchTerm }, [searchTerm])
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
   useEffect(() => { hiddenColumnsRef.current = hiddenColumns }, [hiddenColumns])
@@ -619,6 +684,258 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       setOffset(o => o + 100)
     }
   }, [])
+
+  // 신규 행 생성. POST `${apiBase}/create` 결과로 돌아온 id 로 placeholder
+  // row 를 낙관적으로 추가한다 (afterRowId 지정 시 해당 row 바로 다음,
+  // 아니면 배열 끝). HOT 포커스 + 스크롤. 서버 트리거가 flat 테이블을
+  // populate 하면 realtime INSERT 가 실제 데이터로 머지한다 (id dedupe).
+  //
+  // Pre-fill: 활성 필터에서 equals 계열 조건 (fieldType 별 해석은
+  // `resolveEqPrefill` 참고) 의 값을 추출해 INSERT body 에 병합 → 새 row
+  // 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/range/OR/중첩
+  // 그룹 / read-only 컬럼 / derived 컬럼 등) 이 섞여 있으면 "완전 pre-fill
+  // 불가" 로 간주하고 해당 row 를 violation set 에 등록 → 배너 + 빨간 배경.
+  const createNewRow = useCallback(async (afterRowId?: string, targetCol: number = 0) => {
+    const fs = filterStateRef.current
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cols = pageConfig.columns as any[]
+    const colByData = new Map<string, { data: string; fieldType?: string; readOnly?: boolean; derived?: boolean }>()
+    for (const c of cols) {
+      if (c && typeof c.data === 'string') colByData.set(c.data, c)
+    }
+
+    const prefill: Record<string, unknown> = {}
+    let fullyPrefillable = true
+    if (fs.conditions.length > 0) {
+      if (fs.logic !== 'AND') {
+        fullyPrefillable = false
+      } else {
+        for (const item of fs.conditions) {
+          if (isFilterGroupItem(item)) { fullyPrefillable = false; continue }
+          const col = colByData.get(item.column)
+          if (!col) { fullyPrefillable = false; continue }
+          // derived / readOnly 컬럼은 INSERT 로 넘겨도 서버가 reject — skip.
+          if (col.derived || col.readOnly) { fullyPrefillable = false; continue }
+          const resolved = resolveEqPrefill(col.fieldType, item.operator, item.value)
+          if (!resolved.matched) { fullyPrefillable = false; continue }
+          prefill[item.column] = resolved.value
+        }
+      }
+    }
+
+    // Optimistic insert. Next.js dev route 콜드 컴파일 + Supabase RTT 때문에
+    // 첫 add 가 체감상 느려지는 것을 제거하기 위해, tempId 로 placeholder 를
+    // 즉시 삽입하고 fetch 는 백그라운드에서 진행. 성공 시 tempId → realId
+    // 스왑, 실패 시 placeholder 제거. 사용자 입장에선 fetch latency 와 상관없이
+    // 즉각 row 가 나타난다.
+    const tempId = `tmp_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`
+    const placeholder = { id: tempId, ...prefill } as unknown as Row
+    setRows(prev => {
+      if (afterRowId) {
+        const idx = prev.findIndex(r => r.id === afterRowId)
+        if (idx >= 0) {
+          const next = [...prev]
+          next.splice(idx + 1, 0, placeholder)
+          return next
+        }
+      }
+      return [...prev, placeholder]
+    })
+    if (!fullyPrefillable) {
+      setViolatingRowIds(prev => {
+        if (prev.has(tempId)) return prev
+        const next = new Set(prev)
+        next.add(tempId)
+        return next
+      })
+    }
+    newRowIdsRef.current.add(tempId)
+    window.setTimeout(() => { newRowIdsRef.current.delete(tempId) }, 1500)
+
+    // Focus 즉시 — 스크롤은 유지, 원래 column 유지. tempId 기준으로 찾는다.
+    requestAnimationFrame(() => {
+      const hot = hotRef.current
+      if (!hot) return
+      const targetRow = displayRowsRef.current.findIndex(d => !isGroupHeader(d) && (d as Row).id === tempId)
+      if (targetRow < 0) return
+      try {
+        hot.selectCell(targetRow, targetCol, undefined, undefined, false)
+      } catch {
+        // HOT destroyed during async gap — ignore.
+      }
+    })
+
+    // Undo 스택에 entry 를 먼저 푸시 — idPromise 가 resolve 되기 전에
+    // 사용자가 Cmd+Z 를 누를 수도 있어서, undo 핸들러는 promise 를 await 한다.
+    const entry: { tempId: string; idPromise: Promise<string | null>; pushedAt: number } = {
+      tempId,
+      idPromise: Promise.resolve(null),
+      pushedAt: Date.now(),
+    }
+    entry.idPromise = (async (): Promise<string | null> => {
+      try {
+        const reqBody: Record<string, unknown> = {}
+        if (afterRowId) reqBody.afterRowId = afterRowId
+        if (Object.keys(prefill).length > 0) reqBody.prefill = prefill
+        const res = await fetch(`${apiBase}/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reqBody),
+        })
+        if (!res.ok) {
+          console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
+          // Rollback.
+          setRows(prev => prev.filter(r => r.id !== tempId))
+          setViolatingRowIds(prev => {
+            if (!prev.has(tempId)) return prev
+            const next = new Set(prev); next.delete(tempId); return next
+          })
+          newRowIdsRef.current.delete(tempId)
+          showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+          return null
+        }
+        const payload = (await res.json()) as { id?: string; sort_order?: number }
+        const realId = payload.id
+        if (!realId) {
+          setRows(prev => prev.filter(r => r.id !== tempId))
+          return null
+        }
+        // tempId → realId 스왑. realtime 이 먼저 배달한 경우 (prev 에 이미
+        // realId 존재) placeholder 만 제거.
+        setRows(prev => {
+          const dup = prev.some(r => r.id === realId)
+          if (dup) return prev.filter(r => r.id !== tempId)
+          return prev.map(r => {
+            if (r.id !== tempId) return r
+            const merged = { ...r, id: realId } as Row
+            if (typeof payload.sort_order === 'number') {
+              (merged as unknown as Record<string, unknown>).sort_order = payload.sort_order
+            }
+            return merged
+          })
+        })
+        // Violation / fade-in 추적도 tempId → realId 로 이관.
+        setViolatingRowIds(prev => {
+          if (!prev.has(tempId)) return prev
+          const next = new Set(prev); next.delete(tempId); next.add(realId); return next
+        })
+        if (newRowIdsRef.current.has(tempId)) {
+          newRowIdsRef.current.delete(tempId)
+          newRowIdsRef.current.add(realId)
+          window.setTimeout(() => { newRowIdsRef.current.delete(realId) }, 1500)
+        }
+        return realId
+      } catch (e) {
+        console.error('[DataGrid] create 오류:', e)
+        setRows(prev => prev.filter(r => r.id !== tempId))
+        showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+        return null
+      }
+    })()
+    rowAddUndoStackRef.current.push(entry)
+  }, [apiBase, pageConfig.columns])
+
+  // 배너 닫기: violation 표시된 row 들을 숨기고 set 비움. 실제 DB 레코드는
+  // 그대로 남아 다음 refetch 시점에 서버 필터 기준으로 (포함되면) 다시
+  // 들어온다.
+  const dismissViolationBanner = useCallback(() => {
+    const ids = violatingRowIdsRef.current
+    if (ids.size === 0) return
+    setRows(prev => prev.filter(r => !ids.has(r.id)))
+    setViolatingRowIds(new Set())
+  }, [])
+  // 마운트 시 1회 등록되는 HOT 훅 (beforeKeyDown) 에서 최신 createNewRow 를
+  // 호출하기 위해 ref 로 미러링.
+  const createNewRowRef = useRef(createNewRow)
+  useEffect(() => { createNewRowRef.current = createNewRow }, [createNewRow])
+
+  // Shift+Enter capture-phase 리스너 — HOT 의 native keydown handler 보다
+  // 먼저 실행되도록 document 의 capture phase 에 등록한다. HOT 의
+  // beforeKeyDown 훅은 HOT 내부 keydown 처리와 같은 phase 여서 stopImm..
+  // 만으로는 HOT default (Shift+Enter = 위로 1칸 이동) 를 항상 막지 못해
+  // 29→28→30 순으로 selection 이 한 번 깜빡이는 문제가 있었다. 여기서
+  // 원천 차단.
+  useEffect(() => {
+    if (!pageConfig.addRow?.enabled) return
+    const handler = (e: KeyboardEvent) => {
+      const hot = hotRef.current
+      const root = hot?.rootElement as HTMLElement | undefined
+      if (!hot || !root) return
+      const target = e.target as Node | null
+      if (!target || !root.contains(target)) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ed = hot.getActiveEditor() as any
+      const isEditing = !!(ed && ed.state === 'STATE_EDITING')
+
+      // Shift+Enter — 신규 row 생성.
+      if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (isEditing) return
+        const sel = hot.getSelectedLast()
+        let afterId: string | undefined
+        let targetCol = 0
+        if (sel) {
+          const [r1, c1] = sel
+          if (r1 >= 0) {
+            const d = displayRowsRef.current[r1]
+            if (d && !isGroupHeader(d)) afterId = (d as Row).id
+          }
+          if (typeof c1 === 'number' && c1 >= 0) targetCol = c1
+        }
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        void createNewRowRef.current(afterId, targetCol)
+        return
+      }
+
+      // Cmd/Ctrl+Z — row add 실행취소. Cell-edit undo 스택과 시간 비교 후
+      // 더 최근 액션을 우선 처리. row add 쪽이 최신이 아니면 통과시켜
+      // window 레벨의 cell-edit undo 핸들러가 처리하게 둔다.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+        if (isEditing) return
+        const rowAddTop = rowAddUndoStackRef.current[rowAddUndoStackRef.current.length - 1]
+        if (!rowAddTop) return
+        const cellTop = undoStackRef.current[undoStackRef.current.length - 1]
+        const cellTs = cellTop && typeof (cellTop as { pushedAt?: number }).pushedAt === 'number'
+          ? (cellTop as { pushedAt: number }).pushedAt
+          : 0
+        if (cellTs > rowAddTop.pushedAt) return // cell-edit 이 더 최근 → 기본 핸들러에 위임
+        const entry = rowAddUndoStackRef.current.pop()!
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        void (async () => {
+          const realId = await entry.idPromise
+          if (!realId) return // 이미 실패해서 rollback 된 상태 — 할 일 없음.
+          try {
+            const res = await fetch(`${apiBase}/bulk-delete`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids: [realId] }),
+            })
+            if (!res.ok) {
+              showToast({ message: '실행취소에 실패했습니다', type: 'error' }, 3000)
+              // 스택 되돌리기 — 같은 entry 다시 push 해서 한 번 더 시도 가능하게.
+              rowAddUndoStackRef.current.push(entry)
+              return
+            }
+            setRows(prev => prev.filter(r => r.id !== realId))
+            setViolatingRowIds(prev => {
+              if (!prev.has(realId)) return prev
+              const next = new Set(prev); next.delete(realId); return next
+            })
+            showToast({ message: '추가가 취소되었습니다', type: 'success' }, 2000)
+          } catch {
+            showToast({ message: '실행취소에 실패했습니다', type: 'error' }, 3000)
+            rowAddUndoStackRef.current.push(entry)
+          }
+        })()
+        return
+      }
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [pageConfig.addRow?.enabled, apiBase])
 
   const handleLoad = () => {
     isAppend.current = false
@@ -1044,6 +1361,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         sorts: apiSorts,
         search_term: searchTermRef.current || null,
         trashed_only: !!trashedMode,
+        keep_custom_sort: keepCustomSortRef.current,
       }),
     })
       .then(res => res.json())
@@ -1294,7 +1612,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         if (d && isGroupHeader(d)) {
           return { readOnly: true, editor: false, renderer: groupHeaderRenderer, className: 'group-header-row' }
         }
-        if (trashedMode) return { readOnly: true, editor: false }
+        // violation 표시는 afterRenderer 훅에서 TD.style.backgroundColor 를
+        // 직접 설정 — cells() className 은 checkbox/formula/image 등
+        // custom renderer 가 이후에 배경을 덮어써서 적용되지 않음.
+        if (trashedMode) {
+          return { readOnly: true, editor: false }
+        }
         // Select 컬럼은 기본 텍스트 에디터를 비활성화 — 커스텀 드롭다운
         // (selectMenu) 만이 편집 경로다. Enter/F2/더블클릭으로 텍스트
         // 입력창이 열리면 Airtable UX 와 달라 보이므로 editor: false 로
@@ -1477,6 +1800,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     hotRef.current.addHook('afterRender', () => {
       const masterEl = hotRef.current?.rootElement?.querySelector('.ht_master .wtHolder') as HTMLElement | null
       if (!masterEl) return
+      // FAB 가 마지막 row 를 가리지 않도록 .wtHider (스크롤 가능한 inner
+      // content sizer) 에 paddingBottom 을 줘서 scrollable 범위만 83px
+      // 늘린다. HOT 의 row 가상화는 .wtHider 의 inline height (= 실제
+      // row 높이 합) 만 참조하므로 padding 은 height 계산에 영향 없이
+      // scrollHeight 만 키운다. 결과: 마지막 row 까지 정상 렌더 + 그 아래
+      // 83px 여백을 스크롤로 확보. 배경은 옅은 회색으로 — table cell 의
+      // 흰 배경과 구분되어 "여기는 데이터 영역 끝" 임을 시각적으로 알리지만
+      // 시선을 끌지 않는 톤. .wtHolder 에 직접 padding 을 주는 방식은 HOT
+      // 의 viewport height 계산을 틀어지게 해서 사용하지 않는다.
+      if (pageConfig.addRow?.enabled) {
+        const hider = masterEl.querySelector('.wtHider') as HTMLElement | null
+        if (hider) {
+          if (hider.style.paddingBottom !== '83px') hider.style.paddingBottom = '83px'
+          if (hider.style.backgroundColor !== 'rgb(248, 249, 250)') hider.style.backgroundColor = '#F8F9FA'
+        }
+      }
       const hInner = customScrollbarInnerRef.current
       if (hInner) {
         const target = masterEl.scrollWidth
@@ -1510,6 +1849,43 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('beforeRenderer', (td: HTMLTableCellElement) => {
       if (td.dataset.selectCol) delete td.dataset.selectCol
+    })
+
+    // Violation row 배경 — 필터 pre-fill 만으로는 현재 필터 조건을 만족하지
+    // 못한 채로 삽입된 신규 row 를 연한 빨강으로 표시. cells() className
+    // 은 checkbox/formula/image 등 custom renderer 가 자체적으로
+    // TD.style.background 를 덮어써서 무시되므로, 모든 renderer 실행 이후
+    // 발동하는 afterRenderer 훅에서 직접 `!important` 우선순위로 설정한다.
+    // HOT 가 TD 를 recycle 하기 때문에 이전 violation 상태 잔상이 남을 수
+    // 있어 `data-violation` 을 sentinel 로 사용: 우리가 칠한 TD 만 우리가
+    // 해제한다 (다른 renderer 의 inline bg 는 건드리지 않는다).
+    hotRef.current.addHook('afterRenderer', (TD: HTMLTableCellElement, row: number) => {
+      const d = displayRowsRef.current[row]
+      const isData = !!d && !isGroupHeader(d)
+      const id = isData ? (d as Row).id : null
+
+      const violating = isData && violatingRowIdsRef.current.has(id!)
+      if (violating) {
+        TD.style.setProperty('background-color', '#fef2f2', 'important')
+        TD.dataset.violation = '1'
+      } else if (TD.dataset.violation) {
+        TD.style.removeProperty('background-color')
+        delete TD.dataset.violation
+      }
+
+      // 신규 row fade-in. row id 단위 sentinel (`fadeAnimated`) 로 한 번만
+      // 적용 — TD 가 recycle 되어도 같은 id 에 대해 두 번 재생되지 않게.
+      // sentinel 값이 현재 id 와 같으면 이미 적용함.
+      if (isData && newRowIdsRef.current.has(id!)) {
+        if (TD.dataset.fadeAnimated !== id) {
+          TD.style.animation = 'dgRowFadeIn 400ms ease-out'
+          TD.dataset.fadeAnimated = id!
+        }
+      } else if (TD.dataset.fadeAnimated) {
+        // 다른 row 로 recycle 된 TD — 잔상 정리.
+        TD.style.removeProperty('animation')
+        delete TD.dataset.fadeAnimated
+      }
     })
 
     // Field type icons via DOM manipulation (avoids HOT HTML escaping)
@@ -1739,7 +2115,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       // Commit the collected changes as a single batched undo entry.
       if (batchItems.length > 0) {
-        undoStackRef.current.push({ items: batchItems })
+        undoStackRef.current.push({ items: batchItems, pushedAt: Date.now() })
         if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift()
         redoStackRef.current = []
       }
@@ -2163,6 +2539,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // textarea 가 key 를 소모하므로 이 훅은 발동하지 않음 → Space 는 공백
     // 입력 그대로. 아이콘 클릭 / ↗ 버튼이 편집 중 expand 의 진입점이다.
     hotRef.current.addHook('beforeKeyDown', (e: KeyboardEvent) => {
+      // Shift+Enter 핸들링은 document capture-phase 리스너로 옮겼다 (아래
+      // useEffect). HOT 의 beforeKeyDown 은 HOT native keydown handler 와
+      // 같은 phase 여서 stopImmediatePropagation 이 HOT 자체 handler 를
+      // 항상 막지는 못한다 — 실제로 Shift+Enter 가 위로 한 칸 점프한 뒤
+      // 내려오는 깜빡임이 잔존했다. document capture 로 HOT 가 이벤트를
+      // 보기 전에 선점해 완전히 차단.
       if (e.key !== ' ') return
       const hot = hotRef.current
       if (!hot) return
@@ -3078,8 +3460,8 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // so DB sync and rollback behavior are unified with normal edits.
   useEffect(() => {
     const replay = (
-      fromStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
-      toStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }> }>>,
+      fromStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>,
+      toStack: React.MutableRefObject<Array<{ items: Array<{ rowId: string; prop: string; oldVal: unknown; newVal: unknown }>; pushedAt: number }>>,
       pickValue: (item: { oldVal: unknown; newVal: unknown }) => unknown,
       hotSource: 'undo' | 'redo',
     ) => {
@@ -3108,7 +3490,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         // Array form → single afterChange with all changes, keeps batch semantics.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         hot.setDataAtCell(tuples as any, hotSource)
-        toStack.current.push({ items: validItems })
+        toStack.current.push({ items: validItems, pushedAt: Date.now() })
         if (toStack.current.length > UNDO_LIMIT) toStack.current.shift()
         return
       }
@@ -3323,6 +3705,32 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           )}
         </div>
 
+        {/* 필터 미충족 칩 — pre-fill 불가 조건으로 생성된 row 가 있을 때 필터
+            버튼 바로 옆에 amber pill 로 표시. 인과(필터→미충족) 시각적
+            인접. ✕ 클릭 → dismissViolationBanner (해당 row 들 숨김). */}
+        {violatingRowIds.size > 0 && (
+          <div
+            role="status"
+            className="flex flex-shrink-0 items-center gap-1 h-[24px] rounded-full border border-[#FDE68A] bg-[#FEF3C7] pl-2 pr-1 text-[12px] text-[#92400E]"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M6 1.5l5 9H1l5-9z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+              <path d="M6 5v2.5M6 9v.01" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+            </svg>
+            <span>필터 미충족 · {violatingRowIds.size}건</span>
+            <button
+              type="button"
+              onClick={dismissViolationBanner}
+              aria-label="필터 미충족 알림 닫기"
+              className="flex h-[18px] w-[18px] items-center justify-center rounded-full text-[#92400E] hover:bg-[#FDE68A] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FDE68A]"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+                <path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
         {/* Server-side search */}
         <div className="relative flex-shrink-0">
           <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -3360,6 +3768,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
               onChange={setSortConditions}
               onApply={handleLoad}
               onClose={() => setShowSortModal(false)}
+              {...(pageConfig.addRow?.enabled ? { keepCustomSort, onKeepCustomSortChange: setKeepCustomSort } : {})}
             />
           )}
         </div>
@@ -3544,7 +3953,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
       {/* Grid area — flex-1, fills remaining height */}
       <div className={`relative flex flex-col flex-1 min-h-0 overflow-hidden${!hasData && !loading ? ' hidden' : ''}`}>
-        {/* HOT container — fills all available space */}
+        {/* HOT container — fills all available space. */}
         <div
           ref={hotContainerRef}
           className={`flex-1 min-h-0 overflow-hidden${loading ? ' opacity-30 pointer-events-none' : ''}`}
@@ -4040,6 +4449,23 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           onClose={() => setGalleryImages(null)}
         />
       )}
+
+      {/* Floating + 버튼 — 좌측 하단 고정, 사이드바 옆. Airtable 스타일로
+          연한 회색 테두리 + 회색 아이콘. */}
+      {pageConfig.addRow?.enabled && (
+        <button
+          type="button"
+          onClick={() => void createNewRow()}
+          className="datagrid-add-fab fixed bottom-6 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-[#D1D5DB] bg-white text-[#9CA3AF] shadow-[0_2px_6px_rgba(0,0,0,0.08)] hover:bg-[#E5E7EB] hover:text-[#6B7280] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] transition-colors"
+          aria-label="새 행 추가"
+          title="새 행 추가 (Shift+Enter)"
+        >
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+        </button>
+      )}
+
     </div>
   )
 }
