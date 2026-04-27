@@ -111,7 +111,7 @@ function transformRefundRow(item: RefundItem): RefundRow {
 // ── Realtime UPDATE 머지 ─────────────────────────────────────────────
 //
 // flat_refunds UPDATE 수신 시 denormalized 컬럼까지 모두 동기화.
-// 트리거가 refunds / orders / bundles / order_items 변경을 flat 에 전파.
+// 트리거가 refunds / bundles / order_items 변경을 flat 에 전파.
 function refundsMergeRealtimeUpdate(
   prev: RefundRow,
   payloadNew: Record<string, unknown>,

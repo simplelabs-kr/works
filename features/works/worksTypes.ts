@@ -52,12 +52,14 @@ export type Item = {
   체인_두께: string | null
   parent_id: string | null
   parent_airtable_id: string | null
+  // order_id: orders 테이블 DROP 후 FK 제거됨. 컬럼은 order_items 에 남아있으나
+  // 의미 없음 — 그리드에서는 readOnly 로만 표시.
   order_id: string | null
   product_id: string | null
   brand_id: string | null
   metal_price_id: string | null
   bundle_id: string | null
-  // orders 유래
+  // 이전에는 orders JOIN 으로 가져왔던 컬럼들 — 이제 order_items 본체 컬럼.
   소재: string | null
   도금_색상: string | null
   각인_여부: boolean | null

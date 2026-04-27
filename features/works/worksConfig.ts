@@ -309,8 +309,8 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
 
 // Given the previous row and `payload.new` from a Supabase realtime UPDATE
 // (flat_order_details 기준), 표시 컬럼 전체를 동기화한다. flat_order_details
-// 는 orders/products/brands/bundles 변경 시 트리거로 갱신되므로 이제는
-// JOIN 유래 컬럼(제품명/brand_name/고객명/소재 등)도 realtime 으로 전파된다.
+// 는 order_items/products/brands/bundles 변경 시 트리거로 갱신되므로 이제는
+// JOIN 유래 컬럼(제품명/brand_name/metal_name 등)도 realtime 으로 전파된다.
 // `원부자재` / `발주_현황` 은 아직 flat 에 물리 컬럼이 없는 derived 컬럼이라
 // 이전 값을 유지한다.
 function worksMergeRealtimeUpdate(

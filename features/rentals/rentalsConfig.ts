@@ -123,7 +123,7 @@ function transformRentalRow(item: RentalItem): RentalRow {
 // ── Realtime UPDATE 머지 ─────────────────────────────────────────────
 //
 // flat_rentals UPDATE 수신 시 denormalized 컬럼까지 모두 동기화.
-// 트리거가 rentals / orders / bundles 변경을 flat 에 전파한다.
+// 트리거가 rentals / bundles 변경을 flat 에 전파한다.
 function rentalsMergeRealtimeUpdate(
   prev: RentalRow,
   payloadNew: Record<string, unknown>,
