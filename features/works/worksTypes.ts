@@ -28,6 +28,9 @@ export type Item = {
   updated_at: string | null
   고유_번호: string
   수량: number | null
+  발주_수량: number | null
+  수량_조정: number | null
+  급자: boolean | null
   중량: number | null
   디자이너_노트: string | null
   데드라인: string | null
@@ -42,6 +45,13 @@ export type Item = {
   주물_후_수량: number | null
   rp_출력_시작: boolean | null
   왁스_파트_전달: boolean | null
+  발주_입력: boolean | null
+  발주서: string | null
+  생성일시: string | null
+  체인_길이: number | null
+  체인_두께: string | null
+  parent_id: string | null
+  parent_airtable_id: string | null
   order_id: string | null
   product_id: string | null
   brand_id: string | null
@@ -103,7 +113,9 @@ export type Row = {
   시세_g당: number | null
   소재비: number | null
   발주_수량: number | null
+  수량_조정: number | null
   수량: number | null
+  급자: boolean
   호수: string | null
   고객명: string
   디자이너_노트: string

@@ -21,6 +21,9 @@ export const VIEW_PAGE_KEY = 'works'
 // 편집 가능 컬럼 → order_items 필드명 매핑
 export const EDITABLE_FIELD_MAP: Record<string, string> = {
   '중량': '중량',
+  '발주_수량': '발주_수량',
+  '수량_조정': '수량_조정',
+  '급자': '급자',
   '데드라인': '데드라인',
   '검수': '검수',
   '포장': '포장',
@@ -82,8 +85,11 @@ export const COLUMNS = [
   { data: '시세_g당',      title: '시세(g당)', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
   // 소재비: 중량 × 시세 계산값 — formula
   { data: '소재비',        title: '소재비',  readOnly: true,  width: 100, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
-  { data: '발주_수량',     title: '발주 수량', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
+  { data: '발주_수량',     title: '발주 수량', readOnly: false, width: 80, fieldType: 'number'  as FieldType, type: 'numeric' },
+  { data: '수량_조정',     title: '수량 조정', readOnly: false, width: 80, fieldType: 'number'  as FieldType, type: 'numeric' },
+  // 수량: GENERATED ALWAYS (발주_수량 + 수량_조정) — 편집 불가
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
+  { data: '급자',          title: '급자',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
   { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
@@ -262,8 +268,10 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
     출고예정일: shipFromDb || calcShipDateFromItem(item, hs),
     시세_g당: item.시세_g당 ?? null,
     소재비: item.소재비 ?? null,
-    발주_수량: item.수량 ?? null,
+    발주_수량: item.발주_수량 ?? null,
+    수량_조정: item.수량_조정 ?? null,
     수량: item.수량 ?? null,
+    급자: item.급자 ?? false,
     호수: item.호수 ?? null,
     고객명: item.고객명 ?? '',
     디자이너_노트: item.디자이너_노트 ?? '',
