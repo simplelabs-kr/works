@@ -30,7 +30,7 @@ export type Item = {
   수량: number | null
   발주_수량: number | null
   수량_조정: number | null
-  급자: boolean | null
+  급자: string | null
   중량: number | null
   디자이너_노트: string | null
   데드라인: string | null
@@ -117,7 +117,7 @@ export type Row = {
   발주_수량: number | null
   수량_조정: number | null
   수량: number | null
-  급자: boolean
+  급자: string
   호수: string | null
   고객명: string
   디자이너_노트: string
