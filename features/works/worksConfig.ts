@@ -24,7 +24,16 @@ export const EDITABLE_FIELD_MAP: Record<string, string> = {
   '발주_수량': '발주_수량',
   '수량_조정': '수량_조정',
   '급자': '급자',
+  '발주일': '발주일',
+  '생산시작일': '생산시작일',
   '데드라인': '데드라인',
+  '고객명': '고객명',
+  '호수': '호수',
+  '도금_색상': '도금_색상',
+  '각인_내용': '각인_내용',
+  '각인_폰트': '각인_폰트',
+  '기타_옵션': '기타_옵션',
+  '공임_조정액': '공임_조정액',
   '검수': '검수',
   '포장': '포장',
   '출고': '출고',
@@ -37,6 +46,39 @@ export const EDITABLE_FIELD_MAP: Record<string, string> = {
   'reference_files': 'reference_files',
 }
 
+// Pikaday Korean i18n + 'YYYY / MM' 헤더 순서 보정. 데드라인 / 발주일 /
+// 생산시작일 세 date 컬럼이 공유한다.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const koreanDatePickerConfig: any = {
+  i18n: {
+    previousMonth: '이전 달',
+    nextMonth: '다음 달',
+    months: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+    weekdays: ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'],
+    weekdaysShort: ['일','월','화','수','목','금','토'],
+  },
+  firstDay: 0,
+  showDaysInNextAndPreviousMonths: true,
+  toString(date: Date) {
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onDraw(picker: any) {
+    const title = picker.el?.querySelector('.pika-title')
+    if (!title) return
+    const labels = title.querySelectorAll('.pika-label')
+    if (labels.length < 2) return
+    const monthLabel = labels[0]  // 첫 번째가 월
+    const yearLabel = labels[1]   // 두 번째가 년도
+    if (yearLabel && monthLabel && monthLabel.previousElementSibling !== yearLabel) {
+      title.insertBefore(yearLabel, monthLabel)
+    }
+  },
+}
+
 // No. / 체크박스 컬럼은 DataGrid 공통 컴포넌트가 vi=0 자리에 자동으로
 // 주입한다. 여기에는 도메인 컬럼만 정의한다.
 export const COLUMNS = [
@@ -45,41 +87,9 @@ export const COLUMNS = [
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'lookup'   as FieldType },
   { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: 'metal_purity',  title: '함량비',  readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
-  { data: '발주일',        title: '발주일',  readOnly: true,  width: 110, fieldType: 'date'     as FieldType },
-  { data: '생산시작일',    title: '생산시작일', readOnly: true, width: 110, fieldType: 'date'    as FieldType },
-  { data: '데드라인',   title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date',
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    datePickerConfig: {
-      i18n: {
-        previousMonth: '이전 달',
-        nextMonth: '다음 달',
-        months: ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
-        weekdays: ['일요일','월요일','화요일','수요일','목요일','금요일','토요일'],
-        weekdaysShort: ['일','월','화','수','목','금','토'],
-      },
-      firstDay: 0,
-      showDaysInNextAndPreviousMonths: true,
-      toString(date: Date) {
-        const y = date.getFullYear()
-        const m = String(date.getMonth() + 1).padStart(2, '0')
-        const d = String(date.getDate()).padStart(2, '0')
-        return `${y}-${m}-${d}`
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      onDraw(picker: any) {
-        const title = picker.el?.querySelector('.pika-title')
-        if (!title) return
-        const labels = title.querySelectorAll('.pika-label')
-        if (labels.length < 2) return
-        const monthLabel = labels[0]  // 첫 번째가 월
-        const yearLabel = labels[1]   // 두 번째가 년도
-        if (yearLabel && monthLabel && monthLabel.previousElementSibling !== yearLabel) {
-          title.insertBefore(yearLabel, monthLabel)
-        }
-      },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any,
-  },
+  { data: '발주일',        title: '발주일',    readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
+  { data: '생산시작일',    title: '생산시작일', readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
+  { data: '데드라인',      title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
   // 출고예정일: 데드라인 / 생산시작일+제작_소요일 에서 workday 계산 — formula
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'date' as FieldType },
   { data: '시세_g당',      title: '시세(g당)', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
@@ -91,8 +101,8 @@ export const COLUMNS = [
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   // 급자: '일반' / '당일출고' / '급자' single-select. options 는 field_options 테이블에서 로드.
   { data: '급자',          title: '급자',    readOnly: false, width: 80,  fieldType: 'select'   as FieldType },
-  { data: '호수',          title: '호수',    readOnly: true,  width: 70,  fieldType: 'text'     as FieldType },
-  { data: '고객명',        title: '고객명',  readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
+  { data: '호수',          title: '호수',    readOnly: false, width: 70,  fieldType: 'text'     as FieldType },
+  { data: '고객명',        title: '고객명',  readOnly: false, width: 100, fieldType: 'text'     as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
   { data: '중량',          title: '중량',    readOnly: false, width: 70,  fieldType: 'number'   as FieldType, type: 'numeric' },
   { data: '검수',          title: '검수',    readOnly: false, width: 50,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
@@ -100,11 +110,11 @@ export const COLUMNS = [
   // 허용_중량_범위 / 중량_검토: 기준_중량·중량 기반 계산 — formula
   { data: '허용_중량_범위', title: '허용 중량 범위', readOnly: true, width: 130, fieldType: 'formula' as FieldType },
   { data: '중량_검토',     title: '중량 검토', readOnly: true, width: 80, fieldType: 'formula'  as FieldType },
-  { data: '기타_옵션',     title: '기타 옵션', readOnly: true, width: 120, fieldType: 'text'    as FieldType },
-  { data: '각인_내용',     title: '각인 내용', readOnly: true, width: 100, fieldType: 'text'    as FieldType },
-  { data: '각인_폰트',     title: '각인 폰트', readOnly: true, width: 80, fieldType: 'text'     as FieldType },
+  { data: '기타_옵션',     title: '기타 옵션', readOnly: false, width: 120, fieldType: 'text'   as FieldType },
+  { data: '각인_내용',     title: '각인 내용', readOnly: false, width: 100, fieldType: 'text'   as FieldType },
+  { data: '각인_폰트',     title: '각인 폰트', readOnly: false, width: 80, fieldType: 'text'    as FieldType },
   { data: '기본_공임',     title: '기본 공임', readOnly: true, width: 80, fieldType: 'number'   as FieldType },
-  { data: '공임_조정액',   title: '공임 조정액', readOnly: true, width: 80, fieldType: 'number' as FieldType },
+  { data: '공임_조정액',   title: '공임 조정액', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
   // 확정_공임: 기본_공임 + 공임_조정액 — formula
   { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
   // 번들_명칭: bundles JOIN 식별자 — lookup
@@ -114,7 +124,7 @@ export const COLUMNS = [
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
-  { data: '도금_색상',     title: '도금 색상', readOnly: true, width: 90, fieldType: 'text'     as FieldType },
+  { data: '도금_색상',     title: '도금 색상', readOnly: false, width: 90, fieldType: 'text'    as FieldType },
   { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
   { data: '가다번호_목록', title: '가다번호',  readOnly: true, width: 100, fieldType: 'text'    as FieldType },
   { data: '가다_위치_목록', title: '가다 위치', readOnly: true, width: 100, fieldType: 'text'   as FieldType },
