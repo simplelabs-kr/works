@@ -2432,6 +2432,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // adjust frozenCount: if the moved column crossed the freeze boundary
     // we grow or shrink the frozen region so the "first N visual columns"
     // invariant is preserved.
+    //
+    // CRITICAL: `manualColumnMove` only sets HOT's index mapper — the
+    // physical schema (`effectiveColumnsRef` / HOT's `columns` setting)
+    // is unchanged. HOT 14's `loadData()` (called on every infinite-scroll
+    // append / filter reload) resets index mappers to identity, which
+    // snaps visual order back to the now-stale physical order.
+    //
+    // Mirror the `applyFromSettings` pattern: rebuild physical schema to
+    // match the post-drag visual order, push via `updateSettings({ columns })`,
+    // and the invariant `physical == visual (identity mapper)` is restored.
+    // Future loadData calls become no-ops for ordering.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     hotRef.current.addHook('afterColumnMove' as any, (
       movedColumns: number[],
@@ -2442,20 +2453,78 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     ) => {
       setColumnOrderVersion(v => v + 1)
       if (!movePossible || !orderChanged) return
-      if (!movedColumns || movedColumns.length !== 1) return
-      const oldIdx = movedColumns[0]
-      const newIdx = finalIndex
-      const cur = frozenCountRef.current
-      const wasFrozen = oldIdx < cur
-      const isFrozen = newIdx < cur
-      if (wasFrozen && !isFrozen) {
-        const n = Math.max(0, cur - 1)
-        setFrozenCount(n)
-        hotRef.current?.updateSettings({ fixedColumnsStart: n })
-      } else if (!wasFrozen && isFrozen) {
-        const n = cur + 1
-        setFrozenCount(n)
-        hotRef.current?.updateSettings({ fixedColumnsStart: n })
+      const hot = hotRef.current
+      if (!hot) return
+
+      // Frozen-count adjustment from existing logic — must read movedColumns
+      // before we rebuild the schema (which resets index mappers).
+      let nextFrozen = frozenCountRef.current
+      if (movedColumns && movedColumns.length === 1) {
+        const oldIdx = movedColumns[0]
+        const newIdx = finalIndex
+        const wasFrozen = oldIdx < nextFrozen
+        const isFrozen = newIdx < nextFrozen
+        if (wasFrozen && !isFrozen) nextFrozen = Math.max(0, nextFrozen - 1)
+        else if (!wasFrozen && isFrozen) nextFrozen = nextFrozen + 1
+      }
+
+      // Snapshot current visual → physical mapping over the *old* schema.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const oldEffective = effectiveColumnsRef.current as any[]
+      const total = oldEffective.length
+      const visualOrderPi: number[] = []
+      for (let vi = 0; vi < total; vi++) {
+        const pi = hot.toPhysicalColumn(vi)
+        if (typeof pi !== 'number' || pi < 0) { visualOrderPi.length = 0; break }
+        visualOrderPi.push(pi)
+      }
+      if (visualOrderPi.length !== total) return
+
+      // Build new physical schema + width array in visual order.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newEffective: any[] = visualOrderPi.map((pi) => oldEffective[pi])
+      const oldWidths = colWidthsRef.current
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newWidths: number[] = visualOrderPi.map((pi, i) => {
+        const w = oldWidths[pi]
+        if (typeof w === 'number' && w > 0) return w
+        const dw = newEffective[i]?.width
+        return typeof dw === 'number' && dw > 0 ? dw : 100
+      })
+      const nextPropToCol: Record<string, number> = {}
+      newEffective.forEach((c, i) => {
+        if (typeof c?.data === 'string' && c.data) nextPropToCol[c.data] = i
+      })
+
+      // Snapshot hidden props before updateSettings (which re-inits plugins).
+      const hiddenProps = Array.from(hiddenColumnsRef.current)
+
+      effectiveColumnsRef.current = newEffective as typeof COLUMNS
+      propToColRef.current = nextPropToCol
+      hot.updateSettings({
+        columns: newEffective,
+        colWidths: newWidths,
+        fixedColumnsStart: nextFrozen,
+      })
+      setColWidths(newWidths)
+      if (nextFrozen !== frozenCountRef.current) setFrozenCount(nextFrozen)
+
+      // Re-apply hidden columns: updateSettings({ columns }) re-inits
+      // hiddenColumns plugin state, so re-hide by prop → new physical → visual.
+      if (hiddenProps.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const hiddenPlugin = hot.getPlugin('hiddenColumns') as any
+        if (hiddenPlugin) {
+          const targetVisual: number[] = []
+          for (const prop of hiddenProps) {
+            const pi = nextPropToCol[prop]
+            if (typeof pi === 'number') {
+              const vi = hot.toVisualColumn(pi)
+              if (typeof vi === 'number' && vi >= 0) targetVisual.push(vi)
+            }
+          }
+          if (targetVisual.length > 0) hiddenPlugin.hideColumns(targetVisual)
+        }
       }
     })
     // Freeze is now driven entirely by our contextMenu callbacks →
