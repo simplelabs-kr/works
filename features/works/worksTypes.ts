@@ -118,6 +118,15 @@ export type Row = {
   수량_조정: number | null
   수량: number | null
   급자: string
+  소재: string
+  각인_여부: boolean
+  스톤_수동: string
+  발주_입력: boolean
+  회차: number | null
+  발주서: string
+  생성일시: string
+  체인_길이: number | null
+  체인_두께: string
   호수: string | null
   고객명: string
   디자이너_노트: string
