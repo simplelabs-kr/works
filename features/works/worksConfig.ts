@@ -145,7 +145,7 @@ export const COLUMNS = [
   { data: '발주_입력',     title: '발주 입력', readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '회차',          title: '회차',     readOnly: false, width: 60,  fieldType: 'number'  as FieldType, type: 'numeric' },
   { data: '발주서',        title: '발주서',   readOnly: false, width: 120, fieldType: 'text'    as FieldType },
-  { data: 'created_at',    title: 'created at', readOnly: true, width: 160, fieldType: 'date'   as FieldType },
+  { data: '생성일시',      title: '생성일시', readOnly: true,  width: 160, fieldType: 'date'    as FieldType },
   { data: '체인_길이',     title: '체인 길이', readOnly: false, width: 80,  fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '체인_두께',     title: '체인 두께', readOnly: false, width: 80,  fieldType: 'text'   as FieldType },
 ]
@@ -332,7 +332,7 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
     발주_입력: item.발주_입력 ?? false,
     회차: item.회차 ?? null,
     발주서: item.발주서 ?? '',
-    created_at: formatDate(item.created_at),
+    생성일시: formatDate(item.생성일시),
     체인_길이: item.체인_길이 ?? null,
     체인_두께: item.체인_두께 ?? '',
     images: item.images ?? [],
