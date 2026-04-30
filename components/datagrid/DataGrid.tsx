@@ -921,23 +921,22 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     }
 
-    // violation 판단: prefill 값 + 시스템 자동값 (created_at/updated_at + 모든
-    // readOnly date 컬럼은 INSERT 시 now() 로 채워진다고 간주) 을 합친
-    // 후보 record 를 활성 필터로 평가. 통과 못하면 violation 표시.
-    // 기존 "eq 외엔 모두 violation" 로직의 false-positive (예: 생성일시
-    // is_today 필터에서 신규 row 가 잘못 violation 처리) 를 제거.
-    const todayStr = ymdOf(new Date())
+    // violation 판단: prefill 값 + 서버가 INSERT 시 자동 채우는 컬럼 (=
+    // Postgres 컨벤션상 DEFAULT now() 인 created_at / updated_at 둘 뿐) 을
+    // 합친 후보 record 를 활성 필터로 평가. 통과 못하면 violation 표시.
+    //
+    // ⚠️ readOnly date 컬럼이라고 해서 "auto-now" 라고 추정해서는 안 된다.
+    // 예: 생성일시 는 Airtable 에서 import 된 값으로 readOnly 일 뿐
+    // Supabase INSERT 시 자동 채워지지 않음 → 신규 row 는 NULL.
+    // "생성일시 is_today" 필터에서 violation 이 정상이며, 임의 inject 는
+    // false-negative 를 만든다. 명시적 server-side default 를 단언할 수
+    // 없는 컬럼은 candidate 에 넣지 않고, evaluator 가 undefined 를 그대로
+    // 평가해 violation 으로 분류하게 둔다.
     const nowIso = new Date().toISOString()
     const candidate: Record<string, unknown> = {
       ...prefill,
       created_at: nowIso,
       updated_at: nowIso,
-    }
-    for (const c of cols) {
-      if (!c || typeof c.data !== 'string') continue
-      if (c.fieldType === 'date' && c.readOnly && !(c.data in candidate)) {
-        candidate[c.data] = todayStr
-      }
     }
     const passesFilter = evaluateFilterState(candidate, fs)
 
