@@ -25,6 +25,7 @@ export type AttachmentItem = { url: string; name: string }
 // flat_order_details 테이블 구조 (비정규화된 단일 테이블)
 export type Item = {
   id: string
+  created_at: string | null
   updated_at: string | null
   고유_번호: string
   수량: number | null
@@ -47,7 +48,6 @@ export type Item = {
   왁스_파트_전달: boolean | null
   발주_입력: boolean | null
   발주서: string | null
-  생성일시: string | null
   체인_길이: number | null
   체인_두께: string | null
   parent_id: string | null
@@ -101,6 +101,7 @@ export type Item = {
 
 export type Row = {
   id: string
+  created_at: string
   updated_at: string | null
   고유_번호: string
   제품명: string
@@ -124,7 +125,6 @@ export type Row = {
   발주_입력: boolean
   회차: number | null
   발주서: string
-  생성일시: string
   체인_길이: number | null
   체인_두께: string
   호수: string | null
