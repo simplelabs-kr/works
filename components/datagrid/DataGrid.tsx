@@ -1105,6 +1105,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     hasMoreRef.current = true
     setFilterCount(null)
     setSearchCount(null)
+    // 필터/정렬/뷰 전환 등 "전체 refetch" 시점엔 violation set 도 같이
+    // 비운다. set 의 의미는 "현재 활성 필터 기준으로 row 생성 시 충족
+    // 못 한 local ghost row" — 필터가 바뀌면 그 마킹은 더 이상 유효하지
+    // 않다 (예: A 뷰에서 만든 row 가 B 뷰의 필터는 만족할 수도, 아예
+    // 다른 의미일 수도 있음). 새 fetch 가 같은 realId 를 다시 가져오면
+    // 그건 새 필터를 만족한다는 뜻이므로 깨끗한 상태로 시작.
+    setViolatingRowIds(new Set())
     setFetchTrigger(n => n + 1)
   }
 
