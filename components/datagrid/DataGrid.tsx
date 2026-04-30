@@ -771,6 +771,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
     // 수동 재렌더로 className 을 즉시 반영.
     hotRef.current?.render()
   }, [violatingRowIds])
+  // 뱃지 카운트는 set.size 가 아니라 "현재 rows 안에 존재하면서 violation
+  // 마킹된 row 의 수" 로 derive. 사용자가 violation row 를 직접 삭제했거나
+  // 다른 경로로 rows 에서 사라졌을 때 set 에 stale id 가 남아도 뱃지가
+  // 과대 표시되지 않도록 — 의미를 "현재 표시되는 row 중 미충족 건수" 로
+  // 고정한다.
+  const visibleViolationCount = useMemo(() => {
+    if (violatingRowIds.size === 0) return 0
+    let n = 0
+    for (const r of rows) if (violatingRowIds.has(r.id)) n++
+    return n
+  }, [rows, violatingRowIds])
   useEffect(() => { searchTermRef.current = searchTerm }, [searchTerm])
   useEffect(() => { colWidthsRef.current = colWidths }, [colWidths])
   useEffect(() => { hiddenColumnsRef.current = hiddenColumns }, [hiddenColumns])
@@ -3976,7 +3987,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         {/* 필터 미충족 칩 — pre-fill 불가 조건으로 생성된 row 가 있을 때 필터
             버튼 바로 옆에 amber pill 로 표시. 인과(필터→미충족) 시각적
             인접. ✕ 클릭 → dismissViolationBanner (해당 row 들 숨김). */}
-        {violatingRowIds.size > 0 && (
+        {visibleViolationCount > 0 && (
           <div
             role="status"
             className="flex flex-shrink-0 items-center gap-1 h-[24px] rounded-full border border-[#FDE68A] bg-[#FEF3C7] pl-2 pr-1 text-[12px] text-[#92400E]"
@@ -3985,7 +3996,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
               <path d="M6 1.5l5 9H1l5-9z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
               <path d="M6 5v2.5M6 9v.01" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
             </svg>
-            <span>필터 미충족 · {violatingRowIds.size}건</span>
+            <span>필터 미충족 · {visibleViolationCount}건</span>
             <button
               type="button"
               onClick={dismissViolationBanner}
