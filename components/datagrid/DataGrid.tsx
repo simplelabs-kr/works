@@ -696,6 +696,105 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // 가 현재 필터 조건을 자동 충족. 그 외 조건 (contains/range/OR/중첩
   // 그룹 / read-only 컬럼 / derived 컬럼 등) 이 섞여 있으면 "완전 pre-fill
   // 불가" 로 간주하고 해당 row 를 violation set 에 등록 → 배너 + 빨간 배경.
+  // Add-row 큐. Shift+Enter 를 빠르게 연타하면 각 호출이 동시 fetch 로
+  // 들어가던 기존 구조에는 두 race 가 있었다:
+  //  (a) 두 번째 keypress 시점엔 첫 번째 placeholder (tempId) 가 selected
+  //      → afterRowId 가 tmp_xxx 로 서버에 전달 → 서버가 not-found 처리해
+  //      tail 로 fallback → 모두 같은 MAX+1000 위치로 몰리거나 순서가 뒤집힘.
+  //  (b) 두 fetch 가 거의 동시에 도달하면 양쪽이 동일한 MAX(sort_order) 를
+  //      읽어 sort_order 충돌.
+  // 큐로 직렬화하고, tempId → realId 매핑을 두어 후속 task 가 직전 task 의
+  // realId 를 afterRowId 로 사용하도록 한다.
+  type CreateTask = {
+    tempId: string
+    afterRowId: string | null
+    prefill: Record<string, unknown>
+    resolveIdPromise: (id: string | null) => void
+  }
+  const createQueueRef = useRef<CreateTask[]>([])
+  const isCreatingRef = useRef(false)
+  // tempId → realId. 큐가 처리되는 동안 후속 task 의 afterRowId 해석에 사용.
+  // 30 초 후 정리 (충분히 큰 여유).
+  const tempToRealIdRef = useRef<Map<string, string>>(new Map())
+
+  const processCreateQueue = useCallback(async () => {
+    if (isCreatingRef.current) return
+    isCreatingRef.current = true
+    try {
+      while (createQueueRef.current.length > 0) {
+        const task = createQueueRef.current.shift()!
+        // tempId afterRowId → realId 변환. 직전 task 가 끝날 때까지 큐가
+        // 대기하므로 이 시점엔 매핑이 채워져 있다 (또는 직전이 실패해 null).
+        // realId 를 못 찾으면 null 로 둬서 서버가 tail 로 처리하게 한다.
+        let resolvedAfterRowId = task.afterRowId
+        if (resolvedAfterRowId && resolvedAfterRowId.startsWith('tmp_')) {
+          resolvedAfterRowId = tempToRealIdRef.current.get(resolvedAfterRowId) ?? null
+        }
+        try {
+          const reqBody: Record<string, unknown> = {}
+          if (resolvedAfterRowId) reqBody.afterRowId = resolvedAfterRowId
+          if (Object.keys(task.prefill).length > 0) reqBody.prefill = task.prefill
+          const res = await fetch(`${apiBase}/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reqBody),
+          })
+          if (!res.ok) {
+            console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
+            setRows(prev => prev.filter(r => r.id !== task.tempId))
+            setViolatingRowIds(prev => {
+              if (!prev.has(task.tempId)) return prev
+              const next = new Set(prev); next.delete(task.tempId); return next
+            })
+            newRowIdsRef.current.delete(task.tempId)
+            showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+            task.resolveIdPromise(null)
+            continue
+          }
+          const payload = (await res.json()) as { id?: string; sort_order?: number }
+          const realId = payload.id
+          if (!realId) {
+            setRows(prev => prev.filter(r => r.id !== task.tempId))
+            task.resolveIdPromise(null)
+            continue
+          }
+          tempToRealIdRef.current.set(task.tempId, realId)
+          window.setTimeout(() => { tempToRealIdRef.current.delete(task.tempId) }, 30000)
+          // tempId → realId 스왑. realtime 이 먼저 배달한 경우 placeholder 제거만.
+          setRows(prev => {
+            const dup = prev.some(r => r.id === realId)
+            if (dup) return prev.filter(r => r.id !== task.tempId)
+            return prev.map(r => {
+              if (r.id !== task.tempId) return r
+              const merged = { ...r, id: realId } as Row
+              if (typeof payload.sort_order === 'number') {
+                (merged as unknown as Record<string, unknown>).sort_order = payload.sort_order
+              }
+              return merged
+            })
+          })
+          setViolatingRowIds(prev => {
+            if (!prev.has(task.tempId)) return prev
+            const next = new Set(prev); next.delete(task.tempId); next.add(realId); return next
+          })
+          if (newRowIdsRef.current.has(task.tempId)) {
+            newRowIdsRef.current.delete(task.tempId)
+            newRowIdsRef.current.add(realId)
+            window.setTimeout(() => { newRowIdsRef.current.delete(realId) }, 1500)
+          }
+          task.resolveIdPromise(realId)
+        } catch (e) {
+          console.error('[DataGrid] create 오류:', e)
+          setRows(prev => prev.filter(r => r.id !== task.tempId))
+          showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
+          task.resolveIdPromise(null)
+        }
+      }
+    } finally {
+      isCreatingRef.current = false
+    }
+  }, [apiBase, showToast])
+
   const createNewRow = useCallback(async (afterRowId?: string, targetCol: number = 0) => {
     const fs = filterStateRef.current
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -726,9 +825,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
 
     // Optimistic insert. Next.js dev route 콜드 컴파일 + Supabase RTT 때문에
     // 첫 add 가 체감상 느려지는 것을 제거하기 위해, tempId 로 placeholder 를
-    // 즉시 삽입하고 fetch 는 백그라운드에서 진행. 성공 시 tempId → realId
-    // 스왑, 실패 시 placeholder 제거. 사용자 입장에선 fetch latency 와 상관없이
-    // 즉각 row 가 나타난다.
+    // 즉시 삽입하고 fetch 는 큐 워커가 백그라운드에서 직렬 처리. Shift+Enter
+    // 연타 시 N 개 placeholder 가 즉시 보이고, 워커가 순차적으로 실서버
+    // INSERT 를 수행 → tempId 를 realId 로 스왑.
     const tempId = `tmp_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`
     const placeholder = { id: tempId, ...prefill } as unknown as Row
     setRows(prev => {
@@ -766,75 +865,19 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     })
 
-    // Undo 스택에 entry 를 먼저 푸시 — idPromise 가 resolve 되기 전에
-    // 사용자가 Cmd+Z 를 누를 수도 있어서, undo 핸들러는 promise 를 await 한다.
-    const entry: { tempId: string; idPromise: Promise<string | null>; pushedAt: number } = {
+    // 큐에 task 푸시. idPromise 는 워커가 fetch 를 끝낸 시점에 resolve.
+    // Undo 스택은 idPromise 를 await 해서 realId 로 bulk-delete 호출.
+    let resolveIdPromise: (id: string | null) => void = () => {}
+    const idPromise = new Promise<string | null>(resolve => { resolveIdPromise = resolve })
+    createQueueRef.current.push({
       tempId,
-      idPromise: Promise.resolve(null),
-      pushedAt: Date.now(),
-    }
-    entry.idPromise = (async (): Promise<string | null> => {
-      try {
-        const reqBody: Record<string, unknown> = {}
-        if (afterRowId) reqBody.afterRowId = afterRowId
-        if (Object.keys(prefill).length > 0) reqBody.prefill = prefill
-        const res = await fetch(`${apiBase}/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(reqBody),
-        })
-        if (!res.ok) {
-          console.error('[DataGrid] create 실패:', await res.text().catch(() => ''))
-          // Rollback.
-          setRows(prev => prev.filter(r => r.id !== tempId))
-          setViolatingRowIds(prev => {
-            if (!prev.has(tempId)) return prev
-            const next = new Set(prev); next.delete(tempId); return next
-          })
-          newRowIdsRef.current.delete(tempId)
-          showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
-          return null
-        }
-        const payload = (await res.json()) as { id?: string; sort_order?: number }
-        const realId = payload.id
-        if (!realId) {
-          setRows(prev => prev.filter(r => r.id !== tempId))
-          return null
-        }
-        // tempId → realId 스왑. realtime 이 먼저 배달한 경우 (prev 에 이미
-        // realId 존재) placeholder 만 제거.
-        setRows(prev => {
-          const dup = prev.some(r => r.id === realId)
-          if (dup) return prev.filter(r => r.id !== tempId)
-          return prev.map(r => {
-            if (r.id !== tempId) return r
-            const merged = { ...r, id: realId } as Row
-            if (typeof payload.sort_order === 'number') {
-              (merged as unknown as Record<string, unknown>).sort_order = payload.sort_order
-            }
-            return merged
-          })
-        })
-        // Violation / fade-in 추적도 tempId → realId 로 이관.
-        setViolatingRowIds(prev => {
-          if (!prev.has(tempId)) return prev
-          const next = new Set(prev); next.delete(tempId); next.add(realId); return next
-        })
-        if (newRowIdsRef.current.has(tempId)) {
-          newRowIdsRef.current.delete(tempId)
-          newRowIdsRef.current.add(realId)
-          window.setTimeout(() => { newRowIdsRef.current.delete(realId) }, 1500)
-        }
-        return realId
-      } catch (e) {
-        console.error('[DataGrid] create 오류:', e)
-        setRows(prev => prev.filter(r => r.id !== tempId))
-        showToast({ message: '추가에 실패했습니다', type: 'error' }, 3000)
-        return null
-      }
-    })()
-    rowAddUndoStackRef.current.push(entry)
-  }, [apiBase, pageConfig.columns])
+      afterRowId: afterRowId ?? null,
+      prefill,
+      resolveIdPromise,
+    })
+    rowAddUndoStackRef.current.push({ tempId, idPromise, pushedAt: Date.now() })
+    void processCreateQueue()
+  }, [pageConfig.columns, processCreateQueue])
 
   // 배너 닫기: violation 표시된 row 들을 숨기고 set 비움. 실제 DB 레코드는
   // 그대로 남아 다음 refetch 시점에 서버 필터 기준으로 (포함되면) 다시
