@@ -10,8 +10,6 @@ import {
   checkboxRenderer,
   imageRenderer,
   purchaseStatusRenderer,
-  사출방식Renderer,
-  작업위치Renderer,
 } from './worksRenderers'
 
 // page_key stored in user_view_settings. Other grids (products, bundles, …)
@@ -107,8 +105,8 @@ export const COLUMNS = [
   { data: '수량_조정',     title: '수량 조정', readOnly: false, width: 80, fieldType: 'number'  as FieldType, type: 'numeric' },
   // 수량: GENERATED ALWAYS (발주_수량 + 수량_조정) — 편집 불가
   { data: '수량',          title: '수량',    readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
-  // 급자: '일반' / '당일출고' / '급자' single-select. options 는 field_options 테이블에서 로드.
-  { data: '급자',          title: '급자',    readOnly: false, width: 80,  fieldType: 'select'   as FieldType },
+  // 급자 여부: '일반' / '당일출고' / '급자' single-select. options 는 field_options 테이블에서 로드.
+  { data: '급자',          title: '급자 여부', readOnly: false, width: 80,  fieldType: 'select' as FieldType },
   { data: '호수',          title: '호수',    readOnly: false, width: 70,  fieldType: 'text'     as FieldType },
   { data: '고객명',        title: '고객명',  readOnly: false, width: 100, fieldType: 'text'     as FieldType },
   { data: '디자이너_노트', title: '디자이너 노트', readOnly: false, width: 200, fieldType: 'longtext' as FieldType, type: 'text' },
@@ -130,10 +128,10 @@ export const COLUMNS = [
   // derived:true → formula 아이콘
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
-  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType, renderer: 작업위치Renderer },
+  { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
-  { data: '도금_색상',     title: '도금 색상', readOnly: false, width: 90, fieldType: 'text'    as FieldType },
-  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType, renderer: 사출방식Renderer },
+  { data: '도금_색상',     title: '도금 색상', readOnly: false, width: 90, fieldType: 'select'  as FieldType },
+  { data: '사출_방식',     title: '사출 방식', readOnly: false, width: 90, fieldType: 'select' as FieldType },
   { data: '가다번호_목록', title: '가다번호',  readOnly: true, width: 100, fieldType: 'text'    as FieldType },
   { data: '가다_위치_목록', title: '가다 위치', readOnly: true, width: 100, fieldType: 'text'   as FieldType },
   { data: '주물_후_수량',  title: '주물 후 수량', readOnly: false, width: 80, fieldType: 'number' as FieldType, type: 'numeric' },
@@ -141,7 +139,7 @@ export const COLUMNS = [
   { data: '순금_중량',     title: '순금 중량', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
   { data: 'rp_출력_시작',  title: 'RP 출력 시작', readOnly: false, width: 80, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '왁스_파트_전달', title: '왁스 파트 전달', readOnly: false, width: 100, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
-  { data: '소재',          title: '소재 (수동)', readOnly: false, width: 100, fieldType: 'text'    as FieldType },
+  { data: '소재',          title: '소재 (수동)', readOnly: false, width: 100, fieldType: 'select' as FieldType },
   { data: '각인_여부',     title: '각인 여부', readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '스톤_수동',     title: '스톤',     readOnly: false, width: 120, fieldType: 'text'    as FieldType },
   { data: '발주_입력',     title: '발주 입력', readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },

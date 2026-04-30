@@ -32,6 +32,7 @@ import {
   noColRenderer,
   rendererBridge,
   resetRendererBridge,
+  selectRenderer,
   setSelectColumnOptions,
 } from '@/features/works/worksRenderers'
 import type { BaseRow as Row, PageConfig } from './types'
@@ -1622,11 +1623,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
         // (selectMenu) 만이 편집 경로다. Enter/F2/더블클릭으로 텍스트
         // 입력창이 열리면 Airtable UX 와 달라 보이므로 editor: false 로
         // 막는다. col 은 VISUAL index → physical 변환 후 조회.
+        //
+        // Renderer 미지정 시 generic `selectRenderer` 를 자동 부착해 모든
+        // select 컬럼이 일관되게 컬러 뱃지로 렌더되도록 한다 (HOT 기본
+        // 텍스트 렌더러로 폴백되어 컬러가 사라지는 문제 방지).
         const pi = hotRef.current?.toPhysicalColumn(col) ?? col
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const colDef = (effectiveColumnsRef.current as any[])[pi]
         if (colDef?.fieldType === 'select' && !colDef?.readOnly) {
-          return { editor: false }
+          return colDef.renderer
+            ? { editor: false }
+            : { editor: false, renderer: selectRenderer }
         }
         return {}
       },
@@ -2173,7 +2180,9 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           // picker is already shown by HOT when the editor opens, so
           // there's nothing to do here.
         }, 30)
-        return
+        // 의도적으로 fall through — date editor 의 textarea 도 HOT 기본
+        // refreshDimensions + autoResize 로 셀보다 넓어진다. 아래의
+        // geometry clamp 로 셀 폭에 강제 고정.
       }
 
       // ── 인라인 편집 geometry 강제 (Airtable UX) ──────────────────────

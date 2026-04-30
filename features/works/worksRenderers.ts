@@ -485,16 +485,16 @@ export function checkboxRenderer(hot: any, td: HTMLTableCellElement, row: number
   td.appendChild(outer)
 }
 
-// ── Select-column renderers (사출_방식 / 작업_위치) ────────────────────────────
-
+// ── Generic select-column renderer ───────────────────────────────────────────
+//
+// HOT 의 renderer 시그니처에서 5번째 인자 `prop` 은 컬럼의 data 키 (예:
+// '작업_위치', '급자') — 이 값을 그대로 selectColumnOptions catalog 의 키로
+// 사용해 bg 색을 찾는다. 컬럼별 dedicated renderer 가 필요 없으므로
+// fieldType: 'select' 인 모든 컬럼이 동일한 함수로 처리된다.
+// DataGrid 의 cells() 콜백이 renderer 미지정 select 컬럼에 자동 부착.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function 사출방식Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  const bg = selectColumnOptions['사출_방식']?.find(o => o.value === value)?.bg ?? ''
-  renderSelectBadge(td, value, bg, true)
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function 작업위치Renderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, _prop: any, value: string) {
-  const bg = selectColumnOptions['작업_위치']?.find(o => o.value === value)?.bg ?? ''
+export function selectRenderer(_hot: any, td: HTMLTableCellElement, _row: any, _col: any, prop: any, value: string) {
+  const key = typeof prop === 'string' ? prop : ''
+  const bg = key ? selectColumnOptions[key]?.find(o => o.value === value)?.bg ?? '' : ''
   renderSelectBadge(td, value, bg, true)
 }
