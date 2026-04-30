@@ -814,6 +814,11 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           if (isFilterGroupItem(item)) { fullyPrefillable = false; continue }
           const col = colByData.get(item.column)
           if (!col) { fullyPrefillable = false; continue }
+          // is_today on a date column → auto-satisfied. 신규 레코드는 방금
+          // 생성됐으므로 created_at / 생성일시 같은 auto-now 컬럼은 항상
+          // 오늘. pre-fill 은 불가하지만 (서버가 readOnly 컬럼 reject) 실제
+          // 위반은 아니므로 violation 으로 마킹하지 않는다.
+          if (col.fieldType === 'date' && item.operator === 'is_today') continue
           // derived / readOnly 컬럼은 INSERT 로 넘겨도 서버가 reject — skip.
           if (col.derived || col.readOnly) { fullyPrefillable = false; continue }
           const resolved = resolveEqPrefill(col.fieldType, item.operator, item.value)
