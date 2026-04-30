@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase/client'
 import SummaryBar from '@/components/works/SummaryBar'
 import type { SummaryColDef } from '@/components/works/SummaryBar'
 import FilterModal from '@/components/works/FilterModal'
-import type { RootFilterState, FilterColDef } from '@/components/works/FilterModal'
+import type { RootFilterState, FilterColDef, FilterCondition, FilterGroup } from '@/components/works/FilterModal'
 import { countAllConditions, isFilterGroup as isFilterGroupItem, normalizeFilterStateToData } from '@/components/works/FilterModal'
 import SortModal from '@/components/works/SortModal'
 import type { SortCondition, SortColDef } from '@/components/works/SortModal'
@@ -105,6 +105,109 @@ function resolveEqPrefill(
     default:
       return { matched: false }
   }
+}
+
+// 신규 레코드가 활성 필터 조건을 실제로 충족하는지 클라이언트에서 평가.
+// "amber chip + 빨간 배경" violation 표시의 정확도를 위한 휴리스틱 — 서버
+// 측 filter_group_to_sql 와 1:1 일치할 필요는 없다. 알 수 없는 operator 는
+// fail-open (true) 으로 처리해 false-positive 경고를 피한다.
+function isEmptyValue(v: unknown): boolean {
+  return v === null || v === undefined || v === ''
+}
+function ymdOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function dateYmd(v: unknown): string | null {
+  if (typeof v !== 'string' || v.length < 10) return null
+  return v.slice(0, 10)
+}
+function startOfWeekMon(d: Date): Date {
+  const out = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+  const dow = out.getDay() // 0=Sun..6=Sat
+  const diff = (dow + 6) % 7 // 월요일까지 거슬러 올라갈 일수
+  out.setDate(out.getDate() - diff)
+  return out
+}
+function evaluateCondition(record: Record<string, unknown>, c: FilterCondition): boolean {
+  const value = record[c.column]
+  const op = c.operator
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fv: any = c.value
+
+  if (op === 'is_empty') return isEmptyValue(value)
+  if (op === 'is_not_empty') return !isEmptyValue(value)
+  if (op === 'is_checked') return value === true
+  if (op === 'is_unchecked') return value !== true
+
+  if (op === 'is') return value === fv
+  if (op === 'is_not') return value !== fv
+  if (op === 'is_any_of') return Array.isArray(fv) && fv.includes(value)
+  if (op === 'is_none_of') return !Array.isArray(fv) || !fv.includes(value)
+
+  if (op === 'contains') return typeof value === 'string' && typeof fv === 'string' && value.includes(fv)
+  if (op === 'not_contains') {
+    if (typeof value !== 'string' || typeof fv !== 'string') return true
+    return !value.includes(fv)
+  }
+
+  if (op === 'eq') return Number(value) === Number(fv)
+  if (op === 'neq') return Number(value) !== Number(fv)
+  if (op === 'gt') return Number(value) > Number(fv)
+  if (op === 'gte') return Number(value) >= Number(fv)
+  if (op === 'lt') return Number(value) < Number(fv)
+  if (op === 'lte') return Number(value) <= Number(fv)
+
+  // Date operators — 값은 'YYYY-MM-DD' 또는 ISO 문자열 가정.
+  const valYmd = dateYmd(value)
+  if (op === 'is_today') return valYmd === ymdOf(new Date())
+  if (op === 'is_yesterday') {
+    const d = new Date(); d.setDate(d.getDate() - 1)
+    return valYmd === ymdOf(d)
+  }
+  if (op === 'is_this_week' || op === 'is_last_week') {
+    if (!valYmd) return false
+    const start = startOfWeekMon(new Date())
+    if (op === 'is_last_week') start.setDate(start.getDate() - 7)
+    const end = new Date(start); end.setDate(start.getDate() + 7)
+    const v = new Date(`${valYmd}T00:00:00`)
+    return v >= start && v < end
+  }
+  if (op === 'is_this_month' || op === 'is_last_month') {
+    if (!valYmd) return false
+    const now = new Date()
+    let y = now.getFullYear(), m = now.getMonth()
+    if (op === 'is_last_month') {
+      if (m === 0) { m = 11; y -= 1 } else { m -= 1 }
+    }
+    const v = new Date(`${valYmd}T00:00:00`)
+    return v.getFullYear() === y && v.getMonth() === m
+  }
+  if (op === 'is_before' || op === 'is_after' || op === 'is_on_or_before' || op === 'is_on_or_after') {
+    if (!valYmd || typeof fv !== 'string' || fv.length < 10) return true
+    const fvYmd = fv.slice(0, 10)
+    if (op === 'is_before') return valYmd < fvYmd
+    if (op === 'is_after') return valYmd > fvYmd
+    if (op === 'is_on_or_before') return valYmd <= fvYmd
+    return valYmd >= fvYmd // is_on_or_after
+  }
+
+  return true // 알 수 없는 operator → fail-open
+}
+function evaluateConditionGroup(
+  record: Record<string, unknown>,
+  conditions: (FilterCondition | FilterGroup)[],
+  logic: 'AND' | 'OR',
+): boolean {
+  if (conditions.length === 0) return true
+  const results = conditions.map(item =>
+    isFilterGroupItem(item)
+      ? evaluateConditionGroup(record, item.conditions, item.logic)
+      : evaluateCondition(record, item)
+  )
+  return logic === 'AND' ? results.every(Boolean) : results.some(Boolean)
+}
+function evaluateFilterState(record: Record<string, unknown>, fs: RootFilterState): boolean {
+  return evaluateConditionGroup(record, fs.conditions, fs.logic)
 }
 
 // Synthetic row injected into HOT's data array to act as a group-by
@@ -804,29 +907,39 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       if (c && typeof c.data === 'string') colByData.set(c.data, c)
     }
 
+    // pre-fill: AND 최상위 + eq 계열만 — INSERT body 에 합쳐 신규 row 가
+    // 자동으로 필터를 만족하게 한다. (서버는 derived/readOnly 컬럼을 reject
+    // 하므로 skip.)
     const prefill: Record<string, unknown> = {}
-    let fullyPrefillable = true
-    if (fs.conditions.length > 0) {
-      if (fs.logic !== 'AND') {
-        fullyPrefillable = false
-      } else {
-        for (const item of fs.conditions) {
-          if (isFilterGroupItem(item)) { fullyPrefillable = false; continue }
-          const col = colByData.get(item.column)
-          if (!col) { fullyPrefillable = false; continue }
-          // is_today on a date column → auto-satisfied. 신규 레코드는 방금
-          // 생성됐으므로 created_at / 생성일시 같은 auto-now 컬럼은 항상
-          // 오늘. pre-fill 은 불가하지만 (서버가 readOnly 컬럼 reject) 실제
-          // 위반은 아니므로 violation 으로 마킹하지 않는다.
-          if (col.fieldType === 'date' && item.operator === 'is_today') continue
-          // derived / readOnly 컬럼은 INSERT 로 넘겨도 서버가 reject — skip.
-          if (col.derived || col.readOnly) { fullyPrefillable = false; continue }
-          const resolved = resolveEqPrefill(col.fieldType, item.operator, item.value)
-          if (!resolved.matched) { fullyPrefillable = false; continue }
-          prefill[item.column] = resolved.value
-        }
+    if (fs.conditions.length > 0 && fs.logic === 'AND') {
+      for (const item of fs.conditions) {
+        if (isFilterGroupItem(item)) continue
+        const col = colByData.get(item.column)
+        if (!col || col.derived || col.readOnly) continue
+        const resolved = resolveEqPrefill(col.fieldType, item.operator, item.value)
+        if (resolved.matched) prefill[item.column] = resolved.value
       }
     }
+
+    // violation 판단: prefill 값 + 시스템 자동값 (created_at/updated_at + 모든
+    // readOnly date 컬럼은 INSERT 시 now() 로 채워진다고 간주) 을 합친
+    // 후보 record 를 활성 필터로 평가. 통과 못하면 violation 표시.
+    // 기존 "eq 외엔 모두 violation" 로직의 false-positive (예: 생성일시
+    // is_today 필터에서 신규 row 가 잘못 violation 처리) 를 제거.
+    const todayStr = ymdOf(new Date())
+    const nowIso = new Date().toISOString()
+    const candidate: Record<string, unknown> = {
+      ...prefill,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }
+    for (const c of cols) {
+      if (!c || typeof c.data !== 'string') continue
+      if (c.fieldType === 'date' && c.readOnly && !(c.data in candidate)) {
+        candidate[c.data] = todayStr
+      }
+    }
+    const passesFilter = evaluateFilterState(candidate, fs)
 
     // Optimistic insert. Next.js dev route 콜드 컴파일 + Supabase RTT 때문에
     // 첫 add 가 체감상 느려지는 것을 제거하기 위해, tempId 로 placeholder 를
@@ -846,7 +959,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
       return [...prev, placeholder]
     })
-    if (!fullyPrefillable) {
+    if (!passesFilter) {
       setViolatingRowIds(prev => {
         if (prev.has(tempId)) return prev
         const next = new Set(prev)
