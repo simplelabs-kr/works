@@ -2499,6 +2499,23 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       // Snapshot hidden props before updateSettings (which re-inits plugins).
       const hiddenProps = Array.from(hiddenColumnsRef.current)
 
+      // Capture pre-move selection. HOT's manualColumnMove does NOT update
+      // selection — selection's visual indices stay pointing at the OLD slot
+      // (which is now a different column). If the user had the moved
+      // column(s) selected (typical "click header → drag" flow), restore
+      // selection at the new visual position post-rebuild.
+      const selRange = hot.getSelectedRangeLast()
+      let restoreSel: [number, number] | null = null
+      if (selRange && Array.isArray(movedColumns) && movedColumns.length > 0) {
+        const selFrom = Math.min(selRange.from.col, selRange.to.col)
+        const selTo = Math.max(selRange.from.col, selRange.to.col)
+        const movedMin = Math.min(...movedColumns)
+        const movedMax = Math.max(...movedColumns)
+        if (selFrom === movedMin && selTo === movedMax) {
+          restoreSel = [finalIndex, finalIndex + (movedMax - movedMin)]
+        }
+      }
+
       effectiveColumnsRef.current = newEffective as typeof COLUMNS
       propToColRef.current = nextPropToCol
       hot.updateSettings({
@@ -2525,6 +2542,12 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           }
           if (targetVisual.length > 0) hiddenPlugin.hideColumns(targetVisual)
         }
+      }
+
+      // Re-apply column-header selection at the new position so the
+      // highlight follows the moved column.
+      if (restoreSel) {
+        hot.selectColumns(restoreSel[0], restoreSel[1])
       }
     })
     // Freeze is now driven entirely by our contextMenu callbacks →
