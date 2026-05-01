@@ -77,6 +77,7 @@ export type Item = {
   공임_조정액: number | null
   // products 유래
   제품명: string | null
+  제품코드: string | null
   제작_소요일: number | null
   기본_공임: number | null
   // brands/metals 유래
@@ -114,6 +115,7 @@ export type Row = {
   purchase_id: string | null
   제품명: string
   제품명_코드: string
+  제품코드: string
   metal_name: string
   metal_purity: string | null
   발주일: string

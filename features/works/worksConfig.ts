@@ -72,6 +72,9 @@ const productLinkConfig: LinkListConfig = {
   maxLinks: 1,
 }
 
+// 변경 이력: chip display 를 '제품명' 에서 '제품코드' 로 전환 (2026-05).
+// flat_order_details.제품코드 는 트리거가 products.제품코드 에서 동기화.
+
 const metalPriceLinkConfig: LinkListConfig = {
   linkTable: 'metal-prices',
   fkColumn: 'metal_price_id',
@@ -135,7 +138,7 @@ export const COLUMNS = [
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'lookup'   as FieldType },
-  { data: '제품명',        title: '제품',    readOnly: true,  width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: productLinkConfig },
+  { data: '제품코드',      title: '제품',    readOnly: true,  width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: productLinkConfig },
   { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: 'metal_purity',  title: '함량비',  readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '발주일',        title: '발주일',    readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
@@ -196,6 +199,11 @@ export const COLUMNS = [
   { data: 'created_at',    title: 'created at', readOnly: true, width: 160, fieldType: 'date'   as FieldType },
   { data: '체인_길이',     title: '체인 길이', readOnly: false, width: 80,  fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '체인_두께',     title: '체인 두께', readOnly: false, width: 80,  fieldType: 'text'   as FieldType },
+  // 우측 끝 spacer — 마지막 도메인 컬럼이 단독으로 우측 가장자리에 있을 때
+  // resize 핸들이 보이지 않는 HOT 동작을 우회하기 위한 phantom 컬럼.
+  // derived:true 로 FilterModal / SortModal 드롭다운, realtime merge 에서 모두 제외.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  { data: '_spacer', title: '', readOnly: true, width: 60, fieldType: 'text' as FieldType, derived: true, renderer: ((_h: any, td: any) => { td.innerHTML = ''; td.style.background = '#F8F9FA' }) as any },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -337,6 +345,7 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
     purchase_id: item.purchase_id ?? null,
     제품명: item.제품명 ?? '',
     제품명_코드: item.제품명_코드 ?? '',
+    제품코드: item.제품코드 ?? '',
     metal_name: item.metal_name ?? '',
     metal_purity: item.metal_purity != null ? String(item.metal_purity) : null,
     발주일: formatDate(item.발주일),
