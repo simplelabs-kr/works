@@ -59,6 +59,7 @@ export type Item = {
   brand_id: string | null
   metal_price_id: string | null
   bundle_id: string | null
+  purchase_id: string | null
   // 이전에는 orders JOIN 으로 가져왔던 컬럼들 — 이제 order_items 본체 컬럼.
   소재: string | null
   도금_색상: string | null
@@ -104,6 +105,11 @@ export type Row = {
   created_at: string
   updated_at: string | null
   고유_번호: string
+  // linklist FK 컬럼 — chip UI 의 데이터 소스이자 PATCH 대상.
+  product_id: string | null
+  metal_price_id: string | null
+  bundle_id: string | null
+  purchase_id: string | null
   제품명: string
   제품명_코드: string
   metal_name: string

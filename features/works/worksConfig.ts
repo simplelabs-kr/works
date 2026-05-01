@@ -11,6 +11,7 @@ import {
   imageRenderer,
   purchaseStatusRenderer,
 } from './worksRenderers'
+import { linkListRenderer, type LinkListConfig } from './linkListRenderer'
 
 // page_key stored in user_view_settings. Other grids (products, bundles, …)
 // will pick their own page_key when they come online.
@@ -50,6 +51,49 @@ export const EDITABLE_FIELD_MAP: Record<string, string> = {
   '작업_위치': '작업_위치',
   '사출_방식': '사출_방식',
   'reference_files': 'reference_files',
+  // linklist FK 컬럼 — 셀은 readOnly 지만 LinkSearchPopover 가 PATCH 함.
+  'product_id': 'product_id',
+  'metal_price_id': 'metal_price_id',
+  'bundle_id': 'bundle_id',
+  'purchase_id': 'purchase_id',
+}
+
+// ── linklist 설정 (정방향 N=1) ────────────────────────────────────────
+// 셀 클릭 시 상대 테이블 검색 팝오버에서 후보 선택 → fkColumn 을 PATCH.
+// col.data 가 곧 FK uuid 컬럼이라 chip display 는 uuid 문자열로 폴백되며,
+// 사용자 친화 display 가 필요하면 후속으로 flat 에 denormalized 컬럼을
+// 추가하고 col.data 를 그 컬럼으로 옮기는 패턴 (repairs 의 '제품명' 참고).
+
+const productLinkConfig: LinkListConfig = {
+  linkTable: 'products',
+  fkColumn: 'product_id',
+  searchFields: ['제품코드', '제품명'],
+  displayField: '제품코드',
+  maxLinks: 1,
+}
+
+const metalPriceLinkConfig: LinkListConfig = {
+  linkTable: 'metal-prices',
+  fkColumn: 'metal_price_id',
+  searchFields: ['date', 'metal'],
+  displayField: 'date',
+  maxLinks: 1,
+}
+
+const bundleLinkConfig: LinkListConfig = {
+  linkTable: 'bundles',
+  fkColumn: 'bundle_id',
+  searchFields: ['번들_고유번호'],
+  displayField: '번들_고유번호',
+  maxLinks: 1,
+}
+
+const purchaseLinkConfig: LinkListConfig = {
+  linkTable: 'purchases',
+  fkColumn: 'purchase_id',
+  searchFields: ['이름', '소재'],
+  displayField: '이름',
+  maxLinks: 1,
 }
 
 // Pikaday Korean i18n + 'YYYY / MM' 헤더 순서 보정. 데드라인 / 발주일 /
@@ -91,6 +135,7 @@ export const COLUMNS = [
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'lookup'   as FieldType },
+  { data: 'product_id',    title: '제품',    readOnly: true,  width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: productLinkConfig },
   { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: 'metal_purity',  title: '함량비',  readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '발주일',        title: '발주일',    readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
@@ -98,6 +143,7 @@ export const COLUMNS = [
   { data: '데드라인',      title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
   // 출고예정일: 데드라인 / 생산시작일+제작_소요일 에서 workday 계산 — formula
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'date' as FieldType },
+  { data: 'metal_price_id', title: '시세',   readOnly: true,  width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: metalPriceLinkConfig },
   { data: '시세_g당',      title: '시세(g당)', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
   // 소재비: 중량 × 시세 계산값 — formula
   { data: '소재비',        title: '소재비',  readOnly: true,  width: 100, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
@@ -125,8 +171,10 @@ export const COLUMNS = [
   { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
   // 번들_명칭: bundles JOIN 식별자 — lookup
   { data: '번들_명칭',     title: '번들 명칭', readOnly: true, width: 120, fieldType: 'lookup'  as FieldType },
+  { data: 'bundle_id',     title: '번들',    readOnly: true, width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: bundleLinkConfig },
   // derived:true → formula 아이콘
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true },
+  { data: 'purchase_id',   title: '원부자재',  readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: purchaseLinkConfig },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
@@ -283,6 +331,10 @@ function transformWorksRow(item: Item, ctx: { holidays: Set<string> }): Row {
     id: item.id,
     updated_at: item.updated_at ?? null,
     고유_번호: item.고유_번호 ?? '',
+    product_id: item.product_id ?? null,
+    metal_price_id: item.metal_price_id ?? null,
+    bundle_id: item.bundle_id ?? null,
+    purchase_id: item.purchase_id ?? null,
     제품명: item.제품명 ?? '',
     제품명_코드: item.제품명_코드 ?? '',
     metal_name: item.metal_name ?? '',
