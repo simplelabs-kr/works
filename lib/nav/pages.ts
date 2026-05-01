@@ -46,6 +46,8 @@ export const WORKS_PAGES: PageDef[] = [
   { key: 'rentals',     label: '대여',      href: '/works/rentals',  status: 'active', presetKey: 'rentals' },
   { key: 'refunds',     label: '환불',      href: '/works/refunds',  status: 'active', presetKey: 'refunds' },
   { key: 'bundles',     label: '번들',      href: '/works/bundles',  status: 'active', presetKey: 'bundles' },
+  { key: 'metal-prices', label: '시세',     href: '/works/metal-prices', status: 'active', presetKey: 'metal-prices' },
+  { key: 'purchases',   label: '매입',      href: '/works/purchases', status: 'active', presetKey: 'purchases' },
 ]
 
 export const TRASH_PAGE: PageDef = {
