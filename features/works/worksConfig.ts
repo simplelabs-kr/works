@@ -174,7 +174,7 @@ export const COLUMNS = [
   { data: 'bundle_id',     title: '번들',    readOnly: true, width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: bundleLinkConfig },
   // derived:true → formula 아이콘
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true },
-  { data: 'purchase_id',   title: '원부자재',  readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: purchaseLinkConfig },
+  { data: 'purchase_id',   title: '매입',    readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: purchaseLinkConfig },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },
