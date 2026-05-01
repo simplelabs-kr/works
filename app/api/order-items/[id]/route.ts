@@ -17,6 +17,12 @@ const FIELD_SPECS = deriveFieldSpecs({
   editableFields: EDITABLE_FIELD_MAP,
   overrides: {
     '출고': { type: 'boolean' },
+    // linklist FK orphan — 카탈로그 컬럼은 denormalized 표시 컬럼을 가리키고
+    // 실제 PATCH 는 fkColumn(uuid) 으로 들어오므로 spec 을 직접 주입.
+    'product_id':      { type: 'text', maxLength: 64 },
+    'metal_price_id':  { type: 'text', maxLength: 64 },
+    'bundle_id':       { type: 'text', maxLength: 64 },
+    'purchase_id':     { type: 'text', maxLength: 64 },
   },
   page: 'order-items',
 })

@@ -91,6 +91,8 @@ export type Item = {
   허용_중량_범위: string | null
   중량_검토: string | null
   번들_명칭: string | null
+  metal_price_표시: string | null
+  매입_표시: string | null
   검수_유의: string | null
   가다번호_목록: string | null
   가다_위치_목록: string | null
@@ -148,6 +150,8 @@ export type Row = {
   공임_조정액: number | null
   확정_공임: number | null
   번들_명칭: string
+  metal_price_표시: string
+  매입_표시: string
   원부자재: string
   발주_현황: string
   작업_위치: string
