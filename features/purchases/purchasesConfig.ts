@@ -15,7 +15,6 @@ export const PURCHASES_VIEW_PAGE_KEY = 'purchases'
 // route.ts 에서 overrides 로 spec 공급.
 export const PURCHASES_EDITABLE_FIELDS: Record<string, string> = {
   '이름': '이름',
-  '소재': '소재',
   '개당_수량': '개당_수량',
   '발주': '발주',
   '수령': '수령',
@@ -37,7 +36,8 @@ const orderItemLinkConfig: LinkListConfig = {
 
 export const PURCHASES_COLUMNS = [
   { data: '이름',     title: '이름',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
-  { data: '소재',     title: '소재',     readOnly: false, width: 100, fieldType: 'text' as FieldType },
+  // flat_purchases.소재 는 order_items.소재 lookup 결과 (purchases 테이블에는 컬럼 없음).
+  { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '발주',     title: '발주',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '수령',     title: '수령',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
