@@ -2002,6 +2002,13 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
           if (hider.style.backgroundColor !== 'rgb(248, 249, 250)') hider.style.backgroundColor = '#F8F9FA'
         }
       }
+      // 컬럼 헤더 (ht_clone_top) 의 .wtHider 도 동일한 paddingRight 적용.
+      // master 만 padding 을 주면 master.scrollWidth > top.scrollWidth 가 되어
+      // 우측 끝까지 스크롤 시 헤더가 본문보다 60px 일찍 멈춰 misalignment 발생.
+      const topHider = hotRef.current?.rootElement?.querySelector('.ht_clone_top .wtHider') as HTMLElement | null
+      if (topHider && topHider.style.paddingRight !== '60px') {
+        topHider.style.paddingRight = '60px'
+      }
       const hInner = customScrollbarInnerRef.current
       if (hInner) {
         const target = masterEl.scrollWidth
