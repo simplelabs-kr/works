@@ -5,6 +5,7 @@
 
 import type { FieldType } from '@/features/works/worksTypes'
 import type { PageConfig } from '@/components/datagrid/types'
+import { metalRenderer } from './metalPricesRenderers'
 import type { MetalPriceItem, MetalPriceRow } from './metalPricesTypes'
 
 export const METAL_PRICES_VIEW_PAGE_KEY = 'metal-prices'
@@ -18,14 +19,11 @@ export const METAL_PRICES_EDITABLE_FIELDS: Record<string, string> = {
 export const METAL_PRICES_COLUMNS = [
   { data: 'date',  title: '일자', readOnly: false, width: 120, fieldType: 'date' as FieldType,
     type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true },
-  { data: 'metal', title: '금속', readOnly: false, width: 100, fieldType: 'text' as FieldType },
+  { data: 'metal', title: '금속', readOnly: false, width: 100, fieldType: 'select' as FieldType,
+    enumValues: ['Gold', 'Silver', 'Brass'], renderer: metalRenderer },
   { data: 'price_per_gram', title: 'g당 시세', readOnly: false, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
 
   { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-
-  // 우측 끝 컬럼 width 조절을 위한 phantom spacer.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { data: '_spacer', title: '', readOnly: true, width: 60, fieldType: 'text' as FieldType, derived: true, renderer: ((_h: any, td: any) => { td.innerHTML = ''; td.style.background = '#F8F9FA' }) as any },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

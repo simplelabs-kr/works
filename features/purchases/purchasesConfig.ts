@@ -50,10 +50,6 @@ export const PURCHASES_COLUMNS = [
   { data: 'order_item_표시', title: '주문 아이템', readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
 
   { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-
-  // 우측 끝 컬럼 width 조절을 위한 phantom spacer.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { data: '_spacer', title: '', readOnly: true, width: 60, fieldType: 'text' as FieldType, derived: true, renderer: ((_h: any, td: any) => { td.innerHTML = ''; td.style.background = '#F8F9FA' }) as any },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

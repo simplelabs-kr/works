@@ -199,11 +199,6 @@ export const COLUMNS = [
   { data: 'created_at',    title: 'created at', readOnly: true, width: 160, fieldType: 'date'   as FieldType },
   { data: '체인_길이',     title: '체인 길이', readOnly: false, width: 80,  fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '체인_두께',     title: '체인 두께', readOnly: false, width: 80,  fieldType: 'text'   as FieldType },
-  // 우측 끝 spacer — 마지막 도메인 컬럼이 단독으로 우측 가장자리에 있을 때
-  // resize 핸들이 보이지 않는 HOT 동작을 우회하기 위한 phantom 컬럼.
-  // derived:true 로 FilterModal / SortModal 드롭다운, realtime merge 에서 모두 제외.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { data: '_spacer', title: '', readOnly: true, width: 60, fieldType: 'text' as FieldType, derived: true, renderer: ((_h: any, td: any) => { td.innerHTML = ''; td.style.background = '#F8F9FA' }) as any },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
