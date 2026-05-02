@@ -14,6 +14,7 @@ export type PurchaseItem = {
 
   이름: string | null
   소재: string | null
+  매입처: string | null
   개당_수량: number | null
   // 첫 번째 연결 order_item.발주_수량 (트리거 sync).
   제품_발주_수량: number | null
@@ -36,6 +37,7 @@ export type PurchaseRow = {
 
   이름: string
   소재: string
+  매입처: string
   개당_수량: number | null
   제품_발주_수량: number | null
   필요_원부자재_수량: number | null

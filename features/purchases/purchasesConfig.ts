@@ -46,6 +46,9 @@ export const PURCHASES_COLUMNS = [
   // page-level 로 추가 hydrate (extraSelectOptionsTables) 해서 동일하게 적용.
   { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'lookup' as FieldType,
     sourceTable: 'order_items', sourceField: '소재', editor: false, renderer: 소재LookupRenderer },
+  // 매입처: materials.type 별 supplier 경로 (stones/chains/other_materials → suppliers.이름).
+  // DB 트리거가 sync.
+  { data: '매입처',   title: '매입처',   readOnly: true,  width: 120, fieldType: 'lookup' as FieldType },
   // 발주 시점 product_materials.개수 스냅샷 — 이후 편집 가능.
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
   // 첫 연결 order_item.발주_수량 (트리거 sync) — junction 으로부터 값을
@@ -122,6 +125,7 @@ function transformPurchaseRow(item: PurchaseItem): PurchaseRow {
 
     이름: str(item.이름),
     소재: str(item.소재),
+    매입처: str(item.매입처),
     개당_수량: numOrNull(item.개당_수량),
     제품_발주_수량: numOrNull(item.제품_발주_수량),
     필요_원부자재_수량: numOrNull(item.필요_원부자재_수량),
@@ -145,6 +149,7 @@ function purchasesMergeRealtimeUpdate(
     ...prev,
     이름: n.이름 !== undefined ? str(n.이름) : prev.이름,
     소재: n.소재 !== undefined ? str(n.소재) : prev.소재,
+    매입처: n.매입처 !== undefined ? str(n.매입처) : prev.매입처,
     개당_수량: n.개당_수량 !== undefined ? numOrNull(n.개당_수량) : prev.개당_수량,
     제품_발주_수량: n.제품_발주_수량 !== undefined ? numOrNull(n.제품_발주_수량) : prev.제품_발주_수량,
     필요_원부자재_수량: n.필요_원부자재_수량 !== undefined ? numOrNull(n.필요_원부자재_수량) : prev.필요_원부자재_수량,
