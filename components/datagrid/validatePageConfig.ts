@@ -84,6 +84,48 @@ export function validatePageConfig(
         titleSeen.set(title, i)
       }
     }
+
+    // fieldType 불변식 — 헤더 아이콘/필터 동작/편집 가능 여부는 fieldType 에서
+    // 자동 파생된다. 잘못된 조합은 "hash 아이콘인데 사실은 계산값" 같은
+    // 시각적 드리프트로 이어지므로 Config 레벨에서 차단.
+    const fieldType = (col as { fieldType?: unknown })?.fieldType
+    const outputType = (col as { outputType?: unknown })?.outputType
+    const readOnly = (col as { readOnly?: unknown })?.readOnly
+    const derived = (col as { derived?: unknown })?.derived
+
+    // formula/lookup/linklist 은 본질적으로 readOnly. 편집은 fieldType 변경 후에.
+    if (
+      (fieldType === 'formula' || fieldType === 'lookup' || fieldType === 'linklist') &&
+      readOnly !== true
+    ) {
+      errors.push({
+        level: 'error',
+        message: `columns[${i}] "${data}": fieldType:'${fieldType}' 은 readOnly:true 필수`,
+      })
+    }
+
+    // derived:true 는 "물리 컬럼/DB 필터·정렬 경로 없음" 표식 — fieldType 은
+    // formula 또는 lookup 만 허용. number/text 등에 derived 를 붙이면
+    // 헤더 아이콘이 (hash/A) 로 잘못 표시된다 — 계산값엔 fx 가 와야 함.
+    if (
+      derived === true &&
+      fieldType !== 'formula' &&
+      fieldType !== 'lookup'
+    ) {
+      errors.push({
+        level: 'error',
+        message: `columns[${i}] "${data}": derived:true 는 fieldType:'formula' 또는 'lookup' 만 허용 (현재 '${String(fieldType)}'). 계산값은 'formula' + outputType, JOIN 파생 텍스트는 'lookup'.`,
+      })
+    }
+
+    // outputType 은 'formula' 전용 — 다른 fieldType 에 붙이면 무시되므로
+    // 의도와 다른 동작이 된다.
+    if (outputType != null && fieldType !== 'formula') {
+      errors.push({
+        level: 'error',
+        message: `columns[${i}] "${data}": outputType 은 fieldType:'formula' 에서만 유효 (현재 '${String(fieldType)}')`,
+      })
+    }
   })
 
   // 3) colHeaders ↔ columns 길이 일치
