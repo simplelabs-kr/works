@@ -419,15 +419,44 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
   // cells. FilterModal reads from state (`filterSelectOptions`) so it
   // picks up the new values on the next render. Failures are swallowed —
   // the hardcoded fallback keeps the grid fully functional.
+  //
+  // `extraSelectOptionsTables` 가 지정된 페이지는 lookup 컬럼이 다른
+  // 테이블의 select 옵션을 빌려 쓴다 (예: purchases.소재 ← order_items).
+  // primary + extras 를 병렬 fetch 한 뒤 한 번에 setSelectColumnOptions
+  // 호출 — primary 가 우선이므로 같은 field_name 충돌 시 selectOptionsTable
+  // 값이 유지된다.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/field-options?table=${encodeURIComponent(selectOptionsTable)}`)
-        if (!res.ok) return
-        const body = (await res.json()) as { data?: Record<string, { value: string; bg: string }[]> }
-        if (cancelled || !body?.data) return
-        setSelectColumnOptions(body.data)
+        const tables = [
+          selectOptionsTable,
+          ...(pageConfig.extraSelectOptionsTables ?? []),
+        ]
+        const responses = await Promise.all(
+          tables.map(async (t) => {
+            try {
+              const res = await fetch(`/api/field-options?table=${encodeURIComponent(t)}`)
+              if (!res.ok) return null
+              const body = (await res.json()) as { data?: Record<string, { value: string; bg: string }[]> }
+              return body?.data ?? null
+            } catch {
+              return null
+            }
+          })
+        )
+        if (cancelled) return
+        // 뒤에서 앞으로 머지 — extras 를 먼저 깔고 primary (index 0) 가
+        // 마지막에 덮어써서 우선권을 갖도록 한다.
+        const merged: Record<string, { value: string; bg: string }[]> = {}
+        for (let i = responses.length - 1; i >= 0; i--) {
+          const data = responses[i]
+          if (!data) continue
+          for (const [field, values] of Object.entries(data)) {
+            merged[field] = values
+          }
+        }
+        setSelectColumnOptions(merged)
         setFilterSelectOptions(getFilterSelectOptions())
         hotRef.current?.render()
       } catch {

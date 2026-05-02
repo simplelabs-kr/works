@@ -22,7 +22,6 @@ export type PurchaseItem = {
   발주: boolean | null
   수령: boolean | null
   재고_사용: boolean | null
-  발주일: string | null
   비고: string | null
 
   // Reverse linklist cache (JSONB, 다대다 via purchase_order_items).
@@ -43,7 +42,6 @@ export type PurchaseRow = {
   발주: boolean
   수령: boolean
   재고_사용: boolean
-  발주일: string
   비고: string
 
   order_item_목록: PurchaseChip[]

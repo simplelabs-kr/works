@@ -68,6 +68,14 @@ export type PageConfig<TItem extends BaseItem = BaseItem, TRow extends BaseRow =
   // fetch failure.
   selectOptionsTable: string
 
+  // 추가로 hydrate 할 field_options table_name 목록. 다른 테이블의 select
+  // 옵션을 lookup 카탈로그로 빌려 쓸 때 사용한다. 예: purchases.소재 는
+  // order_items 의 소재 옵션과 동일한 컬러 뱃지를 써야 하므로 'order_items'
+  // 를 등록해 카탈로그에 머지한다. 카탈로그는 field_name 기준으로 통합
+  // 되므로 컬럼의 data 키 (= field_name) 가 그대로 lookup key 가 된다.
+  // 동일 field_name 이 여러 테이블에 있으면 selectOptionsTable 우선.
+  extraSelectOptionsTables?: string[]
+
   // HOT column defs (augmented with fieldType). DataGrid uses this as the
   // canonical column catalog — PROP_TO_COL, widths state, filter columns,
   // sort columns, summary columns, and view persistence all derive from it.
