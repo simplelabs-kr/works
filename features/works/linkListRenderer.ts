@@ -83,6 +83,9 @@ export function linkListRenderer(_hot: any, td: HTMLTableCellElement, _row: any,
   const chips = parseChips(value)
 
   const wrap = document.createElement('div')
+  // chips 가 셀 폭을 넘으면 wrap 단에서 잘리되, 각 chip 자체는 잘리지 않는다.
+  // 셀 hover 시 native title tooltip 으로 전체 chip 목록을 표시해 cut-off 케이스
+  // 에서도 모든 값을 확인할 수 있다 (Airtable/Notion 스타일).
   wrap.style.cssText =
     'display:flex;align-items:center;gap:4px;flex-wrap:nowrap;overflow:hidden;height:100%;cursor:pointer;'
 
@@ -99,12 +102,18 @@ export function linkListRenderer(_hot: any, td: HTMLTableCellElement, _row: any,
   } else {
     chips.forEach((chip) => {
       const el = document.createElement('span')
+      // max-width / ellipsis 제거 — chip 텍스트를 전부 표시.
+      // 여러 chip 이 셀 폭 초과 시 wrap (overflow:hidden) 단에서 잘리고,
+      // 잘린 항목은 wrap 의 title 에서 확인 가능.
       el.style.cssText =
-        'display:inline-flex;align-items:center;max-width:160px;padding:1px 7px;border-radius:10px;background:#EEF2FF;color:#3730A3;font-size:11.5px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;'
+        'display:inline-flex;align-items:center;padding:1px 7px;border-radius:10px;background:#EEF2FF;color:#3730A3;font-size:11.5px;line-height:1.5;white-space:nowrap;flex-shrink:0;'
       el.textContent = chip.display || '(값 없음)'
-      el.title = chip.secondary ? `${chip.display}\n${chip.secondary}` : chip.display
       wrap.appendChild(el)
     })
+    // hover tooltip: 모든 chip 의 display (+ secondary) 를 한번에 표시.
+    wrap.title = chips
+      .map((c) => (c.secondary ? `${c.display} (${c.secondary})` : c.display))
+      .join('\n')
   }
 
   td.appendChild(wrap)
