@@ -15,6 +15,10 @@ export type PurchaseItem = {
   이름: string | null
   소재: string | null
   개당_수량: number | null
+  // 첫 번째 연결 order_item.발주_수량 (트리거 sync).
+  제품_발주_수량: number | null
+  // 제품_발주_수량 × 개당_수량 (DB 계산값).
+  필요_원부자재_수량: number | null
   발주: boolean | null
   수령: boolean | null
   재고_사용: boolean | null
@@ -34,6 +38,8 @@ export type PurchaseRow = {
   이름: string
   소재: string
   개당_수량: number | null
+  제품_발주_수량: number | null
+  필요_원부자재_수량: number | null
   발주: boolean
   수령: boolean
   재고_사용: boolean

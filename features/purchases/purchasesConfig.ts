@@ -42,6 +42,10 @@ export const PURCHASES_COLUMNS = [
   // flat_purchases.소재 는 첫 연결 order_item.소재 lookup 결과 (트리거 sync).
   { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
+  // 첫 연결 order_item.발주_수량 (트리거 sync).
+  { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
+  // 제품_발주_수량 × 개당_수량 — derived (DB 계산값, 필터/정렬 UI 제외).
+  { data: '필요_원부자재_수량', title: '필요 원부자재 수량', readOnly: true, width: 130, fieldType: 'number' as FieldType, type: 'numeric', derived: true },
   { data: '발주',     title: '발주',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '수령',     title: '수령',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '재고_사용', title: '재고 사용', readOnly: false, width: 80,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
@@ -115,6 +119,8 @@ function transformPurchaseRow(item: PurchaseItem): PurchaseRow {
     이름: str(item.이름),
     소재: str(item.소재),
     개당_수량: numOrNull(item.개당_수량),
+    제품_발주_수량: numOrNull(item.제품_발주_수량),
+    필요_원부자재_수량: numOrNull(item.필요_원부자재_수량),
     발주: boolFlag(item.발주),
     수령: boolFlag(item.수령),
     재고_사용: boolFlag(item.재고_사용),
@@ -137,6 +143,8 @@ function purchasesMergeRealtimeUpdate(
     이름: n.이름 !== undefined ? str(n.이름) : prev.이름,
     소재: n.소재 !== undefined ? str(n.소재) : prev.소재,
     개당_수량: n.개당_수량 !== undefined ? numOrNull(n.개당_수량) : prev.개당_수량,
+    제품_발주_수량: n.제품_발주_수량 !== undefined ? numOrNull(n.제품_발주_수량) : prev.제품_발주_수량,
+    필요_원부자재_수량: n.필요_원부자재_수량 !== undefined ? numOrNull(n.필요_원부자재_수량) : prev.필요_원부자재_수량,
     발주: n.발주 !== undefined ? boolFlag(n.발주) : prev.발주,
     수령: n.수령 !== undefined ? boolFlag(n.수령) : prev.수령,
     재고_사용: n.재고_사용 !== undefined ? boolFlag(n.재고_사용) : prev.재고_사용,
