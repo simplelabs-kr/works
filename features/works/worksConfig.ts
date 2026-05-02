@@ -138,7 +138,7 @@ export const COLUMNS = [
   { data: 'images', title: '이미지', readOnly: true, width: 80, fieldType: 'image' as FieldType, renderer: imageRenderer },
   { data: 'reference_files', title: '참고파일', readOnly: false, width: 80, fieldType: 'attachment' as FieldType, renderer: attachmentRenderer, editor: false },
   { data: '제품명_코드',   title: '제품명[코드]',  readOnly: true,  width: 300, fieldType: 'lookup'   as FieldType },
-  { data: '제품코드',      title: '제품',    readOnly: true,  width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: productLinkConfig },
+  { data: '제품코드',      title: 'Link: Products', readOnly: true,  width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: productLinkConfig },
   { data: 'metal_name',    title: '소재',    readOnly: true,  width: 100, fieldType: 'lookup'   as FieldType },
   { data: 'metal_purity',  title: '함량비',  readOnly: true,  width: 70,  fieldType: 'number'   as FieldType },
   { data: '발주일',        title: '발주일',    readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
@@ -146,7 +146,7 @@ export const COLUMNS = [
   { data: '데드라인',      title: '데드라인',  readOnly: false, width: 110, fieldType: 'date' as FieldType, type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, editor: 'date', datePickerConfig: koreanDatePickerConfig },
   // 출고예정일: 데드라인 / 생산시작일+제작_소요일 에서 workday 계산 — formula
   { data: '출고예정일', title: '출고예정일', readOnly: true,  width: 110, fieldType: 'formula' as FieldType, outputType: 'date' as FieldType },
-  { data: 'metal_price_표시', title: '시세', readOnly: true,  width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: metalPriceLinkConfig },
+  { data: 'metal_price_표시', title: 'Link: Metal Prices', readOnly: true,  width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: metalPriceLinkConfig },
   { data: '시세_g당',      title: '시세(g당)', readOnly: true, width: 100, fieldType: 'number'  as FieldType },
   // 소재비: 중량 × 시세 계산값 — formula
   { data: '소재비',        title: '소재비',  readOnly: true,  width: 100, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
@@ -174,10 +174,10 @@ export const COLUMNS = [
   { data: '확정_공임',     title: '확정 공임', readOnly: true, width: 80, fieldType: 'formula'  as FieldType, outputType: 'number' as FieldType },
   // 번들 linklist: chip = flat_order_details.번들_명칭 (bundles JOIN denormalized).
   // 클릭 시 LinkSearchPopover 가 bundle_id 를 PATCH.
-  { data: '번들_명칭',     title: '번들',    readOnly: true, width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: bundleLinkConfig },
+  { data: '번들_명칭',     title: 'Link: Bundles', readOnly: true, width: 130, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: bundleLinkConfig },
   // derived:true → formula 아이콘
   { data: '원부자재',      title: '원부자재',  readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true },
-  { data: '매입_표시',     title: '매입',    readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: purchaseLinkConfig },
+  { data: '매입_표시',     title: 'Link: Purchases', readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: purchaseLinkConfig },
   { data: '발주_현황',     title: '발주 현황', readOnly: true, width: 150, fieldType: 'formula' as FieldType, derived: true, renderer: purchaseStatusRenderer },
   { data: '작업_위치',     title: '작업 위치', readOnly: false, width: 130, fieldType: 'select' as FieldType },
   { data: '검수_유의',     title: '검수 포인트', readOnly: true, width: 150, fieldType: 'text'   as FieldType },

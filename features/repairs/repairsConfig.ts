@@ -115,11 +115,11 @@ export const REPAIRS_COLUMNS = [
   { data: '브랜드코드', title: '브랜드 코드', readOnly: true, width: 100, fieldType: 'lookup' as FieldType },
   // 제품명: chip 링크 컬럼 (정방향 N=1) — 클릭 시 products 검색 팝오버에서 링크 변경.
   // `readOnly: true` + `editor: false` — 직접 타이핑 차단, 팝오버 경유만. 실제 PATCH 는 product_id.
-  { data: '제품명',     title: '제품명',     readOnly: true,  width: 240, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 제품명LinkListConfig },
+  { data: '제품명',     title: 'Link: Products', readOnly: true,  width: 240, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 제품명LinkListConfig },
   { data: '고객명',     title: '고객명',     readOnly: true,  width: 120, fieldType: 'lookup' as FieldType },
   // order_item 고유번호: chip 링크 컬럼 (정방향 N=1) — order-items 검색 후 order_item_id PATCH.
   // flat_repairs.order_item_고유번호 (JOIN denormalized) 를 display 로 사용.
-  { data: 'order_item_고유번호', title: 'order_item 고유번호', readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_고유번호LinkListConfig },
+  { data: 'order_item_고유번호', title: 'Link: Order Items', readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_고유번호LinkListConfig },
 
   // ── 수선 내용 ──────────────────────────────────────────────────────
   { data: '수선_내용',  title: '수선 내용',  readOnly: false, width: 220, fieldType: 'longtext' as FieldType, type: 'text' },

@@ -50,7 +50,7 @@ export const PURCHASES_COLUMNS = [
   { data: '비고',     title: '비고',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
 
   // 다대다 링크 (chip UI, junction 기반).
-  { data: 'order_item_목록', title: '주문 제품', readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
+  { data: 'order_item_목록', title: 'Link: Order Items', readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
 
   { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
 ]

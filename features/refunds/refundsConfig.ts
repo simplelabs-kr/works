@@ -57,8 +57,8 @@ export const REFUNDS_COLUMNS = [
 
   // ── 링크 컬럼 (chip UI, 정방향 N=1) ─────────────────────────
   // `readOnly: true` + `editor: false` — 직접 타이핑 차단, 팝오버 경유만.
-  { data: 'order_item_표시명', title: '주문 제품[코드]', readOnly: true, width: 280, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
-  { data: '번들_고유번호',     title: '번들 고유번호',   readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
+  { data: 'order_item_표시명', title: 'Link: Order Items', readOnly: true, width: 280, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
+  { data: '번들_고유번호',     title: 'Link: Bundles',   readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
 
   // ── 메타 ───────────────────────────────────────────────────
   { data: '생성일시',   title: '생성일시',   readOnly: true, width: 150, fieldType: 'date' as FieldType,

@@ -61,8 +61,8 @@ export const RENTALS_COLUMNS = [
 
   // ── 링크 컬럼 (chip UI, 정방향 N=1) ─────────────────────────
   // `readOnly: true` + `editor: false` — 직접 타이핑 차단, 팝오버 경유만.
-  { data: 'order_item_표시명', title: 'order_item', readOnly: true, width: 220, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
-  { data: '번들_고유번호',       title: '번들 고유번호',       readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
+  { data: 'order_item_표시명', title: 'Link: Order Items', readOnly: true, width: 220, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
+  { data: '번들_고유번호',       title: 'Link: Bundles',       readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
 
   // ── 편집 가능 ──────────────────────────────────────────────
   { data: '반납',         title: '반납',         readOnly: false, width: 70,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },

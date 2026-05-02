@@ -76,9 +76,9 @@ export const BUNDLES_COLUMNS = [
   // ── 역방향 linklist (chip UI, readOnly) ────────────────────
   // flat_bundles 의 JSONB 캐시 컬럼. 트리거가 order_items / repairs / rentals
   // 의 bundle_id 변경 시 자동 재계산. add/remove 는 상대 row 의 bundle_id 를 PATCH.
-  { data: 'order_item_목록', title: '주문 제품 목록', readOnly: true, width: 300, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_목록LinkListConfig },
-  { data: 'repair_목록',     title: '수선 목록',       readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: repair_목록LinkListConfig },
-  { data: 'rental_목록',     title: '대여 목록',       readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: rental_목록LinkListConfig },
+  { data: 'order_item_목록', title: 'Link: Order Items', readOnly: true, width: 300, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_목록LinkListConfig },
+  { data: 'repair_목록',     title: 'Link: Repairs',   readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: repair_목록LinkListConfig },
+  { data: 'rental_목록',     title: 'Link: Rentals',   readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: rental_목록LinkListConfig },
 
   // ── 편집 가능 — text ──────────────────────────────────────
   { data: '송장번호',   title: '송장번호',   readOnly: false, width: 150, fieldType: 'text' as FieldType },
