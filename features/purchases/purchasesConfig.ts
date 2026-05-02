@@ -42,9 +42,9 @@ export const PURCHASES_COLUMNS = [
   // flat_purchases.소재 는 첫 연결 order_item.소재 lookup 결과 (트리거 sync).
   { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
-  // 첫 연결 order_item.발주_수량 (트리거 sync) — junction 정렬 + DISTINCT ON
-  // 으로 산출되는 계산값이므로 fieldType:'formula'.
-  { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
+  // 첫 연결 order_item.발주_수량 (트리거 sync) — junction 으로부터 값을
+  // 가져오는 lookup. 계산이 아니라 참조이므로 fieldType:'lookup'.
+  { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'lookup' as FieldType, type: 'numeric' },
   // 제품_발주_수량 × 개당_수량 — DB 계산값 (flat 에 물리 컬럼으로 저장).
   { data: '필요_원부자재_수량', title: '필요 원부자재 수량', readOnly: true, width: 130, fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
   { data: '발주',     title: '발주',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
