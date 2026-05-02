@@ -34,7 +34,7 @@ const orderItemLinkConfig: LinkListConfig = {
   junctionLinkedColumn: 'order_item_id',    // junction 의 상대 row 측 컬럼.
   cacheField: 'order_item_목록',
   searchFields: ['고유_번호', '제품명', '제품코드'],
-  displayField: '고유_번호',
+  displayField: '제품명_코드',
 }
 
 export const PURCHASES_COLUMNS = [
