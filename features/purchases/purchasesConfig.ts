@@ -15,9 +15,9 @@ import type { PurchaseItem, PurchaseRow, PurchaseChip } from './purchasesTypes'
 export const PURCHASES_VIEW_PAGE_KEY = 'purchases'
 
 // 편집 가능 컬럼. order_item_목록 은 junction PATCH 로 처리되므로 미등록.
+// 개당_수량 은 product_materials.개수 lookup — readOnly.
 export const PURCHASES_EDITABLE_FIELDS: Record<string, string> = {
   '이름': '이름',
-  '개당_수량': '개당_수량',
   '발주': '발주',
   '수령': '수령',
   '재고_사용': '재고_사용',
@@ -41,7 +41,8 @@ export const PURCHASES_COLUMNS = [
   { data: '이름',     title: '이름',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
   // flat_purchases.소재 는 첫 연결 order_item.소재 lookup 결과 (트리거 sync).
   { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
-  { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
+  // product_materials.개수 lookup (트리거 sync) — readOnly.
+  { data: '개당_수량', title: '개당 수량', readOnly: true,  width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
   // 첫 연결 order_item.발주_수량 (트리거 sync) — junction 으로부터 값을
   // 가져오는 lookup. 계산이 아니라 참조이므로 fieldType:'lookup'.
   { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'lookup' as FieldType, type: 'numeric' },
