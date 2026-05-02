@@ -23,8 +23,9 @@ export type LinkListConfig = {
   linkTable: string
 
   // 정방향: 현재 row 의 FK 컬럼 (예: 'order_item_id'). PATCH 대상.
-  // 역방향: 상대 테이블의 FK 컬럼 (예: order_items.bundle_id 의 'bundle_id').
-  //         add/remove 시 `/api/{linkTable}/{chipId}` 에 `{field: fkColumn, value}` PATCH.
+  // 역방향 (1:N): 상대 테이블의 FK 컬럼 (예: order_items.bundle_id 의 'bundle_id').
+  //               add/remove 시 `/api/{linkTable}/{chipId}` 에 `{field: fkColumn, value}` PATCH.
+  // 다대다 (junctionTable 지정 시): junction 의 "현재 row" 측 컬럼명 (예: 'purchase_id').
   fkColumn: string
 
   // 팝오버 표시 필드.
@@ -38,6 +39,15 @@ export type LinkListConfig = {
   // 역방향 모드에서 JSONB 캐시 컬럼명 힌트 (기본값 = col.data).
   // 현재는 문서화 목적 — 런타임에선 col.data 를 사용.
   cacheField?: string
+
+  // ── 다대다 (junction) 모드 ────────────────────────────────────────
+  // junctionTable 이 지정되면 add/remove 는 현재 page 의 API
+  // (`{apiBase}/{rowData.id}`) 에 `{junctionAdd|junctionRemove: {linkedId}}`
+  // 형식의 PATCH 를 보낸다. route handler 가 이를 가로채 junction 테이블
+  // (예: purchase_order_items) 에 INSERT/DELETE.
+  junctionTable?: string
+  // junction 의 "상대 row" 측 컬럼명 (예: 'order_item_id').
+  junctionLinkedColumn?: string
 }
 
 // 셀 값을 chip 배열로 정규화. JSONB 가 Handsontable 까지 string 으로

@@ -2,17 +2,19 @@
 //
 // search_flat_purchases / count_flat_purchases RPC 가 flat_purchases
 // 단일 테이블에서 조회. realtime 은 flat_purchases.
+//
+// purchases ↔ order_items 는 다대다 — 중간 테이블 purchase_order_items.
+// flat_purchases.order_item_목록 (JSONB chip array) 는 트리거가 sync.
 
 import type { FieldType } from '@/features/works/worksTypes'
 import type { PageConfig } from '@/components/datagrid/types'
 import { checkboxRenderer } from '@/features/works/worksRenderers'
 import { linkListRenderer, type LinkListConfig } from '@/features/works/linkListRenderer'
-import type { PurchaseItem, PurchaseRow } from './purchasesTypes'
+import type { PurchaseItem, PurchaseRow, PurchaseChip } from './purchasesTypes'
 
 export const PURCHASES_VIEW_PAGE_KEY = 'purchases'
 
-// 편집 가능 컬럼. order_item_id 는 COLUMNS 에 없는 orphan 편집 키 —
-// route.ts 에서 overrides 로 spec 공급.
+// 편집 가능 컬럼. order_item_목록 은 junction PATCH 로 처리되므로 미등록.
 export const PURCHASES_EDITABLE_FIELDS: Record<string, string> = {
   '이름': '이름',
   '개당_수량': '개당_수량',
@@ -21,22 +23,23 @@ export const PURCHASES_EDITABLE_FIELDS: Record<string, string> = {
   '재고_사용': '재고_사용',
   '발주일': '발주일',
   '비고': '비고',
-  'order_item_id': 'order_item_id',
 }
 
-// 정방향 링크 (N=1) — order-items 검색 후 order_item_id 를 PATCH.
-// display (`order_item_표시`) 는 flat_purchases 에 denormalized 저장.
+// 다대다 역방향 링크 — junction (purchase_order_items) 기반.
+// add/remove 는 `/api/purchases/{id}` 에 `{junctionAdd|junctionRemove: {linkedId}}` PATCH.
 const orderItemLinkConfig: LinkListConfig = {
   linkTable: 'order-items',
-  fkColumn: 'order_item_id',
+  fkColumn: 'purchase_id',                  // junction 의 현재 row 측 컬럼.
+  junctionTable: 'purchase_order_items',
+  junctionLinkedColumn: 'order_item_id',    // junction 의 상대 row 측 컬럼.
+  cacheField: 'order_item_목록',
   searchFields: ['고유_번호', '제품명', '제품코드'],
   displayField: '고유_번호',
-  maxLinks: 1,
 }
 
 export const PURCHASES_COLUMNS = [
   { data: '이름',     title: '이름',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
-  // flat_purchases.소재 는 order_items.소재 lookup 결과 (purchases 테이블에는 컬럼 없음).
+  // flat_purchases.소재 는 첫 연결 order_item.소재 lookup 결과 (트리거 sync).
   { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
   { data: '발주',     title: '발주',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
@@ -46,8 +49,8 @@ export const PURCHASES_COLUMNS = [
     type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true },
   { data: '비고',     title: '비고',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
 
-  // 정방향 링크 (chip UI, N=1).
-  { data: 'order_item_표시', title: '주문 아이템', readOnly: true, width: 160, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
+  // 다대다 링크 (chip UI, junction 기반).
+  { data: 'order_item_목록', title: '주문 제품', readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
 
   { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
 ]
@@ -72,6 +75,34 @@ function dateOrEmpty(v: unknown): string {
   if (!v) return ''
   return String(v).slice(0, 10)
 }
+// JSONB 배열 → chip[]. displayField/secondaryField 매핑.
+function chipArr(v: unknown, config: LinkListConfig): PurchaseChip[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any[] = []
+  if (Array.isArray(v)) {
+    raw = v
+  } else if (typeof v === 'string' && v.trim().startsWith('[')) {
+    try {
+      const p = JSON.parse(v)
+      if (Array.isArray(p)) raw = p
+    } catch {
+      /* ignore */
+    }
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return raw.map((r: any) => {
+    const display = r?.[config.displayField] ?? r?.display ?? ''
+    const chip: PurchaseChip = {
+      id: String(r?.id ?? ''),
+      display: String(display),
+    }
+    if (config.secondaryField) {
+      const sec = r?.[config.secondaryField] ?? r?.secondary
+      if (sec != null && sec !== '') chip.secondary = String(sec)
+    }
+    return chip
+  })
+}
 
 // ── Item → Row ──────────────────────────────────────────────────────
 
@@ -90,8 +121,7 @@ function transformPurchaseRow(item: PurchaseItem): PurchaseRow {
     발주일: dateOrEmpty(item.발주일),
     비고: str(item.비고),
 
-    order_item_id: item.order_item_id ?? null,
-    order_item_표시: str(item.order_item_표시),
+    order_item_목록: chipArr(item.order_item_목록, orderItemLinkConfig),
   }
 }
 
@@ -112,8 +142,7 @@ function purchasesMergeRealtimeUpdate(
     재고_사용: n.재고_사용 !== undefined ? boolFlag(n.재고_사용) : prev.재고_사용,
     발주일: n.발주일 !== undefined ? dateOrEmpty(n.발주일) : prev.발주일,
     비고: n.비고 !== undefined ? str(n.비고) : prev.비고,
-    order_item_id: n.order_item_id !== undefined ? (n.order_item_id as string | null) : prev.order_item_id,
-    order_item_표시: n.order_item_표시 !== undefined ? str(n.order_item_표시) : prev.order_item_표시,
+    order_item_목록: n.order_item_목록 !== undefined ? chipArr(n.order_item_목록, orderItemLinkConfig) : prev.order_item_목록,
     updated_at: n.updated_at !== undefined ? (n.updated_at as string | null) : prev.updated_at,
   }
 }

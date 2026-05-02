@@ -1319,6 +1319,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     } else {
       // 역방향: 상대 row PATCH → 현재 row 의 캐시 컬럼 낙관 업데이트.
+      // junctionTable 모드: 현재 row API 에 junctionAdd PATCH.
       const prevChips = parseChips(prevCellVal)
       const nextChips = [...prevChips, picked]
       if (displayCol >= 0) {
@@ -1330,11 +1331,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       // connected 상태도 갱신 — 팝오버가 열린 채로 계속 추가 가능.
       setLinkListMenu((m) => (m ? { ...m, connected: nextChips } : m))
       try {
-        const res = await fetch(`/api/${config.linkTable}/${picked.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ field: config.fkColumn, value: rowData.id }),
-        })
+        const res = config.junctionTable
+          ? await fetch(`${apiBase}/${rowData.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ junctionAdd: { linkedId: picked.id } }),
+            })
+          : await fetch(`/api/${config.linkTable}/${picked.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ field: config.fkColumn, value: rowData.id }),
+            })
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string }
           throw new Error(body.error ?? `PATCH 실패 (${res.status})`)
@@ -1413,6 +1420,7 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       }
     } else {
       // 역방향: 상대 row 의 FK 를 null 로.
+      // junctionTable 모드: 현재 row API 에 junctionRemove PATCH.
       const prevChips = parseChips(prevCellVal)
       const nextChips = prevChips.filter((c) => c.id !== chipId)
       if (displayCol >= 0) {
@@ -1423,11 +1431,17 @@ export default function DataGrid({ pageConfig }: { pageConfig: PageConfig<any, a
       )
       setLinkListMenu((m) => (m ? { ...m, connected: nextChips } : m))
       try {
-        const res = await fetch(`/api/${config.linkTable}/${chipId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ field: config.fkColumn, value: null }),
-        })
+        const res = config.junctionTable
+          ? await fetch(`${apiBase}/${rowData.id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ junctionRemove: { linkedId: chipId } }),
+            })
+          : await fetch(`/api/${config.linkTable}/${chipId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ field: config.fkColumn, value: null }),
+            })
         if (!res.ok) {
           const body = (await res.json().catch(() => ({}))) as { error?: string }
           throw new Error(body.error ?? `PATCH 실패 (${res.status})`)

@@ -1,5 +1,11 @@
 // Domain types for the Purchases (매입) grid.
 
+export type PurchaseChip = {
+  id: string
+  display: string
+  secondary?: string
+}
+
 export type PurchaseItem = {
   id: string
   updated_at?: string | null
@@ -15,10 +21,9 @@ export type PurchaseItem = {
   발주일: string | null
   비고: string | null
 
-  // Forward N=1 link to order_items.
-  order_item_id: string | null
-  // flat_purchases denormalized display column for the linked order_item.
-  order_item_표시: string | null
+  // Reverse linklist cache (JSONB, 다대다 via purchase_order_items).
+  // 트리거가 sync_flat_purchase() 로 갱신.
+  order_item_목록: PurchaseChip[] | null
 }
 
 export type PurchaseRow = {
@@ -35,6 +40,5 @@ export type PurchaseRow = {
   발주일: string
   비고: string
 
-  order_item_id: string | null
-  order_item_표시: string
+  order_item_목록: PurchaseChip[]
 }
