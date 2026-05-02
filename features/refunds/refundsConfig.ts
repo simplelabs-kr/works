@@ -60,15 +60,15 @@ export const REFUNDS_COLUMNS = [
   { data: 'order_item_표시명', title: 'Link: Order Items', readOnly: true, width: 280, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: order_item_표시명LinkListConfig },
   { data: '번들_고유번호',     title: 'Link: Bundles',   readOnly: true, width: 180, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: 번들_고유번호LinkListConfig },
 
-  // ── 메타 ───────────────────────────────────────────────────
+  // ── 메타 (system-managed) ─────────────────────────────────
   { data: '생성일시',   title: '생성일시',   readOnly: true, width: 150, fieldType: 'date' as FieldType,
-    type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true },
+    type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, system: true },
 
   // FK UUID (order_item_id / bundle_id / rental_id) 는 카탈로그 제외.
 
-  // ── 타임스탬프 ─────────────────────────────────────────────
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  // ── 타임스탬프 (system-managed) ────────────────────────────
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
+  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

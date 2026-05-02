@@ -104,16 +104,17 @@ export const BUNDLES_COLUMNS = [
   { data: '포장_확정',        title: '포장 확정',        readOnly: false, width: 90,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
   { data: '명세서_출력_완료', title: '명세서 출력 완료', readOnly: false, width: 120, fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
 
-  // ── 메타 (readOnly) ───────────────────────────────────────
-  { data: '생성자',         title: '생성자',         readOnly: true, width: 120, fieldType: 'text' as FieldType },
-  { data: '입금_확인_일시', title: '입금 확인 일시', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-  { data: '출고_체크_일시', title: '출고 체크 일시', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  // ── 메타 (system-managed, readOnly) ───────────────────────
+  // 생성자: 인증된 사용자명 자동 기록 / *_일시: 체크박스 토글 시 트리거가 sync.
+  { data: '생성자',         title: '생성자',         readOnly: true, width: 120, fieldType: 'text' as FieldType, system: true },
+  { data: '입금_확인_일시', title: '입금 확인 일시', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
+  { data: '출고_체크_일시', title: '출고 체크 일시', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 
   // FK UUID (brand_id) 는 카탈로그 제외.
 
-  // ── 타임스탬프 ─────────────────────────────────────────────
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  // ── 타임스탬프 (system-managed) ────────────────────────────
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
+  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

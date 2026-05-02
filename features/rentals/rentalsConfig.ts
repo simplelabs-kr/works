@@ -51,8 +51,9 @@ const 번들_고유번호LinkListConfig: LinkListConfig = {
 // 컬럼 카탈로그.
 // ⚠️ 기본 정렬 (생성일시 DESC) 은 RPC 측 ORDER BY 로 제공.
 export const RENTALS_COLUMNS = [
-  // ── 식별 ───────────────────────────────────────────────────
-  { data: '고유번호',   title: '고유번호',   readOnly: true,  width: 120, fieldType: 'text' as FieldType },
+  // ── 식별 (system-managed) ──────────────────────────────────
+  // DB 트리거가 generate_고유번호() 로 INSERT 시 자동 부여.
+  { data: '고유번호',   title: '고유번호',   readOnly: true,  width: 120, fieldType: 'text' as FieldType, system: true },
 
   // ── 브랜드 / 제품 (JOIN 유래, readOnly) ───────────────────
   { data: '브랜드명',   title: '브랜드',     readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
@@ -67,15 +68,15 @@ export const RENTALS_COLUMNS = [
   // ── 편집 가능 ──────────────────────────────────────────────
   { data: '반납',         title: '반납',         readOnly: false, width: 70,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
 
-  // ── 메타 ───────────────────────────────────────────────────
+  // ── 메타 (system-managed) ─────────────────────────────────
   { data: '생성일시',     title: '생성일시',     readOnly: true, width: 150, fieldType: 'date' as FieldType,
-    type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true },
+    type: 'date', dateFormat: 'YYYY-MM-DD', correctFormat: true, system: true },
 
   // FK UUID (brand_id / order_item_id / bundle_id) 는 카탈로그 제외.
 
-  // ── 타임스탬프 ─────────────────────────────────────────────
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  // ── 타임스탬프 (system-managed) ────────────────────────────
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
+  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -15,9 +15,9 @@ import type { PurchaseItem, PurchaseRow, PurchaseChip } from './purchasesTypes'
 export const PURCHASES_VIEW_PAGE_KEY = 'purchases'
 
 // 편집 가능 컬럼. order_item_목록 은 junction PATCH 로 처리되므로 미등록.
-// 개당_수량 은 발주 시점 product_materials.개수 스냅샷 — 이후 편집 가능.
+// 이름 은 formula (자동 계산) 이므로 편집 불가. 개당_수량 은 발주 시점
+// product_materials.개수 스냅샷 — 이후 편집 가능.
 export const PURCHASES_EDITABLE_FIELDS: Record<string, string> = {
-  '이름': '이름',
   '개당_수량': '개당_수량',
   '발주': '발주',
   '수령': '수령',
@@ -39,14 +39,15 @@ const orderItemLinkConfig: LinkListConfig = {
 }
 
 export const PURCHASES_COLUMNS = [
-  { data: '이름',     title: '이름',     readOnly: false, width: 200, fieldType: 'text' as FieldType },
-  // flat_purchases.소재 는 첫 연결 order_item.소재 lookup 결과 (트리거 sync).
-  { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'text' as FieldType },
+  // materials.품목명 + 개당_수량 으로 구성된 표시 이름 — DB 트리거가 sync.
+  { data: '이름',     title: '이름',     readOnly: true,  width: 200, fieldType: 'formula' as FieldType, outputType: 'text' as FieldType },
+  // 첫 연결 order_item.소재 트리거 sync.
+  { data: '소재',     title: '소재',     readOnly: true,  width: 100, fieldType: 'lookup' as FieldType },
   // 발주 시점 product_materials.개수 스냅샷 — 이후 편집 가능.
   { data: '개당_수량', title: '개당 수량', readOnly: false, width: 90,  fieldType: 'number' as FieldType, type: 'numeric' },
   // 첫 연결 order_item.발주_수량 (트리거 sync) — junction 으로부터 값을
   // 가져오는 lookup. 계산이 아니라 참조이므로 fieldType:'lookup'.
-  { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'lookup' as FieldType, type: 'numeric' },
+  { data: '제품_발주_수량',   title: '제품 발주 수량',   readOnly: true, width: 110, fieldType: 'lookup' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
   // 제품_발주_수량 × 개당_수량 — DB 계산값 (flat 에 물리 컬럼으로 저장).
   { data: '필요_원부자재_수량', title: '필요 원부자재 수량', readOnly: true, width: 130, fieldType: 'formula' as FieldType, outputType: 'number' as FieldType, type: 'numeric' },
   { data: '발주',     title: '발주',     readOnly: false, width: 60,  fieldType: 'checkbox' as FieldType, editor: false, renderer: checkboxRenderer },
@@ -59,7 +60,7 @@ export const PURCHASES_COLUMNS = [
   // 다대다 링크 (chip UI, junction 기반).
   { data: 'order_item_목록', title: 'Link: Order Items', readOnly: true, width: 200, fieldType: 'linklist' as FieldType, editor: false, renderer: linkListRenderer, linkListConfig: orderItemLinkConfig },
 
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

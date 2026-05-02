@@ -23,7 +23,7 @@ export const METAL_PRICES_COLUMNS = [
     enumValues: ['Gold', 'Silver', 'Brass'], renderer: metalRenderer },
   { data: 'price_per_gram', title: 'g당 시세', readOnly: false, width: 110, fieldType: 'number' as FieldType, type: 'numeric' },
 
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

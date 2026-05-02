@@ -107,8 +107,9 @@ const datePickerConfig: any = {
 // ⚠️ 기본 정렬 (수선시작일 DESC) 은 PageConfig 에 직접 설정할 수 없어
 //    서버/RPC 기본 정렬 또는 저장 뷰(user_view_presets) 로 제공된다.
 export const REPAIRS_COLUMNS = [
-  // ── 식별 ───────────────────────────────────────────────────────────
-  { data: '고유번호',   title: '고유번호',   readOnly: true,  width: 120, fieldType: 'text' as FieldType },
+  // ── 식별 (system-managed) ──────────────────────────────────────────
+  // DB 트리거가 INSERT 시 자동 부여.
+  { data: '고유번호',   title: '고유번호',   readOnly: true,  width: 120, fieldType: 'text' as FieldType, system: true },
 
   // ── 브랜드 / 제품 / 고객 (JOIN 유래) ──────────────────────────────
   { data: '브랜드명',   title: '브랜드',     readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
@@ -123,7 +124,8 @@ export const REPAIRS_COLUMNS = [
 
   // ── 수선 내용 ──────────────────────────────────────────────────────
   { data: '수선_내용',  title: '수선 내용',  readOnly: false, width: 220, fieldType: 'longtext' as FieldType, type: 'text' },
-  { data: '수선_항목',  title: '수선 항목',  readOnly: true,  width: 140, fieldType: 'text'     as FieldType },
+  // 수선_항목: repair_costs 룩업에서 자동 산출되는 분류 (텍스트). 출처가 외부.
+  { data: '수선_항목',  title: '수선 항목',  readOnly: true,  width: 140, fieldType: 'lookup' as FieldType },
   { data: '소재',       title: '소재',       readOnly: false, width: 100, fieldType: 'select'   as FieldType, renderer: 소재Renderer },
   { data: '수량',       title: '수량',       readOnly: false, width: 80,  fieldType: 'number'   as FieldType, type: 'numeric', numericFormat: { pattern: '0.[00]' } },
   { data: '전_중량',    title: '전 중량',    readOnly: false, width: 90,  fieldType: 'number'   as FieldType, type: 'numeric' },
@@ -166,9 +168,9 @@ export const REPAIRS_COLUMNS = [
   // 그리드 표시에서는 제외한다 (order-items worksConfig 와 동일 패턴).
   // 타입/API 응답에는 유지돼 있어 추후 링크 구현 시 참조 가능.
 
-  // ── 타임스탬프 (읽기 전용) ─────────────────────────────────────────
-  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
-  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType },
+  // ── 타임스탬프 (system-managed) ────────────────────────────────────
+  { data: 'created_at', title: 'created_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
+  { data: 'updated_at', title: 'updated_at', readOnly: true, width: 160, fieldType: 'date' as FieldType, system: true },
 ]
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

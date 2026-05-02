@@ -118,12 +118,36 @@ export function validatePageConfig(
       })
     }
 
-    // outputType 은 'formula' 전용 — 다른 fieldType 에 붙이면 무시되므로
-    // 의도와 다른 동작이 된다.
-    if (outputType != null && fieldType !== 'formula') {
+    // outputType 은 'formula' / 'lookup' 전용. 'lookup' 은 numeric/date
+    // lookup 의 실제 타입을 표기하는 데 사용 (필터 모달이 outputType 으로
+    // 적절한 operator 를 고른다). 그 외 fieldType 에 붙이면 무시됨.
+    if (
+      outputType != null &&
+      fieldType !== 'formula' &&
+      fieldType !== 'lookup'
+    ) {
       errors.push({
         level: 'error',
-        message: `columns[${i}] "${data}": outputType 은 fieldType:'formula' 에서만 유효 (현재 '${String(fieldType)}')`,
+        message: `columns[${i}] "${data}": outputType 은 fieldType 'formula' 또는 'lookup' 에서만 유효 (현재 '${String(fieldType)}')`,
+      })
+    }
+
+    // R1 — readOnly:true 인 primitive (text/number/date/checkbox) 는
+    // 출처가 명확해야 한다. lookup/formula 가 아니라면 system:true 플래그로
+    // "system-managed" 임을 명시. 그렇지 않으면 "사용자가 편집 못 하는
+    // 자유 입력 텍스트"처럼 의도가 흐려져 헤더 아이콘이 사용 맥락과 어긋난다.
+    const isPrimitive =
+      fieldType === 'text' ||
+      fieldType === 'number' ||
+      fieldType === 'date' ||
+      fieldType === 'checkbox'
+    const system = (col as { system?: unknown })?.system
+    if (readOnly === true && isPrimitive && system !== true) {
+      errors.push({
+        level: 'error',
+        message: `columns[${i}] "${data}": readOnly:true + fieldType:'${String(fieldType)}' 인데 system:true 미지정. ` +
+          `외부 참조면 fieldType:'lookup' (numeric/date 면 outputType 추가), ` +
+          `계산값이면 'formula', system 컬럼 (created_at 등) 이면 system:true 명시.`,
       })
     }
   })
@@ -136,7 +160,10 @@ export function validatePageConfig(
     })
   }
 
-  // 4) editableFields ↔ columns 상호 점검
+  // 4) editableFields ↔ columns 상호 점검 (R3)
+  // 양방향 1:1 정합. readOnly:false ↔ editableFields 에 등록 — 둘 중 하나만
+  // 존재하면 PATCH 403 (UI 만 편집 가능) 또는 dead key (등록만 되고 UI 없음)
+  // 가 발생.
   const editable = (cfg.editableFields ?? {}) as Record<string, string>
   const editableKeys = Object.keys(editable)
 
@@ -146,6 +173,17 @@ export function validatePageConfig(
         level: 'warn',
         message: `editableFields["${key}"] 에 대응하는 column 없음 — API-only FK 편집이면 의도된 것. 그 외엔 드리프트`,
       })
+    } else {
+      // editableFields 에 있는데 해당 column 이 readOnly:true 면 dead key.
+      const idx = dataSeen.get(key)!
+      const col = columns[idx]
+      const ro = (col as { readOnly?: unknown })?.readOnly
+      if (ro === true) {
+        errors.push({
+          level: 'error',
+          message: `editableFields["${key}"] 는 등록되어 있지만 columns[${idx}] readOnly:true — dead key. 편집을 허용하려면 readOnly:false 로 바꾸거나 editableFields 에서 제거.`,
+        })
+      }
     }
   }
 
@@ -154,8 +192,8 @@ export function validatePageConfig(
     const readOnly = (col as { readOnly?: unknown })?.readOnly
     if (typeof data !== 'string' || data === '') return
     if (readOnly === false && !(data in editable)) {
-      warnings.push({
-        level: 'warn',
+      errors.push({
+        level: 'error',
         message: `columns[${i}] "${data}" 는 readOnly:false 인데 editableFields 에 미등록 — 편집 UI 는 열리지만 PATCH 403 발생`,
       })
     }
