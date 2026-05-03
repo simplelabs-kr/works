@@ -48,6 +48,39 @@ export const WORKS_PAGES: PageDef[] = [
   { key: 'bundles',     label: '번들',      href: '/works/bundles',  status: 'active', presetKey: 'bundles' },
   { key: 'metal-prices', label: '시세',     href: '/works/metal-prices', status: 'active', presetKey: 'metal-prices' },
   { key: 'purchases',   label: '매입',      href: '/works/purchases', status: 'active', presetKey: 'purchases' },
+
+  // Master data
+  { key: 'brands',          label: '브랜드',         href: '/works/brands',          status: 'active', presetKey: 'brands' },
+  { key: 'suppliers',       label: '공급사',         href: '/works/suppliers',       status: 'active', presetKey: 'suppliers' },
+  { key: 'metals',          label: '소재',           href: '/works/metals',          status: 'active', presetKey: 'metals' },
+  { key: 'stone-types',     label: '스톤 종류',      href: '/works/stone-types',     status: 'active', presetKey: 'stone-types' },
+  { key: 'stone-cuts',      label: '스톤 컷',        href: '/works/stone-cuts',      status: 'active', presetKey: 'stone-cuts' },
+  { key: 'keywords',        label: '키워드',         href: '/works/keywords',        status: 'active', presetKey: 'keywords' },
+  { key: 'mold-positions',  label: '몰드 포지션',    href: '/works/mold-positions',  status: 'active', presetKey: 'mold-positions' },
+
+  // Materials / inventory
+  { key: 'stones',           label: '스톤',           href: '/works/stones',           status: 'active', presetKey: 'stones' },
+  { key: 'chains',           label: '체인',           href: '/works/chains',           status: 'active', presetKey: 'chains' },
+  { key: 'other-materials',  label: '기타 자재',      href: '/works/other-materials',  status: 'active', presetKey: 'other-materials' },
+  { key: 'materials',        label: '원부자재',       href: '/works/materials',        status: 'active', presetKey: 'materials' },
+  { key: 'molds',            label: '몰드',           href: '/works/molds',            status: 'active', presetKey: 'molds' },
+  { key: 'product-materials', label: '제품-원부자재', href: '/works/product-materials', status: 'active', presetKey: 'product-materials' },
+
+  // CRM
+  { key: 'samples',       label: '샘플',       href: '/works/samples',       status: 'active', presetKey: 'samples' },
+  { key: 'claims',        label: '클레임',     href: '/works/claims',        status: 'active', presetKey: 'claims' },
+  { key: 'price-changes', label: '단가 변경',  href: '/works/price-changes', status: 'active', presetKey: 'price-changes' },
+
+  // Production / metallurgy
+  { key: 'casting-inputs',   label: '주물 투입',    href: '/works/casting-inputs',   status: 'active', presetKey: 'casting-inputs' },
+  { key: 'cutting-field',    label: '절삭 - 필드',  href: '/works/cutting-field',    status: 'active', presetKey: 'cutting-field' },
+  { key: 'cutting-wheel',    label: '절삭 - 휠',    href: '/works/cutting-wheel',    status: 'active', presetKey: 'cutting-wheel' },
+  { key: 'flasks',           label: '깡/플라스크',  href: '/works/flasks',           status: 'active', presetKey: 'flasks' },
+  { key: 'polishing-finish', label: '연마 - 마감',  href: '/works/polishing-finish', status: 'active', presetKey: 'polishing-finish' },
+  { key: 'polishing-rough',  label: '연마 - 황삭',  href: '/works/polishing-rough',  status: 'active', presetKey: 'polishing-rough' },
+  { key: 'sprue-weights',    label: '뽕대 중량',    href: '/works/sprue-weights',    status: 'active', presetKey: 'sprue-weights' },
+  { key: 'dust-collection',  label: '집진',         href: '/works/dust-collection',  status: 'active', presetKey: 'dust-collection' },
+  { key: 'uninvested-gold',  label: '미투자 금',    href: '/works/uninvested-gold',  status: 'active', presetKey: 'uninvested-gold' },
 ]
 
 export const TRASH_PAGE: PageDef = {

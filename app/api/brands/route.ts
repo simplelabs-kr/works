@@ -1,7 +1,18 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth/requireUser";
+import { createListRoute } from '@/lib/api/createTableRoute'
 
+export const maxDuration = 10
+
+// Grid list (flat_brands).
+export const POST = createListRoute({
+  searchRpc: 'search_flat_brands',
+  countRpc:  'count_flat_brands',
+  logPrefix: '[brands]',
+})
+
+// Legacy lightweight picker — keeps existing dropdown contract intact.
 export async function GET() {
   const auth = await requireUser();
   if (auth.response) return auth.response;
